@@ -1,0 +1,4 @@
+#!/bin/bash
+
+declare -r CONFIG_FILE=/etc/dserver/dtail.json
+exec /usr/local/bin/dtail --cfg $CONFIG_FILE --checkHealth
