@@ -13,15 +13,11 @@ To produce all DTail binaries run ``make``:
 
 ```console
 workstation01 ~/git/dtail % make
-go build
-cp -pv ./dtail ./dcat
-./dtail -> ./dcat
-cp -pv ./dtail ./dgrep
-./dtail -> ./dgrep
-cp -pv ./dtail ./dmap
-./dtail -> ./dmap
-cp -pv ./dtail ./dserver
-./dtail -> ./dserver
+go build -o dtail ./cmd/dtail/main.go
+go build -o dcat ./cmd/dcat/main.go
+go build -o dgrep ./cmd/dgrep/main.go
+go build -o dmap ./cmd/dmap/main.go
+go build -o dserver ./cmd/dserver/main.go
 ```
 
 It produces the following executables:

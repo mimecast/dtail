@@ -1,4 +1,4 @@
-module dtail
+module github.com/mimecast/dtail
 
 go 1.13
 
