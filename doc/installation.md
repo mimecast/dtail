@@ -5,11 +5,9 @@ The following installation guide has been tested successfully on CentOS 7. You m
 
 This guide also assumes that you know how to use ``systemd`` and how to configure a service there. If you are unsure please consult the documentation of your distribution.
 
-This guide also assumes that you know how to add a new Nagios check to your monitoring infrastructure.
-
 # Compile it
 
-Please check the [Quick Starting Guide](quickstart.md) for instructions how to compile DTail. It is recommended to automate the build process via your build pipeline (e.g. produce a deployable RPM via Jenkins). But that is out of scope of this documentation.
+Please check the [Quick Starting Guide](quickstart.md) for instructions how to compile DTail. It is recommended to automate the build process via your build pipeline (e.g. produce a deployable RPM via Jenkins). You don't have to use ``go get...`` to compile and install the binaries. You can also clone the repository and use ``make`` instead.
 
 # Install it
 
