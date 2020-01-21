@@ -14,7 +14,7 @@ const Name = "DTail"
 const Version = "1.1.0"
 
 // Additional information.
-const Additional = "develop"
+const Additional = ""
 
 // String representation of the DTail version.
 func String() string {
