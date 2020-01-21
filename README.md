@@ -30,6 +30,6 @@ More
 Credits
 =======
 
-* DTail was created by Paul Buetow.
+* DTail was created by **Paul Buetow** *<pbuetow@mimecast.com>*
 
-* Thank you to Vlad-Marian Marian for creating the DTail logo.
+* Thank you to **Vlad-Marian Marian** for creating the DTail logo.
