@@ -9,24 +9,23 @@ This guide also assumes that you know how to install and use a Go compiler and G
 
 # Compile it
 
-To produce all DTail binaries run ``make``:
+To install all DTail binaries from github run:
 
 ```console
-workstation01 ~/git/dtail % make
-go build -o dtail ./cmd/dtail/main.go
-go build -o dcat ./cmd/dcat/main.go
-go build -o dgrep ./cmd/dgrep/main.go
-go build -o dmap ./cmd/dmap/main.go
-go build -o dserver ./cmd/dserver/main.go
+workstatoin01 ~ % go get github.com/mimecast/dtail/cmd/dtail
+workstatoin01 ~ % go get github.com/mimecast/dtail/cmd/dcat
+workstatoin01 ~ % go get github.com/mimecast/dtail/cmd/dgrep
+workstatoin01 ~ % go get github.com/mimecast/dtail/cmd/dmap
+workstatoin01 ~ % go get github.com/mimecast/dtail/cmd/dserver
 ```
 
-It produces the following executables:
+It produces the following executables in ``$GOPATH/bin``:
 
-* ``dserver``: The DTail server
 * ``dtail``: Client for tailing/following log files remotely (distributed tail)
 * ``dcat``: Client for displaying whole files remotely (distributed cat)
 * ``dgrep``: Client for searching whole files files remotely using a regex (distributed grep)
 * ``dmap``: Client for executing distributed mapreduce queries (may will consume a lot of RAM and CPU)
+* ``dserver``: The DTail server
 
 # Start DTail server
 
