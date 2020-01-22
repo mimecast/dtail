@@ -1,11 +1,5 @@
 package omode
 
-import (
-	"fmt"
-	"os"
-	"path"
-)
-
 // Mode used.
 type Mode int
 
@@ -18,48 +12,8 @@ const (
 	GrepClient   Mode = iota
 	MapClient    Mode = iota
 	HealthClient Mode = iota
+	ExecClient   Mode = iota
 )
-
-// New returns the mode based on the mode string.
-func New(modeStr string) Mode {
-	switch modeStr {
-	case "dserver":
-		return Server
-	case "server":
-		return Server
-
-	case "dtail":
-		fallthrough
-	case "tail":
-		return TailClient
-
-	case "grep":
-		fallthrough
-	case "dgrep":
-		return GrepClient
-
-	case "cat":
-		fallthrough
-	case "dcat":
-		return CatClient
-
-	case "map":
-		fallthrough
-	case "dmap":
-		return MapClient
-
-	case "health":
-		return HealthClient
-
-	default:
-		panic(fmt.Sprintf("Unknown mode: '%s'", modeStr))
-	}
-}
-
-// Default mode.
-func Default() Mode {
-	return New(path.Base(os.Args[0]))
-}
 
 func (m Mode) String() string {
 	switch m {
@@ -75,6 +29,8 @@ func (m Mode) String() string {
 		return "map"
 	case HealthClient:
 		return "health"
+	case ExecClient:
+		return "exec"
 	default:
 		return "unknown"
 	}
