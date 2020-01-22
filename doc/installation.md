@@ -15,22 +15,22 @@ It is recommended to automate all the installation process outlined here. You co
 1. The ``dserver`` binary has to be installed on all machines (server boxes) involved. A good location for the binary would be ``/usr/local/bin/dserver`` with permissions set as follows:
 
 ```console
-serv-001 ~ % sudo chown root:root /usr/local/bin/dserver
-serv-001 ~ % sudo chmod 0755 /usr/local/bin/dserver
+% sudo chown root:root /usr/local/bin/dserver
+% sudo chmod 0755 /usr/local/bin/dserver
 ```
 
 2. Create the ``dserver`` run user and group. The user could look like this:
 
 ```console
-serv-001 ~ % id dserver
+% id dserver
 uid=670(dserver) gid=670(dserver) groups=670(dserver)
 ```
 
 3. Create the required file system structure and set the correct permissions:
 
 ```console
-serv-001 ~ % sudo mkdir -p /etc/dserver /var/run/dserver
-serv-001 ~ % sudo chown -R dserver:dserver /var/run/dserver
+% sudo mkdir -p /etc/dserver /var/run/dserver
+% sudo chown -R dserver:dserver /var/run/dserver
 ```
 
 4. Install the ``dtail.json`` config to ``/etc/dserver/dtail.json``. An example can be found [here](../samples/dtail.json.sample).
@@ -42,8 +42,8 @@ serv-001 ~ % sudo chown -R dserver:dserver /var/run/dserver
 To start the DTail server via ``systemd`` run:
 
 ```console
-serv-001 ~ % sudo systemctl start dserver
-serv-001 ~ % sudo systemctl status dserver
+% sudo systemctl start dserver
+% sudo systemctl status dserver
 ● dserver.service - DTail server
    Loaded: loaded (/etc/systemd/system/dserver.service; disabled; vendor preset: disabled)
    Active: active (running) since Fri 2019-12-06 13:21:24 GMT; 2s ago

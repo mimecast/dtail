@@ -12,11 +12,11 @@ This guide also assumes that you know how to install and use a Go compiler and G
 To install all DTail binaries from github run:
 
 ```console
-workstatoin01 ~ % go get github.com/mimecast/dtail/cmd/dtail
-workstatoin01 ~ % go get github.com/mimecast/dtail/cmd/dcat
-workstatoin01 ~ % go get github.com/mimecast/dtail/cmd/dgrep
-workstatoin01 ~ % go get github.com/mimecast/dtail/cmd/dmap
-workstatoin01 ~ % go get github.com/mimecast/dtail/cmd/dserver
+% go get github.com/mimecast/dtail/cmd/dtail
+% go get github.com/mimecast/dtail/cmd/dcat
+% go get github.com/mimecast/dtail/cmd/dgrep
+% go get github.com/mimecast/dtail/cmd/dmap
+% go get github.com/mimecast/dtail/cmd/dserver
 ```
 
 It produces the following executables in ``$GOPATH/bin``:
@@ -32,7 +32,7 @@ It produces the following executables in ``$GOPATH/bin``:
 Copy the ``dserver`` binary to the remote server machines of your choice (e.g. ``serv-001.lan.example.org`` and ``serv-002.lan.example.org``) and start it on each of the servers as follows:
 
 ```console
-serv-001 ~ % ./dserver
+% ./dserver
 SERVER|serv-001|INFO|Launching server|server|DTail 1.0.0
 SERVER|serv-001|INFO|Creating server|DTail 1.0.0
 SERVER|serv-001|INFO|Generating private server RSA host key
@@ -51,7 +51,7 @@ Make sure that your public SSH key is listed in ``~/.ssh/authorized_keys`` on al
 DTail utilises the SSH Agent for SSH authentication. This is to avoid entering the passphrase of the private SSH key over and over again when a new SSH session is initiated from the DTail client to a new DTail server. For this the private SSH key has to be registered at the SSH Agent:
 
 ```console
-workstation01 ~ % ssh-add ~/.ssh/id_rsa
+% ssh-add ~/.ssh/id_rsa
 Enter passphrase for ~/.ssh/id_rsa: **********
 Identity added: ~/.ssh/id_rsa (~/.ssh/id_rsa)
 ```
@@ -61,10 +61,9 @@ The DTail client communicates with the SSH Agent through ``~/.ssh/ssh_auth_socke
 To test whether SSH is setup correctly you should be able to SSH into the servers with the OpenSSH client and your private SSH key through the SSH Agent without entering the private keys passphrase. The following assumes to have an OpenSSH server running on ``serv-001.lan.example.org`` and an OpenSSH client installed on your laptop or workstation. Please notice that DTail does not require to have an OpenSSH infrastructure set up but DTail uses by default the same public/private key file paths as OpenSSH. OpenSSH can be of a great help to verify that the SSH keys are configured correctly:
 
 ```console
-workstation01 ~/git/dtail % ssh serv-001.lan.example.org
-serv-001 ~ %
-serv-001 ~ % exit
-workstation01 ~/git/dtail %
+% ssh serv-001.lan.example.org
+%
+% exit
 ```
 
 ## Run DTail client
@@ -72,7 +71,7 @@ workstation01 ~/git/dtail %
 Now it is time to connect to the DTail servers through the DTail client:
 
 ```console
-workstation01 ~/git/dtail % ./bin/dtail --servers serv-001.lan.example.org,server-002.lan.example.org --files "/var/log/service/*.log"
+% dtail --servers serv-001.lan.example.org,server-002.lan.example.org --files "/var/log/service/*.log"
 CLIENT|workstation01|INFO|Launching client|tail|DTail 1.0.0
 CLIENT|workstation01|INFO|Initiating base client
 CLIENT|workstation01|INFO|Added SSH Agent to list of auth methods
@@ -86,7 +85,6 @@ CLIENT|workstation01|INFO|stats|connected=1/1(100%)|new=1|rate=0.20/s|throttle=0
 CLIENT|workstation01|INFO|stats|connected=1/1(100%)|new=0|rate=0.00/s|throttle=0|cpus/goroutines=8/17
 CLIENT|workstation01|INFO|stats|connected=1/1(100%)|new=0|rate=0.00/s|throttle=0|cpus/goroutines=8/17
 CLIENT|workstation01|INFO|stats|connected=1/1(100%)|new=0|rate=0.00/s|throttle=0|cpus/goroutines=8/17
-.
 .
 .
 ```
