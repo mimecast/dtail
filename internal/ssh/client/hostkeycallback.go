@@ -2,14 +2,16 @@ package client
 
 import (
 	"bufio"
-	"github.com/mimecast/dtail/internal/logger"
-	"github.com/mimecast/dtail/internal/prompt"
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/prompt"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -116,7 +118,7 @@ func (h *HostKeyCallback) Wrap() ssh.HostKeyCallback {
 
 // PromptAddHosts prompts a question to the user whether unknown hosts should
 // be added to the known hosts or not.
-func (h *HostKeyCallback) PromptAddHosts(stop <-chan struct{}) {
+func (h *HostKeyCallback) PromptAddHosts(ctx context.Context) {
 	var hosts []unknownHost
 
 	for {
@@ -135,7 +137,7 @@ func (h *HostKeyCallback) PromptAddHosts(stop <-chan struct{}) {
 				h.promptAddHosts(hosts)
 				hosts = []unknownHost{}
 			}
-		case <-stop:
+		case <-ctx.Done():
 			logger.Debug("Stopping goroutine prompting new hosts...")
 			return
 		}

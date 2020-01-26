@@ -2,8 +2,8 @@ package prompt
 
 import (
 	"bufio"
-	"github.com/mimecast/dtail/internal/logger"
 	"fmt"
+	"github.com/mimecast/dtail/internal/io/logger"
 	"os"
 	"strings"
 )

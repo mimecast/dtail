@@ -1,12 +1,14 @@
 package server
 
 import (
-	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/logger"
+	"context"
 	"fmt"
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // Used to collect and display various server stats.
@@ -65,12 +67,12 @@ func (s *stats) serverLimitExceeded() error {
 	return nil
 }
 
-func (s *stats) periodicLogServerStats(stop <-chan struct{}) {
+func (s *stats) periodicLogServerStats(ctx context.Context) {
 	for {
 		select {
 		case <-time.NewTimer(time.Second * 10).C:
 			s.logServerStats()
-		case <-stop:
+		case <-ctx.Done():
 			return
 		}
 	}

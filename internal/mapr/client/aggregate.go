@@ -1,10 +1,11 @@
 package client
 
 import (
-	"github.com/mimecast/dtail/internal/logger"
-	"github.com/mimecast/dtail/internal/mapr"
 	"strconv"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/mapr"
 )
 
 // Aggregate mapreduce data on the DTail client side.
@@ -15,7 +16,6 @@ type Aggregate struct {
 	group *mapr.GroupSet
 	// This represents the merged aggregated data of all servers.
 	globalGroup *mapr.GlobalGroupSet
-	stop        chan struct{}
 	// The server we aggregate the data for (logging and debugging purposes only)
 	server string
 }
@@ -26,20 +26,12 @@ func NewAggregate(server string, query *mapr.Query, globalGroup *mapr.GlobalGrou
 		query:       query,
 		group:       mapr.NewGroupSet(),
 		globalGroup: globalGroup,
-		stop:        make(chan struct{}),
 		server:      server,
 	}
 }
 
 // Aggregate data from mapr log line into local (and global) group sets.
 func (a *Aggregate) Aggregate(parts []string) {
-	select {
-	case <-a.stop:
-		logger.Error("Client aggregator stopped for server, not processing new data", a.server)
-		return
-	default:
-	}
-
 	groupKey := parts[0]
 	samples, err := strconv.Atoi(parts[1])
 	if err != nil {
@@ -86,15 +78,4 @@ func (a *Aggregate) makeFields(parts []string) map[string]string {
 	}
 
 	return fields
-}
-
-// Stop the client side mapreduce aggregator.
-func (a *Aggregate) Stop() {
-	logger.Debug("Stopping client mapreduce aggregator")
-	close(a.stop)
-
-	err := a.globalGroup.Merge(a.query, a.group)
-	if err != nil {
-		panic(err)
-	}
 }

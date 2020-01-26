@@ -1,12 +1,16 @@
 package handlers
 
-import "io"
+import (
+	"context"
+	"io"
+)
 
 // Handler provides all methods which can be run on any client handler.
 type Handler interface {
 	io.ReadWriter
-	Ping() error
-	Stop()
-	SendCommand(command string) error
+	SendMessage(command string) error
 	Server() string
+	Status() int
+	WithCancel(ctx context.Context) (context.Context, context.CancelFunc)
+	Done() <-chan struct{}
 }

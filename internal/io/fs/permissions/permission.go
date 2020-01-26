@@ -3,7 +3,7 @@
 package permissions
 
 import (
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // ToRead is to check whether user has read permissions to a given file.

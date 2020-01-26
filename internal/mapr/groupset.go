@@ -1,6 +1,7 @@
 package mapr
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -46,9 +47,9 @@ func (g *GroupSet) GetSet(groupKey string) *AggregateSet {
 }
 
 // Serialize the group set (e.g. to send it over the wire).
-func (g *GroupSet) Serialize(ch chan<- string, stop chan struct{}) {
+func (g *GroupSet) Serialize(ctx context.Context, ch chan<- string) {
 	for groupKey, set := range g.sets {
-		set.Serialize(groupKey, ch, stop)
+		set.Serialize(ctx, groupKey, ch)
 	}
 }
 

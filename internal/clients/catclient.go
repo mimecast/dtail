@@ -7,11 +7,7 @@ import (
 	"strings"
 
 	"github.com/mimecast/dtail/internal/clients/handlers"
-	"github.com/mimecast/dtail/internal/clients/remote"
 	"github.com/mimecast/dtail/internal/omode"
-	"github.com/mimecast/dtail/internal/ssh/client"
-
-	gossh "golang.org/x/crypto/ssh"
 )
 
 // CatClient is a client for returning a whole file from the beginning to the end.
@@ -31,8 +27,6 @@ func NewCatClient(args Args) (*CatClient, error) {
 	c := CatClient{
 		baseClient: baseClient{
 			Args:       args,
-			stop:       make(chan struct{}),
-			stopped:    make(chan struct{}),
 			throttleCh: make(chan struct{}, args.ConnectionsPerCPU*runtime.NumCPU()),
 			retry:      false,
 		},
@@ -43,11 +37,13 @@ func NewCatClient(args Args) (*CatClient, error) {
 	return &c, nil
 }
 
-func (c CatClient) makeConnection(server string, sshAuthMethods []gossh.AuthMethod, hostKeyCallback *client.HostKeyCallback) *remote.Connection {
-	conn := remote.NewConnection(server, c.UserName, sshAuthMethods, hostKeyCallback)
-	conn.Handler = handlers.NewClientHandler(server, c.PingTimeout)
-	for _, file := range strings.Split(c.Files, ",") {
-		conn.Commands = append(conn.Commands, fmt.Sprintf("%s %s regex %s", c.Mode.String(), file, c.Regex))
+func (c CatClient) makeHandler(server string) handlers.Handler {
+	return handlers.NewClientHandler(server)
+}
+
+func (c CatClient) makeCommands() (commands []string) {
+	for _, file := range strings.Split(c.What, ",") {
+		commands = append(commands, fmt.Sprintf("%s %s regex %s", c.Mode.String(), file, c.Regex))
 	}
-	return conn
+	return
 }

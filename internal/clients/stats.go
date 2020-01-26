@@ -1,11 +1,13 @@
 package clients
 
 import (
-	"github.com/mimecast/dtail/internal/logger"
+	"context"
 	"fmt"
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // Used to collect and display various client stats.
@@ -28,14 +30,14 @@ func newTailStats(connectionsTotal int) *stats {
 	}
 }
 
-func (s *stats) periodicLogStats(throttleCh chan struct{}, stop <-chan struct{}) {
+func (s *stats) periodicLogStats(ctx context.Context, throttleCh chan struct{}) {
 	connectedLast := 0
 	statsInterval := 5
 
 	for {
 		select {
 		case <-time.After(time.Second * time.Duration(statsInterval)):
-		case <-stop:
+		case <-ctx.Done():
 			return
 		}
 

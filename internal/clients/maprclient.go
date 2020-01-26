@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"runtime"
@@ -8,13 +9,9 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients/handlers"
-	"github.com/mimecast/dtail/internal/clients/remote"
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/omode"
-	"github.com/mimecast/dtail/internal/ssh/client"
-
-	gossh "golang.org/x/crypto/ssh"
 )
 
 // MaprClient is used for running mapreduce aggregations on remote files.
@@ -39,8 +36,6 @@ func NewMaprClient(args Args, queryStr string) (*MaprClient, error) {
 	c := MaprClient{
 		baseClient: baseClient{
 			Args:       args,
-			stop:       make(chan struct{}),
-			stopped:    make(chan struct{}),
 			throttleCh: make(chan struct{}, args.ConnectionsPerCPU*runtime.NumCPU()),
 			retry:      args.Mode == omode.TailClient,
 		},
@@ -70,35 +65,36 @@ func NewMaprClient(args Args, queryStr string) (*MaprClient, error) {
 	return &c, nil
 }
 
-func (c MaprClient) makeConnection(server string, sshAuthMethods []gossh.AuthMethod, hostKeyCallback *client.HostKeyCallback) *remote.Connection {
-	conn := remote.NewConnection(server, c.UserName, sshAuthMethods, hostKeyCallback)
-	conn.Handler = handlers.NewMaprHandler(conn.Server, c.query, c.globalGroup, c.PingTimeout)
-
-	conn.Commands = append(conn.Commands, fmt.Sprintf("map %s", c.query.RawQuery))
-	commandStr := "tail"
-	if c.additative {
-		commandStr = "cat"
-	}
-
-	for _, file := range strings.Split(c.Files, ",") {
-		conn.Commands = append(conn.Commands, fmt.Sprintf("%s %s regex %s", commandStr, file, c.Regex))
-	}
-
-	return conn
-}
-
 // Start starts the mapreduce client.
-func (c *MaprClient) Start() (status int) {
+func (c *MaprClient) Start(ctx context.Context) (status int) {
 	if c.query.Outfile == "" {
 		// Only print out periodic results if we don't write an outfile
-		go c.periodicPrintResults()
+		go c.periodicPrintResults(ctx)
 	}
 
-	status = c.baseClient.Start()
+	status = c.baseClient.Start(ctx)
 	if c.additative {
 		c.recievedFinalResult()
 	}
-	c.baseClient.Stop()
+
+	return
+}
+
+func (c MaprClient) makeHandler(server string) handlers.Handler {
+	return handlers.NewMaprHandler(server, c.query, c.globalGroup)
+}
+
+func (c MaprClient) makeCommands() (commands []string) {
+	commands = append(commands, fmt.Sprintf("map %s", c.query.RawQuery))
+
+	modeStr := "tail"
+	if c.additative {
+		modeStr = "cat"
+	}
+
+	for _, file := range strings.Split(c.What, ",") {
+		commands = append(commands, fmt.Sprintf("%s %s regex %s", modeStr, file, c.Regex))
+	}
 
 	return
 }
@@ -120,13 +116,13 @@ func (c *MaprClient) recievedFinalResult() {
 	logger.Info(fmt.Sprintf("Wrote final mapreduce result to '%s'", c.query.Outfile))
 }
 
-func (c *MaprClient) periodicPrintResults() {
+func (c *MaprClient) periodicPrintResults(ctx context.Context) {
 	for {
 		select {
 		case <-time.After(c.query.Interval):
 			logger.Info("Gathering interim mapreduce result")
 			c.printResults()
-		case <-c.baseClient.stop:
+		case <-ctx.Done():
 			return
 		}
 	}

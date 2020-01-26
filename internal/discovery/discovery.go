@@ -1,7 +1,6 @@
 package discovery
 
 import (
-	"github.com/mimecast/dtail/internal/logger"
 	"fmt"
 	"math/rand"
 	"os"
@@ -9,6 +8,16 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/mimecast/dtail/internal/io/logger"
+)
+
+// ServerOrder to specify how to sort the server list.
+type ServerOrder int
+
+const (
+	// Shuffle the server list?
+	Shuffle ServerOrder = iota
 )
 
 // Discovery method for discovering a list of available DTail servers.
@@ -21,12 +30,12 @@ type Discovery struct {
 	server string
 	// To filter server list.
 	regex *regexp.Regexp
-	// To shuffle resulting server list.
-	shuffle bool
+	// How to order the server list.
+	order ServerOrder
 }
 
 // New returns a new discovery method.
-func New(method, server string, shuffle bool) *Discovery {
+func New(method, server string, order ServerOrder) *Discovery {
 	module := method
 	options := ""
 
@@ -43,7 +52,7 @@ func New(method, server string, shuffle bool) *Discovery {
 		module:  strings.ToUpper(module),
 		options: options,
 		server:  server,
-		shuffle: shuffle,
+		order:   order,
 	}
 
 	if strings.HasPrefix(server, "/") && strings.HasSuffix(server, "/") {
@@ -84,7 +93,7 @@ func (d *Discovery) ServerList() []string {
 
 	servers = d.dedupList(servers)
 
-	if d.shuffle {
+	if d.order == Shuffle {
 		servers = d.shuffleList(servers)
 	}
 

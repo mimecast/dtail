@@ -7,7 +7,7 @@ import (
 	osUser "os/user"
 
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 	user "github.com/mimecast/dtail/internal/user/server"
 
 	gossh "golang.org/x/crypto/ssh"

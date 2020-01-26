@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // ClientHandler is the basic client handler interface.
@@ -10,7 +10,7 @@ type ClientHandler struct {
 }
 
 // NewClientHandler creates a new client handler.
-func NewClientHandler(server string, pingTimeout int) *ClientHandler {
+func NewClientHandler(server string) *ClientHandler {
 	logger.Debug(server, "Creating new client handler")
 
 	return &ClientHandler{
@@ -18,9 +18,10 @@ func NewClientHandler(server string, pingTimeout int) *ClientHandler {
 			server:       server,
 			shellStarted: false,
 			commands:     make(chan string),
-			pong:         make(chan struct{}, 1),
-			stop:         make(chan struct{}),
-			pingTimeout:  pingTimeout,
+			status:       -1,
+			withCancel: withCancel{
+				done: make(chan struct{}),
+			},
 		},
 	}
 }

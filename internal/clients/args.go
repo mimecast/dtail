@@ -9,10 +9,9 @@ type Args struct {
 	Mode              omode.Mode
 	ServersStr        string
 	UserName          string
-	Files             string
+	What              string
 	Regex             string
 	TrustAllHosts     bool
 	Discovery         string
 	ConnectionsPerCPU int
-	PingTimeout       int
 }

@@ -1,9 +1,9 @@
 package mapr
 
 import (
-	"github.com/mimecast/dtail/internal/logger"
 	"errors"
 	"fmt"
+	"github.com/mimecast/dtail/internal/io/logger"
 	"strconv"
 	"strings"
 )

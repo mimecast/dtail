@@ -1,6 +1,7 @@
 package mapr
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -64,7 +65,7 @@ func (s *AggregateSet) Merge(query *Query, set *AggregateSet) error {
 }
 
 // Serialize the aggregate set so it can be sent over the wire.
-func (s *AggregateSet) Serialize(groupKey string, ch chan<- string, stop chan struct{}) {
+func (s *AggregateSet) Serialize(ctx context.Context, groupKey string, ch chan<- string) {
 	//logger.Trace("Serialising mapr.AggregateSet", s)
 	var sb strings.Builder
 
@@ -87,7 +88,7 @@ func (s *AggregateSet) Serialize(groupKey string, ch chan<- string, stop chan st
 
 	select {
 	case ch <- sb.String():
-	case <-stop:
+	case <-ctx.Done():
 	}
 }
 

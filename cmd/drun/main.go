@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"os"
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/pprof"
 	"github.com/mimecast/dtail/internal/user"
 	"github.com/mimecast/dtail/internal/version"
@@ -15,11 +17,11 @@ import (
 // The evil begins here.
 func main() {
 	var cfgFile string
+	var command string
 	var connectionsPerCPU int
 	var debugEnable bool
 	var discovery string
 	var displayVersion bool
-	var command string
 	var noColor bool
 	var pprofEnable bool
 	var serversStr string
@@ -27,7 +29,6 @@ func main() {
 	var sshPort int
 	var trustAllHosts bool
 
-	pingTimeoutS := 60
 	userName := user.Name()
 
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
@@ -37,11 +38,10 @@ func main() {
 	flag.BoolVar(&silentEnable, "silent", false, "Reduce output")
 	flag.BoolVar(&trustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.IntVar(&connectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
-	flag.IntVar(&pingTimeoutS, "pingTimeout", 10, "The server ping timeout (0 means disable pings)")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
-	flag.StringVar(&discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&command, "command", "", "Command to run")
+	flag.StringVar(&discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&serversStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&userName, "user", userName, "Your system user name")
 
@@ -54,10 +54,10 @@ func main() {
 		version.PrintAndExit()
 	}
 
+	ctx := context.Background()
 	serverEnable := false
-	logger.Start(serverEnable, debugEnable, silentEnable, silentEnable)
-	defer logger.Stop()
 
+	logger.Start(ctx, serverEnable, debugEnable, silentEnable, silentEnable)
 	if pprofEnable || config.Common.PProfEnable {
 		pprof.Start()
 	}
@@ -67,14 +67,16 @@ func main() {
 		ServersStr:        serversStr,
 		Discovery:         discovery,
 		UserName:          userName,
-		Files:             files,
+		What:              command,
 		TrustAllHosts:     trustAllHosts,
-		PingTimeout:       pingTimeoutS,
 	}
 
-	client, err := clients.NewExecClient(args)
+	client, err := clients.NewRunClient(args)
 	if err != nil {
 		panic(err)
 	}
-	client.Start()
+
+	status := client.Start(ctx)
+	logger.Flush()
+	os.Exit(status)
 }

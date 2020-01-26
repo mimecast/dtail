@@ -7,18 +7,20 @@ import (
 	"github.com/mimecast/dtail/internal/color"
 )
 
-// Name of DTail.
-const Name = "DTail"
-
-// Version of DTail.
-const Version = "1.1.0"
-
-// Additional information.
-const Additional = ""
+const (
+	// Name of DTail.
+	Name string = "DTail"
+	// Version of DTail.
+	Version string = "2.0.0"
+	// Additional information for DTail
+	Additional string = ""
+	// ProtocolCompat -ibility version.
+	ProtocolCompat string = "2"
+)
 
 // String representation of the DTail version.
 func String() string {
-	return fmt.Sprintf("%s v%v %s", Name, Version, Additional)
+	return fmt.Sprintf("%s %v Protocol %s %s", Name, Version, ProtocolCompat, Additional)
 }
 
 // PaintedString is a prettier string representation of the DTail version.
@@ -30,7 +32,7 @@ func PaintedString() string {
 	version := color.Paint(color.Blue, Version)
 	descr := color.Paint(color.Green, Additional)
 
-	return fmt.Sprintf("%s %v %s", name, version, descr)
+	return fmt.Sprintf("%s %v Protocol %s %s", name, version, ProtocolCompat, descr)
 }
 
 // PrintAndExit prints the program version and exists.

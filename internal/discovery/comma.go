@@ -1,7 +1,7 @@
 package discovery
 
 import (
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 	"strings"
 )
 

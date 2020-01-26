@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 	"time"
 
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/pprof"
 	"github.com/mimecast/dtail/internal/server"
 	"github.com/mimecast/dtail/internal/user"
@@ -24,7 +25,7 @@ func main() {
 	var shutdownAfter int
 	var sshPort int
 
-	userName := user.Name()
+	user.NoRootCheck()
 
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
@@ -43,19 +44,23 @@ func main() {
 		version.PrintAndExit()
 	}
 
+	ctx := context.Background()
+
 	serverEnable := true
 	silentEnable := false
 	nothingEnable := false
-	logger.Start(serverEnable, debugEnable, silentEnable, nothingEnable)
-	defer logger.Stop()
+	logger.Start(ctx, serverEnable, debugEnable, silentEnable, nothingEnable)
 
 	if shutdownAfter > 0 {
 		go func() {
 			defer os.Exit(1)
 
 			logger.Info("Enabling auto shutdown timer", shutdownAfter)
-			time.Sleep(time.Duration(shutdownAfter) * time.Second)
-			logger.Info("Auto shutdown timer reached, shutting down now")
+			select {
+			case <-time.After(time.Duration(shutdownAfter) * time.Second):
+				logger.Info("Auto shutdown timer reached, shutting down now")
+			case <-ctx.Done():
+			}
 		}()
 	}
 
@@ -63,7 +68,8 @@ func main() {
 		pprof.Start()
 	}
 
-	logger.Info("Launching server", version.String(), userName)
 	sshServer := server.New()
-	sshServer.Start()
+	status := sshServer.Start(ctx)
+	logger.Flush()
+	os.Exit(status)
 }

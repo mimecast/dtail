@@ -2,7 +2,7 @@ package discovery
 
 import (
 	"bufio"
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 	"os"
 )
 

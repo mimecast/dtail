@@ -12,7 +12,7 @@ const (
 	GrepClient   Mode = iota
 	MapClient    Mode = iota
 	HealthClient Mode = iota
-	ExecClient   Mode = iota
+	RunClient    Mode = iota
 )
 
 func (m Mode) String() string {
@@ -29,8 +29,8 @@ func (m Mode) String() string {
 		return "map"
 	case HealthClient:
 		return "health"
-	case ExecClient:
-		return "exec"
+	case RunClient:
+		return "run"
 	default:
 		return "unknown"
 	}

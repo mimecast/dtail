@@ -25,7 +25,7 @@ To run ad-hoc mapreduce aggregations on newly written log lines you also must ad
     --files '/var/log/service/*.log'
 ```
 
-In order for mapreduce queries to work you have to make sure that your log format is supported by DTail. You can either use the ones which are already defined in ``mapr/logformat`` or add an extension to support a custom log format.
+In order for mapreduce queries to work you have to make sure that your log format is supported by DTail. You can either use the ones which are already defined in ``internal/mapr/logformat`` or add an extension to support a custom log format.
 
 ![dtail-map](dtail-map.gif "Tail mapreduce example")
 
@@ -62,6 +62,6 @@ To run a mapreduce aggregation over logs written in the past the ``dmap`` comman
     --files "/var/log/service/*.log"
 ```
 
-Remember: In order for that to work you have to make sure that your log format is supported by DTail. You can either use the ones which are already defined in ``mapr/logformat`` or add an extension to support a custom log format.
+Remember: In order for that to work you have to make sure that your log format is supported by DTail. You can either use the ones which are already defined in ``internal/mapr/logformat`` or add an extension to support a custom log format.
 
 ![dmap](dmap.gif "DMap example")

@@ -3,7 +3,7 @@ package fs
 import (
 	"bufio"
 	"compress/gzip"
-	"github.com/mimecast/dtail/internal/logger"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mimecast/dtail/internal/io/line"
+	"github.com/mimecast/dtail/internal/io/logger"
 
 	"github.com/DataDog/zstd"
 )
@@ -27,16 +30,12 @@ type readFile struct {
 	globID string
 	// Channel to send a server message to the dtail client
 	serverMessages chan<- string
-	// Signals to stop tailing the log file.
-	stop chan struct{}
 	// Periodically retry reading file.
 	retry bool
 	// Can I skip messages when there are too many?
 	canSkipLines bool
 	// Seek to the EOF before processing file?
 	seekEOF bool
-	// Mutex to control the stopping of the file
-	mutex   *sync.Mutex
 	limiter chan struct{}
 }
 
@@ -51,7 +50,7 @@ func (f readFile) Retry() bool {
 }
 
 // Start tailing a log file.
-func (f readFile) Start(lines chan<- LineRead, regex string) error {
+func (f readFile) Start(ctx context.Context, lines chan<- line.Line, regex string) error {
 	defer func() {
 		select {
 		case <-f.limiter:
@@ -64,7 +63,7 @@ func (f readFile) Start(lines chan<- LineRead, regex string) error {
 	default:
 		select {
 		case f.serverMessages <- logger.Warn(f.filePath, f.globID, "Server limit reached. Queuing file..."):
-		case <-f.stop:
+		case <-ctx.Done():
 			return nil
 		}
 		f.limiter <- struct{}{}
@@ -86,42 +85,28 @@ func (f readFile) Start(lines chan<- LineRead, regex string) error {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	go f.periodicTruncateCheck(truncate)
-	go f.filter(&wg, rawLines, lines, regex)
+	go f.periodicTruncateCheck(ctx, truncate)
+	go f.filter(ctx, &wg, rawLines, lines, regex)
 
-	err = f.read(fd, rawLines, truncate)
+	err = f.read(ctx, fd, rawLines, truncate)
 	close(rawLines)
 	wg.Wait()
 
 	return err
 }
 
-func (f readFile) periodicTruncateCheck(truncate chan struct{}) {
+func (f readFile) periodicTruncateCheck(ctx context.Context, truncate chan struct{}) {
 	for {
 		select {
 		case <-time.After(time.Second * 3):
 			select {
 			case truncate <- struct{}{}:
-			case <-f.stop:
+			case <-ctx.Done():
 			}
-		case <-f.stop:
+		case <-ctx.Done():
 			return
 		}
 	}
-}
-
-// Stop reading file.
-func (f readFile) Stop() {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
-
-	select {
-	case <-f.stop:
-		return
-	default:
-	}
-
-	close(f.stop)
 }
 
 func (f readFile) makeReader(fd *os.File) (reader *bufio.Reader, err error) {
@@ -146,27 +131,31 @@ func (f readFile) makeReader(fd *os.File) (reader *bufio.Reader, err error) {
 	return
 }
 
-func (f readFile) read(fd *os.File, rawLines chan []byte, truncate <-chan struct{}) error {
+func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan []byte, truncate <-chan struct{}) error {
+	var offset uint64
+
 	reader, err := f.makeReader(fd)
 	if err != nil {
 		return err
 	}
 	rawLine := make([]byte, 0, 512)
-	var offset uint64
 
 	lineLengthThreshold := 1024 * 1024 // 1mb
 	longLineWarning := false
 
 	for {
 		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+
+		select {
 		case <-truncate:
 			if isTruncated, err := f.truncated(fd); isTruncated {
 				return err
 			}
 			logger.Info(f.filePath, "Current offset", offset)
-
-		case <-f.stop:
-			return nil
 		default:
 		}
 
@@ -196,7 +185,7 @@ func (f readFile) read(fd *os.File, rawLines chan []byte, truncate <-chan struct
 			rawLine = append(rawLine, '\n')
 			select {
 			case rawLines <- rawLine:
-			case <-f.stop:
+			case <-ctx.Done():
 				return nil
 			}
 			rawLine = make([]byte, 0, 512)
@@ -219,7 +208,7 @@ func (f readFile) read(fd *os.File, rawLines chan []byte, truncate <-chan struct
 			rawLine = append(rawLine, '\n')
 			select {
 			case rawLines <- rawLine:
-			case <-f.stop:
+			case <-ctx.Done():
 				return nil
 			}
 			rawLine = make([]byte, 0, 512)
@@ -228,7 +217,7 @@ func (f readFile) read(fd *os.File, rawLines chan []byte, truncate <-chan struct
 }
 
 // Filter log lines matching a given regular expression.
-func (f readFile) filter(wg *sync.WaitGroup, rawLines <-chan []byte, lines chan<- LineRead, regex string) {
+func (f readFile) filter(ctx context.Context, wg *sync.WaitGroup, rawLines <-chan []byte, lines chan<- line.Line, regex string) {
 	defer wg.Done()
 
 	if regex == "" {
@@ -252,7 +241,7 @@ func (f readFile) filter(wg *sync.WaitGroup, rawLines <-chan []byte, lines chan<
 			if filteredLine, ok := f.transmittable(line, len(lines), cap(lines)); ok {
 				select {
 				case lines <- filteredLine:
-				case <-f.stop:
+				case <-ctx.Done():
 					return
 				}
 			}
@@ -260,10 +249,10 @@ func (f readFile) filter(wg *sync.WaitGroup, rawLines <-chan []byte, lines chan<
 	}
 }
 
-func (f readFile) transmittable(line []byte, length, capacity int) (LineRead, bool) {
-	var read LineRead
+func (f readFile) transmittable(lineBytes []byte, length, capacity int) (line.Line, bool) {
+	var read line.Line
 
-	if !f.re.Match(line) {
+	if !f.re.Match(lineBytes) {
 		f.updateLineNotMatched()
 		f.updateLineNotTransmitted()
 		return read, false
@@ -277,9 +266,9 @@ func (f readFile) transmittable(line []byte, length, capacity int) (LineRead, bo
 	}
 	f.updateLineTransmitted()
 
-	read = LineRead{
-		Content:         line,
-		GlobID:          &f.globID,
+	read = line.Line{
+		Content:         lineBytes,
+		SourceID:        f.globID,
 		Count:           f.totalLineCount(),
 		TransmittedPerc: f.transmittedPerc(),
 	}

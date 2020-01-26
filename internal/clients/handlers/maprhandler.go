@@ -1,10 +1,11 @@
 package handlers
 
 import (
-	"github.com/mimecast/dtail/internal/logger"
+	"strings"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/mapr/client"
-	"strings"
 )
 
 // MaprHandler is the handler used on the client side for running mapreduce aggregations.
@@ -16,15 +17,16 @@ type MaprHandler struct {
 }
 
 // NewMaprHandler returns a new mapreduce client handler.
-func NewMaprHandler(server string, query *mapr.Query, globalGroup *mapr.GlobalGroupSet, pingTimeout int) *MaprHandler {
+func NewMaprHandler(server string, query *mapr.Query, globalGroup *mapr.GlobalGroupSet) *MaprHandler {
 	return &MaprHandler{
 		baseHandler: baseHandler{
 			server:       server,
 			shellStarted: false,
 			commands:     make(chan string),
-			pong:         make(chan struct{}, 1),
-			stop:         make(chan struct{}),
-			pingTimeout:  pingTimeout,
+			status:       -1,
+			withCancel: withCancel{
+				done: make(chan struct{}),
+			},
 		},
 		query:     query,
 		aggregate: client.NewAggregate(server, query, globalGroup),
@@ -64,11 +66,4 @@ func (h *MaprHandler) handleAggregateMessage(message string) {
 	logger.Debug("Received aggregate data", h.server, h.count)
 	h.aggregate.Aggregate(parts[2:])
 	logger.Debug("Aggregated aggregate data", h.server, h.count)
-}
-
-// Stop stops the mapreduce client handler.
-func (h *MaprHandler) Stop() {
-	logger.Debug("Stopping mapreduce handler", h.server)
-	h.aggregate.Stop()
-	h.baseHandler.Stop()
 }

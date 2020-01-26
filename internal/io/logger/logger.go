@@ -2,6 +2,7 @@ package logger
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -48,16 +49,12 @@ var lastDateStr string
 var serverEnable bool
 
 // Used to make logging non-blocking.
-var logBufCh chan buf
+var fileLogBufCh chan buf
 var stdoutBufCh chan string
 
 // Stdout channel, required to pause output
 var pauseCh chan struct{}
 var resumeCh chan struct{}
-
-// Tell the logger that we are done, program shuts down
-var stop chan struct{}
-var stdoutFlushed chan struct{}
 
 // Tell the logger about logrotation
 var rotateCh chan os.Signal
@@ -103,7 +100,7 @@ type buf struct {
 }
 
 // Start logging.
-func Start(myServerEnable, debugEnable, silentEnable, nothingEnable bool) {
+func Start(ctx context.Context, myServerEnable, debugEnable, silentEnable, nothingEnable bool) {
 	serverEnable = myServerEnable
 
 	mode := logMode(debugEnable, silentEnable, nothingEnable)
@@ -125,7 +122,7 @@ func Start(myServerEnable, debugEnable, silentEnable, nothingEnable bool) {
 	case StdoutStrategy:
 		fallthrough
 	default:
-		logToFile = false
+		logToFile = !serverEnable
 		logToStdout = true
 	}
 
@@ -138,8 +135,6 @@ func Start(myServerEnable, debugEnable, silentEnable, nothingEnable bool) {
 
 	pauseCh = make(chan struct{})
 	resumeCh = make(chan struct{})
-	stop = make(chan struct{})
-	stdoutFlushed = make(chan struct{})
 
 	// Setup logrotation
 	rotateCh = make(chan os.Signal, 1)
@@ -147,12 +142,12 @@ func Start(myServerEnable, debugEnable, silentEnable, nothingEnable bool) {
 
 	if logToStdout {
 		stdoutBufCh = make(chan string, runtime.NumCPU()*100)
-		go writeToStdout()
+		go writeToStdout(ctx)
 	}
 
 	if logToFile {
-		logBufCh = make(chan buf, runtime.NumCPU()*100)
-		go writeToFile()
+		fileLogBufCh = make(chan buf, runtime.NumCPU()*100)
+		go writeToFile(ctx)
 	}
 }
 
@@ -264,7 +259,7 @@ func write(what, severity, message string) {
 	if logToFile {
 		t := time.Now()
 		timeStr := t.Format("20060102-150405")
-		logBufCh <- buf{
+		fileLogBufCh <- buf{
 			time:    t,
 			message: fmt.Sprintf("%s|%s|%s|%s\n", severity, timeStr, what, message),
 		}
@@ -304,15 +299,15 @@ func Raw(message string) {
 		return
 	}
 
+	if logToFile {
+		fileLogBufCh <- buf{time.Now(), message}
+	}
+
 	if logToStdout {
 		if color.Colored {
 			message = color.Colorfy(message)
 		}
 		stdoutBufCh <- message
-	}
-
-	if logToFile {
-		logBufCh <- buf{time.Now(), message}
 	}
 }
 
@@ -367,9 +362,8 @@ func updateFileWriter(dateStr string) *bufio.Writer {
 	return writer
 }
 
-func flushStdout() {
-	defer close(stdoutFlushed)
-
+// Flush all outstanding lines.
+func Flush() {
 	for {
 		select {
 		case message := <-stdoutBufCh:
@@ -381,7 +375,7 @@ func flushStdout() {
 	}
 }
 
-func writeToStdout() {
+func writeToStdout(ctx context.Context) {
 	for {
 		select {
 		case message := <-stdoutBufCh:
@@ -395,21 +389,21 @@ func writeToStdout() {
 				case <-stdoutBufCh:
 				case <-resumeCh:
 					break PAUSE
-				case <-stop:
+				case <-ctx.Done():
 					return
 				}
 			}
-		case <-stop:
-			flushStdout()
+		case <-ctx.Done():
+			Flush()
 			return
 		}
 	}
 }
 
-func writeToFile() {
+func writeToFile(ctx context.Context) {
 	for {
 		select {
-		case buf := <-logBufCh:
+		case buf := <-fileLogBufCh:
 			dateStr := buf.time.Format("20060102")
 			w := fileWriter(dateStr)
 			w.WriteString(buf.message)
@@ -420,11 +414,11 @@ func writeToFile() {
 				case <-stdoutBufCh:
 				case <-resumeCh:
 					break PAUSE
-				case <-stop:
+				case <-ctx.Done():
 					return
 				}
 			}
-		case <-stop:
+		case <-ctx.Done():
 			return
 		}
 	}
@@ -448,10 +442,4 @@ func Resume() {
 	if logToFile {
 		resumeCh <- struct{}{}
 	}
-}
-
-// Stop logging.
-func Stop() {
-	close(stop)
-	<-stdoutFlushed
 }

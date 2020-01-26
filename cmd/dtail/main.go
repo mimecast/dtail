@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/pprof"
 	"github.com/mimecast/dtail/internal/user"
@@ -32,7 +33,6 @@ func main() {
 	var sshPort int
 	var trustAllHosts bool
 
-	pingTimeoutS := 5
 	userName := user.Name()
 
 	flag.BoolVar(&checkHealth, "checkHealth", false, "Only check for server health")
@@ -43,7 +43,6 @@ func main() {
 	flag.BoolVar(&silentEnable, "silent", false, "Reduce output")
 	flag.BoolVar(&trustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.IntVar(&connectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
-	flag.IntVar(&pingTimeoutS, "pingTimeout", 10, "The server ping timeout (0 means disable pings)")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
 	flag.StringVar(&discovery, "discovery", "", "Server discovery method")
@@ -62,17 +61,18 @@ func main() {
 		version.PrintAndExit()
 	}
 
+	ctx := context.Background()
+
 	if checkHealth {
 		healthClient, _ := clients.NewHealthClient(omode.HealthClient)
-		os.Exit(healthClient.Start())
+		os.Exit(healthClient.Start(ctx))
 	}
 
 	serverEnable := false
 	if checkHealth {
 		silentEnable = true
 	}
-	logger.Start(serverEnable, debugEnable, silentEnable, silentEnable)
-	defer logger.Stop()
+	logger.Start(ctx, serverEnable, debugEnable, silentEnable, silentEnable)
 
 	if pprofEnable || config.Common.PProfEnable {
 		pprof.Start()
@@ -83,9 +83,8 @@ func main() {
 		ServersStr:        serversStr,
 		Discovery:         discovery,
 		UserName:          userName,
-		Files:             files,
+		What:              files,
 		TrustAllHosts:     trustAllHosts,
-		PingTimeout:       pingTimeoutS,
 		Regex:             regex,
 		Mode:              omode.TailClient,
 	}
@@ -104,5 +103,7 @@ func main() {
 		}
 	}
 
-	client.Start()
+	status := client.Start(ctx)
+	logger.Flush()
+	os.Exit(status)
 }

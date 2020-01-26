@@ -1,11 +1,11 @@
-package fs
+package line
 
 import (
 	"fmt"
 )
 
-// LineRead represents a read log line.
-type LineRead struct {
+// Line represents a read log line.
+type Line struct {
 	// The content of the log line.
 	Content []byte
 	// Until now, how many log lines were processed?
@@ -15,14 +15,14 @@ type LineRead struct {
 	// lines if that happens but it will signal to the client how
 	// many log lines in % could be transmitted to the client.
 	TransmittedPerc int
-	GlobID          *string
+	SourceID        string
 }
 
 // Return a human readable representation of the followed line.
-func (l LineRead) String() string {
-	return fmt.Sprintf("LineRead(Content:%s,TransmittedPerc:%v,Count:%v,GlobID:%s)",
+func (l Line) String() string {
+	return fmt.Sprintf("Line(Content:%s,TransmittedPerc:%v,Count:%v,SourceID:%s)",
 		string(l.Content),
 		l.TransmittedPerc,
 		l.Count,
-		*l.GlobID)
+		l.SourceID)
 }

@@ -2,7 +2,7 @@ package server
 
 import (
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/ssh"
 	"io/ioutil"
 	"os"

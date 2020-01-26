@@ -1,33 +1,34 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/logger"
+	"github.com/mimecast/dtail/internal/io/logger"
 	user "github.com/mimecast/dtail/internal/user/server"
 )
 
 // ControlHandler is used for control functions and health monitoring.
 type ControlHandler struct {
-	serverMessages chan string
-	pong           chan struct{}
-	stop           chan struct{}
-	payload        []byte
+	ctx            context.Context
+	done           chan struct{}
 	hostname       string
+	payload        []byte
+	serverMessages chan string
 	user           *user.User
 }
 
 // NewControlHandler returns a new control handler.
-func NewControlHandler(user *user.User) *ControlHandler {
+func NewControlHandler(ctx context.Context, user *user.User) (*ControlHandler, <-chan struct{}) {
 	logger.Debug(user, "Creating control handler")
 
 	h := ControlHandler{
+		ctx:            ctx,
+		done:           make(chan struct{}),
 		serverMessages: make(chan string, 10),
-		pong:           make(chan struct{}, 10),
-		stop:           make(chan struct{}),
 		user:           user,
 	}
 
@@ -38,7 +39,8 @@ func NewControlHandler(user *user.User) *ControlHandler {
 
 	s := strings.Split(fqdn, ".")
 	h.hostname = s[0]
-	return &h
+
+	return &h, h.done
 }
 
 // Read is to send data to the client via the Reader interface.
@@ -49,11 +51,7 @@ func (h *ControlHandler) Read(p []byte) (n int, err error) {
 			wholePayload := []byte(fmt.Sprintf("SERVER|%s|%s\n", h.hostname, message))
 			n = copy(p, wholePayload)
 			return
-		case <-h.pong:
-			logger.Info(h.user, "Sending pong")
-			n = copy(p, []byte(".pong\n"))
-			return
-		case <-h.stop:
+		case <-h.ctx.Done():
 			return 0, io.EOF
 		}
 	}
@@ -65,7 +63,7 @@ func (h *ControlHandler) Write(p []byte) (n int, err error) {
 		switch c {
 		case ';':
 			wholePayload := strings.TrimSpace(string(h.payload))
-			h.handleCommand(wholePayload)
+			h.handleCommand(h.ctx, wholePayload)
 			h.payload = nil
 
 		default:
@@ -77,17 +75,7 @@ func (h *ControlHandler) Write(p []byte) (n int, err error) {
 	return
 }
 
-// Close the control handler.
-func (h *ControlHandler) Close() {
-	close(h.stop)
-}
-
-// Wait returns the handler stop channel.
-func (h *ControlHandler) Wait() <-chan struct{} {
-	return h.stop
-}
-
-func (h *ControlHandler) handleCommand(command string) {
+func (h *ControlHandler) handleCommand(ctx context.Context, command string) {
 	logger.Info(h.user, command)
 	s := strings.Split(command, " ")
 	logger.Debug(h.user, "Receiving command", command, s)
@@ -96,8 +84,6 @@ func (h *ControlHandler) handleCommand(command string) {
 	case "health":
 		h.serverMessages <- "OK: DTail SSH Server seems fine"
 		h.serverMessages <- "done;"
-	case "ping":
-		h.pong <- struct{}{}
 	case "debug":
 		h.serverMessages <- logger.Debug(h.user, "Receiving debug command", command, s)
 	default:

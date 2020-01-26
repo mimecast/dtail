@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"strings"
@@ -39,7 +40,7 @@ func NewHealthClient(mode omode.Mode) (*HealthClient, error) {
 }
 
 // Start the health client.
-func (c *HealthClient) Start() (status int) {
+func (c *HealthClient) Start(ctx context.Context) (status int) {
 	receive := make(chan string)
 
 	throttleCh := make(chan struct{}, runtime.NumCPU())
@@ -49,8 +50,8 @@ func (c *HealthClient) Start() (status int) {
 	conn.Handler = handlers.NewHealthHandler(c.server, receive)
 	conn.Commands = []string{c.mode.String()}
 
-	go conn.Start(throttleCh, statsCh)
-	defer conn.Stop()
+	connCtx, cancel := conn.Handler.WithCancel(ctx)
+	go conn.Start(connCtx, cancel, throttleCh, statsCh)
 
 	for {
 		select {
