@@ -10,19 +10,21 @@ This guide assumes that you know how to generate and configure a public/private 
 To compile and install all DTail binaries directly from GitHub run:
 
 ```console
-% go get github.com/mimecast/dtail/cmd/dtail
 % go get github.com/mimecast/dtail/cmd/dcat
 % go get github.com/mimecast/dtail/cmd/dgrep
 % go get github.com/mimecast/dtail/cmd/dmap
+% go get github.com/mimecast/dtail/cmd/drun
+% go get github.com/mimecast/dtail/cmd/dtail
 % go get github.com/mimecast/dtail/cmd/dserver
 ```
 
 It produces the following executables in ``$GOPATH/bin``:
 
-* ``dtail``: Client for tailing/following log files remotely (distributed tail)
 * ``dcat``: Client for displaying whole files remotely (distributed cat)
 * ``dgrep``: Client for searching whole files files remotely using a regex (distributed grep)
 * ``dmap``: Client for executing distributed mapreduce queries (may will consume a lot of RAM and CPU)
+* ``drun``: Client for executing commands on remote servers.
+* ``dtail``: Client for tailing/following log files remotely (distributed tail)
 * ``dserver``: The DTail server
 
 # Start DTail server

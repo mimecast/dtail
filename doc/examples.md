@@ -50,7 +50,18 @@ The following example demonstrates how to grep files (display only the lines whi
     --regex swap
 ```
 
-![dgrep](dgrep.gif "Grep example")
+![dgrep](drun.gif "Run example")
+
+# How to use ``drun``
+
+The following example demonstrates how to execute a command on multiple machines remotely:
+
+```shell
+% drun --servers <(head -n 30 serverlist.txt) \
+    --command uptime
+```
+
+![dgrep](drun.gif "Run example")
 
 # How to use ``dmap``
 
