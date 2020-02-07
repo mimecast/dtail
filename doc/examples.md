@@ -50,7 +50,7 @@ The following example demonstrates how to grep files (display only the lines whi
     --regex swap
 ```
 
-![dgrep](drun.gif "Run example")
+![dgrep](dgrep.gif "Grep example")
 
 # How to use ``drun``
 
