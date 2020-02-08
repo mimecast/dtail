@@ -27,7 +27,7 @@ func newReadCommand(server *ServerHandler, mode omode.Mode) *readCommand {
 func (r *readCommand) Start(ctx context.Context, argc int, args []string) {
 	regex := "."
 	if argc >= 4 {
-		regex = args[3]
+	    regex = strings.Join(args[3:], " ")
 	}
 	if argc < 3 {
 		r.server.sendServerMessage(logger.Warn(r.server.user, commandParseWarning, args, argc))
