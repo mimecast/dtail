@@ -21,6 +21,7 @@ It is recommended to automate all the installation process outlined here. You co
 2. Create the ``dserver`` run user and group. The user could look like this:
 
 ```console
+% sudo adduser dserver
 % id dserver
 uid=670(dserver) gid=670(dserver) groups=670(dserver)
 ```
@@ -34,7 +35,20 @@ uid=670(dserver) gid=670(dserver) groups=670(dserver)
 
 4. Install the ``dtail.json`` config to ``/etc/dserver/dtail.json``. An example can be found [here](../samples/dtail.json.sample).
 
+```console
+% sudo mkdir /etc/dserver
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/dtail.json.sample |
+    sudo tee /etc/dserver/dtail.json >/dev/null
+```
+
 5. It is recommended to configure DTail server as a service to ``systemd``. An example unit file for ``systemd`` can be found [here](../samples/dserver.service.sample).
+
+```console
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/dserver.service.sample |
+    sudo tee /etc/systemd/system/dserver.service >/dev/null
+% sudo systemctl daemon-reload
+% sudo systemctl enable dserver
+```
 
 # Start it
 

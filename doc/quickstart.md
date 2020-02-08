@@ -7,15 +7,18 @@ This guide assumes that you know how to generate and configure a public/private 
 
 # Install it
 
+On Linux you need to install the libacl development library for file system ACL permission support in `dserver`. On CentOS and/or Fedora it would be
+
+```console
+% sudo yum install libacl-devel -y
+```
+
 To compile and install all DTail binaries directly from GitHub run:
 
 ```console
-% go get github.com/mimecast/dtail/cmd/dcat
-% go get github.com/mimecast/dtail/cmd/dgrep
-% go get github.com/mimecast/dtail/cmd/dmap
-% go get github.com/mimecast/dtail/cmd/drun
-% go get github.com/mimecast/dtail/cmd/dtail
-% go get github.com/mimecast/dtail/cmd/dserver
+% for cmd in dcat dgrep dmap drun dtail dserver; do
+    go get github.com/mimecast/dtail/cmd/$cmd;
+  done
 ```
 
 It produces the following executables in ``$GOPATH/bin``:

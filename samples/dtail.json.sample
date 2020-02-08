@@ -15,7 +15,7 @@
       ],
       "Users": {
         "pbuetow": [
-          "readfiles:^/.*$"
+          "readfiles:^/.*$",
           "runcommands:^/.*$"
         ],
         "jblake": [
