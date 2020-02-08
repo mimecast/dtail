@@ -77,7 +77,18 @@ To start the DTail server via ``systemd`` run:
 
 The DTail server now runs as a ``systemd`` service under system user ``dserver``. The system user ``dserver`` however has no permissions to read the SSH public keys from ``/home/USER/.ssh/authorized_keys``. Therefore, no user would be able to establish a SSH session to DTail server. As an alternative path DTail server also checks for public SSH key files in ``/var/run/dserver/cache/USER.authorized_keys``.
 
-It is recommended to execute [update_key_cache.sh](../samples/update_key_cache.sh.sample) periodically to update the key cache. In case you manage your public SSH keys via Puppet you could subscribe the script to corresponding module. Or alternatively just configure a cron job to run every once in a while.
+It is recommended to execute [update_key_cache.sh](../samples/update_key_cache.sh.sample) periodically to update the key cache. In case you manage your public SSH keys via Puppet you could subscribe the script to corresponding module. Or alternatively just configure a cron job or a systemd timer to run every once in a while.
+
+```console
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/update_key_cache.sh.sample |
+    sudo tee /var/run/dserver/update_key_cache.sh >/dev/null
+% sudo chmod 755 /var/run/dserver/update_key_cache.sh
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/dserver-update-keycache.service.sample |
+    sudo tee /etc/systemd/system/dserver-update-keycache.service >/dev/null
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/dserver-update-keycache.timer.sample |
+    sudo tee /etc/systemd/system/dserver-update-keycache.timer >/dev/null
+% sudo systemctl daemon-reload
+```
 
 # Run DTail client
 
