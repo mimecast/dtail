@@ -10,7 +10,7 @@ This guide assumes that you know how to generate and configure a public/private 
 On Linux you need to install the libacl development library for file system ACL permission support in `dserver`. On CentOS and/or Fedora it would be
 
 ```console
-% sudo yum install libacl-devel -y
+% sudo dnf install libacl-devel -y
 ```
 
 To compile and install all DTail binaries directly from GitHub run:
