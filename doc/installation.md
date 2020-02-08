@@ -38,14 +38,14 @@ uid=670(dserver) gid=670(dserver) groups=670(dserver)
 ```console
 % sudo mkdir /etc/dserver
 % curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/dtail.json.sample |
-    sudo tee /etc/dserver/dtail.json >/dev/null
+    sudo tee /etc/dserver/dtail.json
 ```
 
 5. It is recommended to configure DTail server as a service to ``systemd``. An example unit file for ``systemd`` can be found [here](../samples/dserver.service.sample).
 
 ```console
 % curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/dserver.service.sample |
-    sudo tee /etc/systemd/system/dserver.service >/dev/null
+    sudo tee /etc/systemd/system/dserver.service
 % sudo systemctl daemon-reload
 % sudo systemctl enable dserver
 ```
@@ -77,7 +77,21 @@ To start the DTail server via ``systemd`` run:
 
 The DTail server now runs as a ``systemd`` service under system user ``dserver``. The system user ``dserver`` however has no permissions to read the SSH public keys from ``/home/USER/.ssh/authorized_keys``. Therefore, no user would be able to establish a SSH session to DTail server. As an alternative path DTail server also checks for public SSH key files in ``/var/run/dserver/cache/USER.authorized_keys``.
 
-It is recommended to execute [update_key_cache.sh](../samples/update_key_cache.sh.sample) periodically to update the key cache. In case you manage your public SSH keys via Puppet you could subscribe the script to corresponding module. Or alternatively just configure a cron job to run every once in a while.
+It is recommended to execute [update_key_cache.sh](../samples/update_key_cache.sh.sample) periodically to update the key cache. In case you manage your public SSH keys via Puppet you could subscribe the script to corresponding module. Or alternatively just configure a cron job or a systemd timer to run every once in a while, e.g. every 30 minutes:
+
+```console
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/update_key_cache.sh.sample |
+    sudo tee /var/run/dserver/update_key_cache.sh
+% sudo chmod 755 /var/run/dserver/update_key_cache.sh
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/dserver-update-keycache.service.sample |
+    sudo tee /etc/systemd/system/dserver-update-keycache.service
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/dserver-update-keycache.timer.sample |
+    sudo tee /etc/systemd/system/dserver-update-keycache.timer
+% sudo systemctl daemon-reload
+% sudo systemctl start dserver-update-keycache.service
+% sudo systemctl enable dserver-update-keycache.timer
+% sudo systemctl start dserver-update-keycache.timer
+```
 
 # Run DTail client
 
