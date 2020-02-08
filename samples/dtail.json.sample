@@ -29,7 +29,7 @@
   "Common": {
     "LogDir" : "log",
     "CacheDir" : "cache",
-    "LogStrategy": "daily",
+    "LogStrategy": "stdout",
     "SSHPort": 2222,
     "DebugEnable": false,
     "PPerfEnable": false,

@@ -1,0 +1,6 @@
+[Unit]
+Description=Refresh DServer SSH Key Cache
+
+[Service]
+Type=oneshot
+ExecStart=/var/run/dserver/update_key_cache.sh
