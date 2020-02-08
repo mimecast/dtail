@@ -47,6 +47,7 @@ uid=670(dserver) gid=670(dserver) groups=670(dserver)
 % curl https://raw.githubusercontent.com/mimecast/dtail/master/samples/dserver.service.sample |
     sudo tee /etc/systemd/system/dserver.service >/dev/null
 % sudo systemctl daemon-reload
+% sudo systemctl enable dserver
 ```
 
 # Start it
