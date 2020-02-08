@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal/io/logger"
-	"github.com/mimecast/dtail/internal/prompt"
+	"github.com/mimecast/dtail/internal/io/prompt"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
