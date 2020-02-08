@@ -7,7 +7,7 @@ This guide assumes that you know how to generate and configure a public/private 
 
 # Install it
 
-On Linux you need to install the libacl development library for file system ACL permission support in `dserver`. On CentOS and/or Fedora it would be
+On Linux you need to install the libacl development library for file system ACL permission support in `dserver`. On RHEL, CentOS and Fedora it would be
 
 ```console
 % sudo dnf install libacl-devel -y

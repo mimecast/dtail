@@ -23,7 +23,7 @@ It is recommended to automate all the installation process outlined here. You co
 ```console
 % sudo adduser dserver
 % id dserver
-uid=670(dserver) gid=670(dserver) groups=670(dserver)
+uid=1001(dserver) 1001=670(dserver) groups=1001(dserver)
 ```
 
 3. Create the required file system structure and set the correct permissions:
