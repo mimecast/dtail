@@ -13,6 +13,16 @@ type Permissions struct {
 	Users map[string][]string
 }
 
+// Scheduled allows to configure scheduled mapreduce jobs.
+type Scheduled struct {
+	Name              string
+	ConnectionsPerCPU int
+	Discovery         string
+	Files             string
+	Query             string
+	Servers           string
+}
+
 // ServerConfig represents the server configuration.
 type ServerConfig struct {
 	// The SSH server bind port.
@@ -31,6 +41,8 @@ type ServerConfig struct {
 	HostKeyFile string
 	// The host key size in bits
 	HostKeyBits int
+	// Scheduled mapreduce jobs.
+	Schedule []Scheduled `json:",omitempty"`
 }
 
 // Create a new default server configuration.

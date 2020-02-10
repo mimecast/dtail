@@ -68,8 +68,8 @@ func main() {
 		pprof.Start()
 	}
 
-	sshServer := server.New()
-	status := sshServer.Start(ctx)
+	serv := server.New()
+	status := serv.Start(ctx)
 	logger.Flush()
 	os.Exit(status)
 }

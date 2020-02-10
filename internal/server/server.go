@@ -27,6 +27,8 @@ type Server struct {
 	catLimiterCh chan struct{}
 	// To control the max amount of concurrent tails
 	tailLimiterCh chan struct{}
+	// To run scheduled tasks (if configured)
+	sched *scheduler
 }
 
 // New returns a new server.
@@ -37,9 +39,10 @@ func New() *Server {
 		sshServerConfig: &gossh.ServerConfig{},
 		catLimiterCh:    make(chan struct{}, config.Server.MaxConcurrentCats),
 		tailLimiterCh:   make(chan struct{}, config.Server.MaxConcurrentTails),
+		sched:           newScheduler(),
 	}
 
-	s.sshServerConfig.PasswordCallback = s.controlUserCallback
+	s.sshServerConfig.PasswordCallback = s.backgroundUserCallback
 	s.sshServerConfig.PublicKeyCallback = server.PublicKeyCallback
 
 	private, err := gossh.ParsePrivateKey(server.PrivateHostKey())
@@ -62,7 +65,8 @@ func (s *Server) Start(ctx context.Context) int {
 		logger.FatalExit("Failed to open listening TCP socket", err)
 	}
 
-	go s.stats.periodicLogServerStats(ctx)
+	go s.stats.start(ctx)
+	go s.sched.start(ctx)
 
 	for {
 		conn, err := listener.Accept() // Blocking
@@ -192,13 +196,18 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 	return nil
 }
 
-func (*Server) controlUserCallback(c gossh.ConnMetadata, authPayload []byte) (*gossh.Permissions, error) {
+func (s *Server) backgroundUserCallback(c gossh.ConnMetadata, authPayload []byte) (*gossh.Permissions, error) {
 	user := user.New(c.User(), c.RemoteAddr().String())
 
 	if user.Name == config.ControlUser && string(authPayload) == config.ControlUser {
-		logger.Debug(user, "Initiating master control program")
+		logger.Debug(user, "Granting permissions to control user")
 		return nil, nil
 	}
 
-	return nil, fmt.Errorf("Not authorized")
+	if user.Name == config.ScheduledUser && string(authPayload) == s.sched.authPayload {
+		logger.Debug(user, "Granting permissions to schedule user")
+		return nil, nil
+	}
+
+	return nil, fmt.Errorf("user %s not authorized", user)
 }

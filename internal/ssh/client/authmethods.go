@@ -1,18 +1,26 @@
 package client
 
 import (
+	"os"
+
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/ssh"
-	"os"
 
 	gossh "golang.org/x/crypto/ssh"
 )
 
 // InitSSHAuthMethods initialises all known SSH auth methods on othe client side.
-func InitSSHAuthMethods(trustAllHosts bool, throttleCh chan struct{}) ([]gossh.AuthMethod, *HostKeyCallback) {
-	var sshAuthMethods []gossh.AuthMethod
+func InitSSHAuthMethods(args clients.Args, trustAllHosts bool, throttleCh chan struct{}) ([]gossh.AuthMethod, *HostKeyCallback) {
+	if len(args.SSHAuthMethods) > 0 {
+		hostKeyCallback, err := NewSimpleCallback(trustAllHosts)
+		if err != nil {
+			logger.FatalExit(err)
+		}
+		return args.SSHAuthMethods, hostKeyCallback
+	}
 
+	var sshAuthMethods []gossh.AuthMethod
 	if config.Common.ExperimentalFeaturesEnable {
 		sshAuthMethods = append(sshAuthMethods, gossh.Password("experimental feature test"))
 		logger.Info("Added experimental method to list of auth methods")

@@ -40,7 +40,8 @@ func (c *baseClient) init(maker maker) {
 	logger.Info("Initiating base client")
 
 	c.maker = maker
-	c.sshAuthMethods, c.hostKeyCallback = client.InitSSHAuthMethods(c.TrustAllHosts, c.throttleCh)
+	c.sshAuthMethods, c.hostKeyCallback = client.InitSSHAuthMethods(c.Args, c.throttleCh)
+
 	discoveryService := discovery.New(c.Discovery, c.ServersStr, discovery.Shuffle)
 
 	for _, server := range discoveryService.ServerList() {

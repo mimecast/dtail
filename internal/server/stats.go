@@ -67,7 +67,7 @@ func (s *stats) serverLimitExceeded() error {
 	return nil
 }
 
-func (s *stats) periodicLogServerStats(ctx context.Context) {
+func (s *stats) start(ctx context.Context) {
 	for {
 		select {
 		case <-time.NewTimer(time.Second * 10).C:
