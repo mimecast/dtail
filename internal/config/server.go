@@ -15,12 +15,14 @@ type Permissions struct {
 
 // Scheduled allows to configure scheduled mapreduce jobs.
 type Scheduled struct {
-	Name              string
-	ConnectionsPerCPU int
-	Discovery         string
-	Files             string
-	Query             string
-	Servers           string
+	Name      string
+	Enable    bool
+	Files     string
+	Query     string
+	Outfile   string
+	Discovery string `json:",omitempty"`
+	Servers   string
+	TimeRange [2]int
 }
 
 // ServerConfig represents the server configuration.
