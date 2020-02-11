@@ -75,10 +75,15 @@ func (s *scheduler) runJobs(ctx context.Context) {
 			continue
 		}
 
+		servers := scheduled.Servers
+		if servers == "" {
+			servers = config.Server.SSHBindAddress
+		}
+
 		args := clients.Args{
 			ConnectionsPerCPU: 10,
 			Discovery:         scheduled.Discovery,
-			ServersStr:        scheduled.Servers,
+			ServersStr:        servers,
 			What:              files,
 			Mode:              omode.MapClient,
 			UserName:          config.ScheduledUser,
