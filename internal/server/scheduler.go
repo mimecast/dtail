@@ -40,7 +40,7 @@ func newScheduler() *scheduler {
 func (s *scheduler) start(ctx context.Context) {
 	for {
 		select {
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Minute):
 			s.runJobs(ctx)
 		case <-ctx.Done():
 			return
