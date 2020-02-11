@@ -41,6 +41,11 @@ func (u *User) String() string {
 func (u *User) HasFilePermission(filePath, permissionType string) (hasPermission bool) {
 	logger.Debug(u, filePath, permissionType, "Checking config permissions")
 
+	if u.Name == config.ScheduledUser {
+		// Schedule user has same permissions as dtail process itself.
+		return true
+	}
+
 	cleanPath, err := filepath.EvalSymlinks(filePath)
 	if err != nil {
 		logger.Error(u, filePath, permissionType, "Unable to evaluate symlinks", err)
