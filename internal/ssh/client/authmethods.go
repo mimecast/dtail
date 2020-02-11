@@ -10,16 +10,20 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
-// InitSSHAuthMethods initialises all known SSH auth methods on othe client side.
-func InitSSHAuthMethods(args clients.Args, trustAllHosts bool, throttleCh chan struct{}) ([]gossh.AuthMethod, *HostKeyCallback) {
-	if len(args.SSHAuthMethods) > 0 {
-		hostKeyCallback, err := NewSimpleCallback(trustAllHosts)
+// InitSSHAuthMethods initialises all known SSH auth methods on the client side.
+func InitSSHAuthMethods(sshAuthMethods []gossh.AuthMethod, hostKeyCallback gossh.HostKeyCallback, trustAllHosts bool, throttleCh chan struct{}) ([]gossh.AuthMethod, HostKeyCallback) {
+	if len(sshAuthMethods) > 0 {
+		simpleCallback, err := NewSimpleCallback()
 		if err != nil {
 			logger.FatalExit(err)
 		}
-		return args.SSHAuthMethods, hostKeyCallback
+		return sshAuthMethods, simpleCallback
 	}
 
+	return initKnownHostsAuthMethods(trustAllHosts, throttleCh)
+}
+
+func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{}) ([]gossh.AuthMethod, HostKeyCallback) {
 	var sshAuthMethods []gossh.AuthMethod
 	if config.Common.ExperimentalFeaturesEnable {
 		sshAuthMethods = append(sshAuthMethods, gossh.Password("experimental feature test"))
@@ -44,10 +48,10 @@ func InitSSHAuthMethods(args clients.Args, trustAllHosts bool, throttleCh chan s
 	}
 
 	knownHostsPath := os.Getenv("HOME") + "/.ssh/known_hosts"
-	hostKeyCallback, err := NewHostKeyCallback(knownHostsPath, trustAllHosts, throttleCh)
+	knownHostsCallback, err := NewKnownHostsCallback(knownHostsPath, trustAllHosts, throttleCh)
 	if err != nil {
 		logger.FatalExit(knownHostsPath, err)
 	}
 
-	return sshAuthMethods, hostKeyCallback
+	return sshAuthMethods, knownHostsCallback
 }

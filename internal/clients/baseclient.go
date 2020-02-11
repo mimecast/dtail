@@ -27,7 +27,7 @@ type baseClient struct {
 	// SSH auth methods to use to connect to the remote servers.
 	sshAuthMethods []gossh.AuthMethod
 	// To deal with SSH host keys
-	hostKeyCallback *client.HostKeyCallback
+	hostKeyCallback client.HostKeyCallback
 	// Throttle how fast we initiate SSH connections concurrently
 	throttleCh chan struct{}
 	// Retry connection upon failure?
@@ -40,7 +40,7 @@ func (c *baseClient) init(maker maker) {
 	logger.Info("Initiating base client")
 
 	c.maker = maker
-	c.sshAuthMethods, c.hostKeyCallback = client.InitSSHAuthMethods(c.Args, c.throttleCh)
+	c.sshAuthMethods, c.hostKeyCallback = client.InitSSHAuthMethods(c.Args.SSHAuthMethods, c.Args.SSHHostKeyCallback, c.Args.TrustAllHosts, c.throttleCh)
 
 	discoveryService := discovery.New(c.Discovery, c.ServersStr, discovery.Shuffle)
 
@@ -107,7 +107,7 @@ func (c *baseClient) start(ctx context.Context, active chan struct{}, i int, con
 	}
 }
 
-func (c *baseClient) makeConnection(server string, sshAuthMethods []gossh.AuthMethod, hostKeyCallback *client.HostKeyCallback) *remote.Connection {
+func (c *baseClient) makeConnection(server string, sshAuthMethods []gossh.AuthMethod, hostKeyCallback client.HostKeyCallback) *remote.Connection {
 	conn := remote.NewConnection(server, c.UserName, sshAuthMethods, hostKeyCallback)
 	conn.Handler = c.maker.makeHandler(server)
 	conn.Commands = c.maker.makeCommands()

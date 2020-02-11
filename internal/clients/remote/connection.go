@@ -33,11 +33,11 @@ type Connection struct {
 	// Is it a persistent connection or a one-off?
 	isOneOff bool
 	// To deal with SSH server host keys
-	hostKeyCallback *client.HostKeyCallback
+	hostKeyCallback client.HostKeyCallback
 }
 
 // NewConnection returns a new connection.
-func NewConnection(server string, userName string, authMethods []ssh.AuthMethod, hostKeyCallback *client.HostKeyCallback) *Connection {
+func NewConnection(server string, userName string, authMethods []ssh.AuthMethod, hostKeyCallback client.HostKeyCallback) *Connection {
 	logger.Debug(server, "Creating new connection")
 
 	c := Connection{
