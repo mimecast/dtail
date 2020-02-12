@@ -99,8 +99,11 @@ func (s *scheduler) runJobs(ctx context.Context) {
 			continue
 		}
 
+		jobCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
 		logger.Info(fmt.Sprintf("Starting scheduled job %s", scheduled.Name))
-		status := client.Start(ctx)
+		status := client.Start(jobCtx)
 		logMessage := fmt.Sprintf("Job exited with status %d", status)
 
 		if err := os.Rename(tmpOutfile, outfile); err == nil {
