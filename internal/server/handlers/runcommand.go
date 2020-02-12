@@ -43,31 +43,22 @@ func (r runCommand) start(ctx context.Context, commands []string) {
 		qualifiedPath, err := exec.LookPath(path)
 		if err != nil {
 			logger.Error(r.server.user, err)
-			r.server.sendServerMessage(logger.Warn(r.server.user, "Unable to execute command(s), check server logs"))
-			r.server.sendServerMessage(fmt.Sprintf(".run exitstatus -%d", -1))
+			r.server.sendServerMessage(logger.Error(r.server.user, "Unable to execute command(s), check server logs"))
+			r.server.sendServerMessage(".run exitstatus 255")
 			return
 		}
 
 		if !r.server.user.HasFilePermission(qualifiedPath, "runcommands") {
 			logger.Error(r.server.user, "No permission to execute path", qualifiedPath)
-			r.server.sendServerMessage(logger.Warn(r.server.user, "Unable to execute command(s), check server logs"))
-			r.server.sendServerMessage(fmt.Sprintf(".run exitstatus -%d", -1))
+			r.server.sendServerMessage(logger.Error(r.server.user, "Unable to execute command(s), check server logs"))
+			r.server.sendServerMessage(".run exitstatus 255")
 			return
 		}
 
 		r.run = run.New(qualifiedPath, args)
-		pid, ec, err := r.run.Start(ctx, r.server.lines)
+		pid, ec, _ := r.run.Start(ctx, r.server.lines)
 
-		if err != nil {
-			message := fmt.Sprintf("Unable to execute remote command '%s'", qualifiedPath, args)
-			logger.Error(r.server.user, message, ec, pid, err)
-			r.server.sendServerMessage(logger.Error(message, ec, pid, err))
-			r.server.sendServerMessage(fmt.Sprintf(".run exitstatus -%d", ec))
-			return
-		}
-
-		message := fmt.Sprintf("Remote process '%d' exited with status '%d'", pid, ec)
 		r.server.sendServerMessage(fmt.Sprintf(".run exitstatus %d", ec))
-		r.server.sendServerMessage(logger.Info("run", pid, ec, message))
+		r.server.sendServerMessage(logger.Info(fmt.Sprintf("Process %d exited with status %d", pid, ec)))
 	}
 }

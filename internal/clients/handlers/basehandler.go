@@ -122,7 +122,9 @@ func (h *baseHandler) handleHiddenMessage(message string) {
 			logger.Error("Unable to retrieve exitstatus", message, err)
 			return
 		}
-		h.status = i
 		logger.Debug("Retrieved exitstatus", h.status)
+		if i > h.status {
+			h.status = i
+		}
 	}
 }

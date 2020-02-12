@@ -32,7 +32,7 @@ func (r Run) Start(ctx context.Context, lines chan<- line.Line) (pid int, ec int
 	done := make(chan struct{})
 	defer close(done)
 
-	ec = -1
+	ec = 255
 	pid = -1
 
 	if len(r.args) > 0 {
