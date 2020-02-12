@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
@@ -37,8 +36,8 @@ func (r Run) Start(ctx context.Context, lines chan<- line.Line) (pid int, ec int
 	pid = -1
 
 	if len(r.args) > 0 {
-		logger.Debug(r.commandPath, strings.Join(r.args, " "))
-		r.cmd = exec.CommandContext(ctx, r.commandPath, strings.Join(r.args, " "))
+		logger.Debug(r.commandPath, r.args, " ")
+		r.cmd = exec.CommandContext(ctx, r.commandPath, r.args...)
 	} else {
 		logger.Debug(r.commandPath)
 		r.cmd = exec.CommandContext(ctx, r.commandPath)

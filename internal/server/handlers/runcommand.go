@@ -59,7 +59,7 @@ func (r runCommand) start(ctx context.Context, commands []string) {
 		pid, ec, err := r.run.Start(ctx, r.server.lines)
 
 		if err != nil {
-			message := fmt.Sprintf("Unable to execute remote command '%s'", command)
+			message := fmt.Sprintf("Unable to execute remote command '%s'", qualifiedPath, args)
 			logger.Error(r.server.user, message, ec, pid, err)
 			r.server.sendServerMessage(logger.Error(message, ec, pid, err))
 			r.server.sendServerMessage(fmt.Sprintf(".run exitstatus -%d", ec))
