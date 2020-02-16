@@ -69,7 +69,7 @@ func (r Run) Start(ctx context.Context, lines chan<- line.Line) (pid int, ec int
 		pid = r.cmd.Process.Pid
 		ec = 0
 	}
-	go r.killPgroup(ctx, pid)
+	go r.killPgroup(ctx, done, pid)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -115,7 +115,7 @@ func (r Run) PgroupKilled() <-chan struct{} {
 	return r.pgroupKilled
 }
 
-func (r Run) killPgroup(ctx context.Context, pid int) {
+func (r Run) killPgroup(ctx context.Context, done chan struct{}, pid int) {
 	if pid == -1 {
 		close(r.pgroupKilled)
 		return
@@ -123,7 +123,10 @@ func (r Run) killPgroup(ctx context.Context, pid int) {
 
 	if pgid, err := syscall.Getpgid(pid); err == nil {
 		// Kill process group when done
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-done:
+		}
 		syscall.Kill(-pgid, syscall.SIGKILL)
 		close(r.pgroupKilled)
 	}
