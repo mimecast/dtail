@@ -92,4 +92,8 @@ func (r runCommand) start(ctx context.Context, command string) {
 
 	r.server.sendServerMessage(fmt.Sprintf(".run exitstatus %d", ec))
 	r.server.sendServerMessage(logger.Info(fmt.Sprintf("Process %d exited with status %d", pid, ec)))
+
+	logger.Debug(r.server.user, "Waiting for Pgroup to be killed")
+	<-r.run.PgroupKilled()
+	logger.Debug(r.server.user, "Pgroup killed")
 }

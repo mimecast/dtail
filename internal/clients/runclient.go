@@ -35,6 +35,11 @@ func (c RunClient) makeHandler(server string) handlers.Handler {
 
 func (c RunClient) makeCommands() (commands []string) {
 	// Send "run COMMAND" to server!
+	if c.Timeout > 0 {
+		commands = append(commands, fmt.Sprintf("timeout %d %s %s", c.Timeout, c.Mode.String(), c.What))
+		return
+	}
+
 	commands = append(commands, fmt.Sprintf("%s %s", c.Mode.String(), c.What))
 	return
 }

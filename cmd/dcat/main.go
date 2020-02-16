@@ -9,7 +9,6 @@ import (
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
-	"github.com/mimecast/dtail/internal/pprof"
 	"github.com/mimecast/dtail/internal/user"
 	"github.com/mimecast/dtail/internal/version"
 )
@@ -23,7 +22,6 @@ func main() {
 	var displayVersion bool
 	var files string
 	var noColor bool
-	var pprofEnable bool
 	var serversStr string
 	var silentEnable bool
 	var sshPort int
@@ -34,7 +32,6 @@ func main() {
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
-	flag.BoolVar(&pprofEnable, "pprofEnable", false, "Enable pprof server")
 	flag.BoolVar(&silentEnable, "silent", false, "Reduce output")
 	flag.BoolVar(&trustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.IntVar(&connectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
@@ -58,10 +55,6 @@ func main() {
 	serverEnable := false
 
 	logger.Start(ctx, serverEnable, debugEnable, silentEnable, silentEnable)
-
-	if pprofEnable || config.Common.PProfEnable {
-		pprof.Start()
-	}
 
 	args := clients.Args{
 		ConnectionsPerCPU: connectionsPerCPU,

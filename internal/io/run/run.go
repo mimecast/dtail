@@ -6,6 +6,7 @@ import (
 	"io"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mimecast/dtail/internal/io/line"
@@ -14,16 +15,18 @@ import (
 
 // Run is for execute a command.
 type Run struct {
-	command string
-	args    []string
-	cmd     *exec.Cmd
+	command      string
+	args         []string
+	cmd          *exec.Cmd
+	pgroupKilled chan struct{}
 }
 
 // New returns a new command runner.
 func New(command string, args []string) Run {
 	return Run{
-		command: command,
-		args:    args,
+		command:      command,
+		args:         args,
+		pgroupKilled: make(chan struct{}),
 	}
 }
 
@@ -42,6 +45,8 @@ func (r Run) Start(ctx context.Context, lines chan<- line.Line) (pid int, ec int
 		logger.Debug(r.command)
 		r.cmd = exec.CommandContext(ctx, r.command)
 	}
+	// Create a new process group, so that kill() will only kill this command + pgroup.
+	r.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	stdoutPipe, myErr := r.cmd.StdoutPipe()
 	if err != nil {
@@ -64,6 +69,7 @@ func (r Run) Start(ctx context.Context, lines chan<- line.Line) (pid int, ec int
 		pid = r.cmd.Process.Pid
 		ec = 0
 	}
+	go r.killPgroup(ctx, pid)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -101,5 +107,24 @@ func (r Run) pipeToLines(done chan struct{}, wg *sync.WaitGroup, pid int, reader
 		default:
 		}
 		time.Sleep(time.Millisecond * 10)
+	}
+}
+
+// PgroupKilled identifies whether all subprocesses are killed or not.
+func (r Run) PgroupKilled() <-chan struct{} {
+	return r.pgroupKilled
+}
+
+func (r Run) killPgroup(ctx context.Context, pid int) {
+	if pid == -1 {
+		close(r.pgroupKilled)
+		return
+	}
+
+	if pgid, err := syscall.Getpgid(pid); err == nil {
+		// Kill process group when done
+		<-ctx.Done()
+		syscall.Kill(-pgid, syscall.SIGKILL)
+		close(r.pgroupKilled)
 	}
 }

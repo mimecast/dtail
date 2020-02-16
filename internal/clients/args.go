@@ -16,6 +16,7 @@ type Args struct {
 	TrustAllHosts      bool
 	Discovery          string
 	ConnectionsPerCPU  int
+	Timeout            int
 	SSHAuthMethods     []gossh.AuthMethod
 	SSHHostKeyCallback gossh.HostKeyCallback
 }
