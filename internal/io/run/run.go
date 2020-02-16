@@ -14,16 +14,16 @@ import (
 
 // Run is for execute a command.
 type Run struct {
-	commandPath string
-	args        []string
-	cmd         *exec.Cmd
+	command string
+	args    []string
+	cmd     *exec.Cmd
 }
 
 // New returns a new command runner.
-func New(commandPath string, args []string) Run {
+func New(command string, args []string) Run {
 	return Run{
-		commandPath: commandPath,
-		args:        args,
+		command: command,
+		args:    args,
 	}
 }
 
@@ -36,11 +36,11 @@ func (r Run) Start(ctx context.Context, lines chan<- line.Line) (pid int, ec int
 	pid = -1
 
 	if len(r.args) > 0 {
-		logger.Debug(r.commandPath, r.args, " ")
-		r.cmd = exec.CommandContext(ctx, r.commandPath, r.args...)
+		logger.Debug(r.command, r.args, " ")
+		r.cmd = exec.CommandContext(ctx, r.command, r.args...)
 	} else {
-		logger.Debug(r.commandPath)
-		r.cmd = exec.CommandContext(ctx, r.commandPath)
+		logger.Debug(r.command)
+		r.cmd = exec.CommandContext(ctx, r.command)
 	}
 
 	stdoutPipe, myErr := r.cmd.StdoutPipe()
@@ -60,8 +60,10 @@ func (r Run) Start(ctx context.Context, lines chan<- line.Line) (pid int, ec int
 		return
 	}
 
-	pid = r.cmd.Process.Pid
-	ec = 0
+	if r.cmd.Process != nil {
+		pid = r.cmd.Process.Pid
+		ec = 0
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(2)
