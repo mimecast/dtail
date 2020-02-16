@@ -32,7 +32,7 @@ func (r runCommand) Start(ctx context.Context, argc int, args []string) {
 	}
 
 	command := strings.Join(args[1:], " ")
-	if strings.Contains(command, ";") {
+	if strings.Contains(command, ";") || strings.Contains(command, "\n") {
 		r.startScript(ctx, command)
 		return
 	}

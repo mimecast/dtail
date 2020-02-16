@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"io/ioutil"
 	"os"
 
 	"github.com/mimecast/dtail/internal/clients"
@@ -67,7 +68,7 @@ func main() {
 		ServersStr:        serversStr,
 		Discovery:         discovery,
 		UserName:          userName,
-		What:              command,
+		What:              readCommand(command),
 		TrustAllHosts:     trustAllHosts,
 	}
 
@@ -79,4 +80,17 @@ func main() {
 	status := client.Start(ctx)
 	logger.Flush()
 	os.Exit(status)
+}
+
+func readCommand(command string) string {
+	if _, err := os.Stat(command); os.IsNotExist(err) {
+		return command
+	}
+
+	bytes, err := ioutil.ReadFile(command)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(bytes)
 }
