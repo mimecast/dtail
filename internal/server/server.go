@@ -204,7 +204,7 @@ func (s *Server) backgroundUserCallback(c gossh.ConnMetadata, authPayload []byte
 		return nil, nil
 	}
 
-	if user.Name == config.ScheduledUser && string(authPayload) == s.sched.authPayload {
+	if user.Name == config.ScheduleUser && string(authPayload) == s.sched.authPayload {
 		logger.Debug(user, "Granting permissions to schedule user")
 		return nil, nil
 	}

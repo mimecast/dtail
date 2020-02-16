@@ -86,7 +86,7 @@ func (s *scheduler) runJobs(ctx context.Context) {
 			ServersStr:        servers,
 			What:              files,
 			Mode:              omode.MapClient,
-			UserName:          config.ScheduledUser,
+			UserName:          config.ScheduleUser,
 		}
 		args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(s.authPayload))
 
