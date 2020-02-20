@@ -17,6 +17,7 @@ import (
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/mapr/server"
 	"github.com/mimecast/dtail/internal/omode"
+	"github.com/mimecast/dtail/internal/server/background"
 	user "github.com/mimecast/dtail/internal/user/server"
 	"github.com/mimecast/dtail/internal/version"
 )
@@ -46,6 +47,7 @@ type ServerHandler struct {
 	ctx                 context.Context
 	done                chan struct{}
 	activeReaders       int
+	background          *background.Commands
 }
 
 // NewServerHandler returns the server handler.
@@ -63,6 +65,7 @@ func NewServerHandler(ctx context.Context, user *user.User, catLimiter, tailLimi
 		globalServerWaitFor: globalServerWaitFor,
 		regex:               ".",
 		user:                user,
+		background:          background.NewCommands(),
 	}
 
 	fqdn, err := os.Hostname()
@@ -235,7 +238,11 @@ func (h *ServerHandler) handleControlCommand(argc int, args []string) {
 func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []string) {
 	logger.Debug(h.user, "handleUserCommand", argc, args)
 
-	switch args[0] {
+	splitted := strings.Split(args[0], ":")
+	command := splitted[0]
+	commandFlags := splitted[1:]
+
+	switch command {
 	case "grep", "cat":
 		command := newReadCommand(h, omode.CatClient)
 		h.incrementActiveReaders()
@@ -272,10 +279,24 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 
 	case "run":
 		command := newRunCommand(h)
+
+		if contains(commandFlags, "stop_background") {
+			h.background.Stop(argc, args)
+			return
+		}
+
+		done := make(chan struct{})
+		if contains(commandFlags, "start_background") {
+			commandCtx, cancel := context.WithCancel(ctx)
+			h.background.Add(argc, args, cancel, done)
+			ctx = commandCtx
+		}
+
 		h.incrementActiveReaders()
 		go func() { h.globalServerWaitFor <- struct{}{} }()
 		go func() {
 			command.Start(ctx, argc, args)
+			close(done)
 			<-h.globalServerWaitFor
 			if h.decrementActiveReaders() == 0 {
 				h.shutdown()
@@ -363,7 +384,7 @@ func (h *ServerHandler) shutdown() {
 }
 
 func (h *ServerHandler) incrementActiveReaders() {
-	// TODO: Use atomic counter variable instead, so we can get rid of the mutex
+	// REFACTOR: Use atomic counter variable instead, so we can get rid of the mutex
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
@@ -375,4 +396,13 @@ func (h *ServerHandler) decrementActiveReaders() int {
 
 	h.activeReaders--
 	return h.activeReaders
+}
+
+func contains(haystack []string, needle string) bool {
+	for _, str := range haystack {
+		if str == needle {
+			return true
+		}
+	}
+	return false
 }
