@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -49,11 +50,11 @@ type ServerHandler struct {
 	handlerCtx          context.Context
 	done                chan struct{}
 	activeCommands      int
-	background          *background.Background
+	background          background.Background
 }
 
 // NewServerHandler returns the server handler.
-func NewServerHandler(handlerCtx, serverCtx context.Context, user *user.User, catLimiter, tailLimiter, globalServerWaitFor chan struct{}) (*ServerHandler, <-chan struct{}) {
+func NewServerHandler(handlerCtx, serverCtx context.Context, user *user.User, catLimiter, tailLimiter, globalServerWaitFor chan struct{}, background background.Background) (*ServerHandler, <-chan struct{}) {
 	h := ServerHandler{
 		serverCtx:           serverCtx,
 		handlerCtx:          handlerCtx,
@@ -68,7 +69,7 @@ func NewServerHandler(handlerCtx, serverCtx context.Context, user *user.User, ca
 		globalServerWaitFor: globalServerWaitFor,
 		regex:               ".",
 		user:                user,
-		background:          background.NewBackground(),
+		background:          background,
 	}
 
 	fqdn, err := os.Hostname()
@@ -286,12 +287,14 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 	case "run":
 		// TODO: Refactor this "run" case, move code to runcommand.go
 		command := newRunCommand(h)
+		jobName := fmt.Sprintf("%s%%%s", h.user.Name, hash(strings.Join(args[1:], " ")))
 
-		checksum := sha256.Sum256([]byte(strings.Join(args, " ")))
-		name := fmt.Sprintf("%s.%s", h.user.Name, checksum)
-
-		if contains(flags, "background.stop") {
-			h.background.Stop(name)
+		if contains(flags, "background.cancel") {
+			if err := h.background.Cancel(jobName); err != nil {
+				h.sendServerMessage(logger.Error(h.user, err, jobName, args))
+			} else {
+				h.sendServerMessage(logger.Info(h.user, "job cancelled", jobName))
+			}
 			finished()
 			return
 		}
@@ -299,17 +302,22 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		done := make(chan struct{})
 
 		if contains(flags, "background.start") {
-			commandCtx, cancel := context.WithTimeout(h.serverCtx, time.Hour)
-			if err := h.background.Add(name, cancel, done); err != nil {
-				h.sendServerMessage(logger.Error(h.user, err, args))
+			commandCtx, cancel := context.WithCancel(h.serverCtx)
+			// TODO: For background jobs dont attempt to send data to dtail client as there might be no SSH connection
+			if err := h.background.Add(jobName, cancel, done); err != nil {
+				h.sendServerMessage(logger.Error(h.user, err, jobName, args))
 				finished()
 				return
 			}
 
+			go func() { h.globalServerWaitFor <- struct{}{} }()
 			go func() {
 				command.Start(commandCtx, argc, args)
 				close(done)
+				<-h.globalServerWaitFor
 			}()
+
+			h.sendServerMessage(logger.Info(h.user, jobName, "job started in background"))
 			finished()
 			return
 		}
@@ -426,4 +434,10 @@ func contains(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func hash(str string) string {
+	h := sha256.New()
+	h.Write([]byte(str))
+	return hex.EncodeToString(h.Sum(nil))
 }
