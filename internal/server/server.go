@@ -178,7 +178,7 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 			case config.ControlUser:
 				handler, done = handlers.NewControlHandler(handlerCtx, user)
 			default:
-				handler, done = handlers.NewServerHandler(handlerCtx, user, s.catLimiter, s.tailLimiter, s.shutdownWaitFor)
+				handler, done = handlers.NewServerHandler(handlerCtx, ctx, user, s.catLimiter, s.tailLimiter, s.shutdownWaitFor)
 			}
 
 			go func() {

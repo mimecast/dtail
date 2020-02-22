@@ -2,6 +2,7 @@ package background
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/mimecast/dtail/internal/io/logger"
@@ -23,12 +24,18 @@ func NewBackground() *Background {
 	}
 }
 
-func (b Background) Add(name string, cancel context.CancelFunc, done <-chan struct{}) {
+func (b Background) Add(name string, cancel context.CancelFunc, done <-chan struct{}) error {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
+	if _, ok := b.jobs[name]; ok {
+		return fmt.Errorf("job '%s' already exists", name)
+	}
+
 	logger.Debug("background", name, "adding job")
 	b.jobs[name] = job{cancel, done}
+
+	return nil
 }
 
 func (b Background) get(name string) (job, bool) {
