@@ -5,6 +5,7 @@ import (
 	"flag"
 	"io/ioutil"
 	"os"
+	"strings"
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/color"
@@ -16,15 +17,15 @@ import (
 
 // The evil begins here.
 func main() {
+	var background string
 	var cfgFile string
 	var command string
 	var connectionsPerCPU int
 	var debugEnable bool
 	var discovery string
 	var displayVersion bool
+	var jobName string
 	var noColor bool
-	var background bool
-	var cancel bool
 	var serversStr string
 	var silentEnable bool
 	var sshPort int
@@ -38,14 +39,14 @@ func main() {
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
 	flag.BoolVar(&silentEnable, "silent", false, "Reduce output")
 	flag.BoolVar(&trustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
-	flag.BoolVar(&background, "background", false, "Command starts in background on the server")
-	flag.BoolVar(&cancel, "cancel", false, "Command will be cancelled if it runs in background")
 	flag.IntVar(&connectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
 	flag.IntVar(&timeout, "timeout", 0, "Command execution timeout")
+	flag.StringVar(&background, "background", "", "Can be one of 'start', 'cancel', 'list' or empty")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
 	flag.StringVar(&command, "command", "", "Command to run")
 	flag.StringVar(&discovery, "discovery", "", "Server discovery method")
+	flag.StringVar(&jobName, "name", "", "The job name (if run in background)")
 	flag.StringVar(&serversStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&userName, "user", userName, "Your system user name")
 
@@ -58,22 +59,26 @@ func main() {
 		version.PrintAndExit()
 	}
 
-	ctx := context.Background()
+	// TODO: Change other commands to use TODO contexts too.
+	ctx := context.TODO()
 	serverEnable := false
 
 	logger.Start(ctx, serverEnable, debugEnable, silentEnable, silentEnable)
+
+	command, commandArgs := readCommand(command)
 
 	args := clients.Args{
 		ConnectionsPerCPU: connectionsPerCPU,
 		ServersStr:        serversStr,
 		Discovery:         discovery,
 		UserName:          userName,
-		What:              readCommand(command),
+		What:              command,
+		Arguments:         commandArgs,
 		TrustAllHosts:     trustAllHosts,
 		Timeout:           timeout,
 	}
 
-	client, err := clients.NewRunClient(args, background, cancel)
+	client, err := clients.NewRunClient(args, background, jobName)
 	if err != nil {
 		panic(err)
 	}
@@ -83,15 +88,20 @@ func main() {
 	os.Exit(status)
 }
 
-func readCommand(command string) string {
-	if _, err := os.Stat(command); os.IsNotExist(err) {
-		return command
-	}
+func readCommand(command string) (string, []string) {
+	splitted := strings.Split(command, " ")
 
-	bytes, err := ioutil.ReadFile(command)
+	script := splitted[0]
+	if _, err := os.Stat(script); os.IsNotExist(err) {
+		var commandArgs []string
+		return command, commandArgs
+	}
+	commandArgs := splitted[1:]
+
+	bytes, err := ioutil.ReadFile(script)
 	if err != nil {
 		panic(err)
 	}
 
-	return string(bytes)
+	return string(bytes), commandArgs
 }

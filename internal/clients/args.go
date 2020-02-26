@@ -12,6 +12,7 @@ type Args struct {
 	ServersStr         string
 	UserName           string
 	What               string
+	Arguments          []string
 	Regex              string
 	TrustAllHosts      bool
 	Discovery          string

@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mimecast/dtail/internal/config"
@@ -25,26 +27,39 @@ func newRunCommand(server *ServerHandler) runCommand {
 	}
 }
 
-func (r runCommand) Start(ctx context.Context, argc int, args []string) {
+func (r runCommand) StartBackground(ctx context.Context, wg *sync.WaitGroup, argc int, args, outerArgs []string) error {
 	if argc < 2 {
-		r.server.sendServerMessage(logger.Warn(r.server.user, commandParseWarning, args, argc))
-		return
+		return fmt.Errorf("%s: args:%v argc:%d", commandParseWarning, args, argc)
 	}
+
+	ec := make(chan int, 1)
+	var pid int
+	var err error
 
 	command := strings.Join(args[1:], " ")
 	if strings.Contains(command, ";") || strings.Contains(command, "\n") {
-		r.startScript(ctx, command)
-		return
+		if pid, err = r.startScript(ctx, wg, ec, command, outerArgs); err != nil {
+			r.server.sendServerMessage(".run exitstatus 255")
+			return err
+		}
+		return nil
 	}
 
-	r.start(ctx, strings.TrimSpace(command))
+	if pid, err = r.start(ctx, wg, ec, strings.TrimSpace(command), outerArgs); err != nil {
+		r.server.sendServerMessage(".run exitstatus 255")
+		return err
+	}
+
+	exitCode := <-ec
+	r.server.sendServerMessage(fmt.Sprintf(".run exitstatus %d", exitCode))
+	r.server.sendServerMessage(logger.Info(fmt.Sprintf("Process %d exited with status %d", pid, exitCode)))
+
+	return nil
 }
 
-func (r runCommand) startScript(ctx context.Context, script string) {
+func (r runCommand) startScript(ctx context.Context, wg *sync.WaitGroup, ec chan<- int, script string, outerArgs []string) (int, error) {
 	if _, err := os.Stat(config.Common.TmpDir); os.IsNotExist(err) {
-		logger.Error(r.server.user, err)
-		r.server.sendServerMessage(logger.Error(r.server.user, "Unable to execute command(s), check server logs"))
-		return
+		return -1, err
 	}
 
 	timestamp := time.Now().UnixNano()
@@ -55,45 +70,42 @@ func (r runCommand) startScript(ctx context.Context, script string) {
 
 	script = fmt.Sprintf("#!/bin/sh\n%s", script)
 	if err := ioutil.WriteFile(scriptPath, []byte(script), 0700); err != nil {
-		logger.Error(r.server.user, err)
-		r.server.sendServerMessage(logger.Error(r.server.user, "Unable to execute command(s), check server logs"))
-		return
+		return -1, err
 	}
 
-	r.start(ctx, scriptPath)
-	os.Remove(scriptPath)
+	pid, err := r.start(ctx, wg, ec, scriptPath, outerArgs)
+	go func() {
+		wg.Wait()
+		logger.Debug("Deleting script", scriptPath)
+		os.Remove(scriptPath)
+	}()
+
+	return pid, err
 }
 
-func (r runCommand) start(ctx context.Context, command string) {
+func (r runCommand) start(ctx context.Context, wg *sync.WaitGroup, ec chan<- int, command string, outerArgs []string) (int, error) {
 	if len(command) == 0 {
-		return
+		return -1, errors.New("Empty command provided")
 	}
+
 	splitted := strings.Split(command, " ")
 	path := splitted[0]
 	args := splitted[1:]
+	args = append(args, outerArgs...)
 
 	qualifiedPath, err := exec.LookPath(path)
 	if err != nil {
-		logger.Error(r.server.user, err)
-		r.server.sendServerMessage(logger.Error(r.server.user, "Unable to execute command(s), check server logs"))
-		r.server.sendServerMessage(".run exitstatus 255")
-		return
+		return -1, err
 	}
 
 	if !r.server.user.HasFilePermission(qualifiedPath, "runcommands") {
-		logger.Error(r.server.user, "No permission to execute path", qualifiedPath)
-		r.server.sendServerMessage(logger.Error(r.server.user, "Unable to execute command(s), check server logs"))
-		r.server.sendServerMessage(".run exitstatus 255")
-		return
+		return -1, fmt.Errorf("No permission to execute path: %s", qualifiedPath)
 	}
 
 	r.run = run.New(qualifiedPath, args)
-	pid, ec, _ := r.run.Start(ctx, r.server.lines)
-
-	r.server.sendServerMessage(fmt.Sprintf(".run exitstatus %d", ec))
-	r.server.sendServerMessage(logger.Info(fmt.Sprintf("Process %d exited with status %d", pid, ec)))
-
-	logger.Debug(r.server.user, "Waiting for Pgroup to be killed")
-	<-r.run.PgroupKilled()
-	logger.Debug(r.server.user, "Pgroup killed")
+	pid, err := r.run.StartBackground(ctx, wg, ec, r.server.lines)
+	if err != nil {
+		return pid, err
+	}
+	return pid, nil
 }

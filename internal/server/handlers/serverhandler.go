@@ -2,9 +2,7 @@ package handlers
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -251,7 +249,14 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 
 	splitted := strings.Split(args[0], ":")
 	command := splitted[0]
-	flags := splitted[1:]
+
+	// TODO: Refactor: Create an "options" clase, combine makeOptions and readOptions there.
+	options, err := readOptions(splitted[1:])
+	if err != nil {
+		h.sendServerMessage(logger.Error(h.user, err))
+		finished()
+		return
+	}
 
 	switch command {
 	case "grep", "cat":
@@ -287,10 +292,12 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 	case "run":
 		// TODO: Refactor this "run" case, move code to runcommand.go
 		command := newRunCommand(h)
-		jobName := fmt.Sprintf("%s%%%s", h.user.Name, hash(strings.Join(args[1:], " ")))
 
-		if contains(flags, "background.cancel") {
-			if err := h.background.Cancel(jobName); err != nil {
+		jobName, _ := options["jobName"]
+		logger.Debug(h.user, "run", options)
+
+		if val, ok := options["background"]; ok && val == "cancel" {
+			if err := h.background.Cancel(h.user.Name, jobName); err != nil {
 				h.sendServerMessage(logger.Error(h.user, err, jobName, args))
 			} else {
 				h.sendServerMessage(logger.Info(h.user, "job cancelled", jobName))
@@ -299,36 +306,63 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 			return
 		}
 
-		done := make(chan struct{})
+		if val, ok := options["background"]; ok && val == "list" {
+			h.sendServerMessage("Listing jobs")
+			count := 0
+			for jobName := range h.background.ListJobsC(h.user.Name) {
+				h.sendServerMessage(jobName)
+				count++
+			}
+			h.sendServerMessage(fmt.Sprintf("Found %d jobs", count))
+			finished()
+			return
+		}
 
-		if contains(flags, "background.start") {
+		str, _ := options["outerArgs"]
+		outerArgs := strings.Split(str, " ")
+
+		var background bool
+		if val, ok := options["background"]; ok && val == "start" {
+			background = true
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		if background {
 			commandCtx, cancel := context.WithCancel(h.serverCtx)
+
 			// TODO: For background jobs dont attempt to send data to dtail client as there might be no SSH connection
-			if err := h.background.Add(jobName, cancel, done); err != nil {
+			if err := h.background.Add(h.user.Name, jobName, cancel, &wg); err != nil {
 				h.sendServerMessage(logger.Error(h.user, err, jobName, args))
 				finished()
 				return
 			}
+			ctx = commandCtx
+		}
 
-			go func() { h.globalServerWaitFor <- struct{}{} }()
-			go func() {
-				command.Start(commandCtx, argc, args)
-				close(done)
-				<-h.globalServerWaitFor
-			}()
+		if err := command.StartBackground(ctx, &wg, argc, args, outerArgs); err != nil {
+			h.sendServerMessage(logger.Error(h.user, "Unable to execute command", argc, args, err))
+			finished()
+			return
+		}
 
+		// Make sure that server waits for all sub-processes to finish on shutdown
+		go func() { h.globalServerWaitFor <- struct{}{} }()
+		go func() {
+			wg.Wait()
+			<-h.globalServerWaitFor
+		}()
+
+		if background {
 			h.sendServerMessage(logger.Info(h.user, jobName, "job started in background"))
 			finished()
 			return
 		}
 
-		go func() { h.globalServerWaitFor <- struct{}{} }()
-		go func() {
-			command.Start(ctx, argc, args)
-			close(done)
-			<-h.globalServerWaitFor
-			finished()
-		}()
+		// Command run in foreground, wait for it to complete before finishing the connection.
+		wg.Wait()
+		finished()
 
 	case "ack", ".ack":
 		h.handleAckCommand(argc, args)
@@ -427,17 +461,28 @@ func (h *ServerHandler) decrementActiveCommands() int {
 	return h.activeCommands
 }
 
-func contains(haystack []string, needle string) bool {
-	for _, str := range haystack {
-		if str == needle {
-			return true
-		}
-	}
-	return false
-}
+func readOptions(opts []string) (map[string]string, error) {
+	options := make(map[string]string, len(opts))
 
-func hash(str string) string {
-	h := sha256.New()
-	h.Write([]byte(str))
-	return hex.EncodeToString(h.Sum(nil))
+	for _, o := range opts {
+		kv := strings.SplitN(o, "=", 2)
+		if len(kv) != 2 {
+			return options, fmt.Errorf("Unable to parse options: %v", kv)
+		}
+		key := kv[0]
+		val := kv[1]
+
+		if strings.HasPrefix(val, "base64%") {
+			s := strings.SplitN(val, "%", 2)
+			decoded, err := base64.StdEncoding.DecodeString(s[1])
+			if err != nil {
+				return options, err
+			}
+			val = string(decoded)
+		}
+
+		options[key] = val
+	}
+
+	return options, nil
 }
