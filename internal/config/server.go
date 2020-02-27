@@ -20,9 +20,10 @@ type Scheduled struct {
 	Files     string
 	Query     string
 	Outfile   string
-	Discovery string `json:",omitempty"`
-	Servers   string
+	Discovery string   `json:",omitempty"`
+	Servers   []string `json:",omitempty"`
 	TimeRange [2]int
+	AllowFrom []string `json:",omitempty"`
 }
 
 // ServerConfig represents the server configuration.
