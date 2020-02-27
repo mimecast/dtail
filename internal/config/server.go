@@ -19,7 +19,7 @@ type Scheduled struct {
 	Enable    bool
 	Files     string
 	Query     string
-	Outfile   string
+	Outfile   string   `json:",omitempty"`
 	Discovery string   `json:",omitempty"`
 	Servers   []string `json:",omitempty"`
 	TimeRange [2]int
