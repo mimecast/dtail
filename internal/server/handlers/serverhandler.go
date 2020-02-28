@@ -229,6 +229,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		if err != nil {
 			h.sendServerMessage(err.Error())
 			logger.Error(h.user, err)
+			h.shutdown()
 			return
 		}
 
@@ -334,6 +335,7 @@ func (h *ServerHandler) incrementActiveReaders() {
 	defer h.mutex.Unlock()
 	h.activeReaders++
 }
+
 func (h *ServerHandler) decrementActiveReaders() int {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()

@@ -206,16 +206,16 @@ func (s *Server) backgroundUserCallback(c gossh.ConnMetadata, authPayload []byte
 		return nil, nil
 	}
 
-	if user.Name == config.ScheduledUser && s.canRunScheduledJob(c.RemoteAddr().String(), user, authInfo) {
-		logger.Debug(user, "Schedule user can run scheduled job remotely")
+	if user.Name == config.ScheduleUser && s.schedueleUserCanHaveSSHSession(c.RemoteAddr().String(), user, authInfo) {
+		logger.Debug(user, "Granting SSH connection to schedule user")
 		return nil, nil
 	}
 
 	return nil, fmt.Errorf("user %s not authorized", user)
 }
 
-func (s *Server) canRunScheduledJob(addr string, user *user.User, jobName string) bool {
-	logger.Debug("canRunScheduledJob", user, jobName)
+func (s *Server) schedueleUserCanHaveSSHSession(addr string, user *user.User, jobName string) bool {
+	logger.Debug("schedueleUserCanHaveSSHSession", user, jobName)
 	splitted := strings.Split(addr, ":")
 	ip := splitted[0]
 
@@ -231,7 +231,7 @@ func (s *Server) canRunScheduledJob(addr string, user *user.User, jobName string
 			}
 
 			for _, myIp := range myIps {
-				logger.Debug("canRunScheduledJob", "Comparing IP addresses", ip, myIp.String())
+				logger.Debug("schedueleUserCanHaveSSHSession", "Comparing IP addresses", ip, myIp.String())
 				if ip == myIp.String() {
 					return true
 				}

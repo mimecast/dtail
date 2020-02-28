@@ -3,10 +3,11 @@ package mapr
 import (
 	"errors"
 	"fmt"
-	"github.com/mimecast/dtail/internal/io/logger"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 const (

@@ -15,18 +15,16 @@ type mapCommand struct {
 
 // NewMapCommand returns a new server side mapreduce command.
 func newMapCommand(serverHandler *ServerHandler, argc int, args []string) (mapCommand, *server.Aggregate, error) {
-	mapCommand := mapCommand{
-		server: serverHandler,
-	}
+	m := mapCommand{server: serverHandler}
 
 	queryStr := strings.Join(args[1:], " ")
 	aggregate, err := server.NewAggregate(queryStr)
 	if err != nil {
-		return mapCommand, nil, err
+		return m, nil, err
 	}
 
-	mapCommand.aggregate = aggregate
-	return mapCommand, aggregate, nil
+	m.aggregate = aggregate
+	return m, aggregate, nil
 
 }
 
