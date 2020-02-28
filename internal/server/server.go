@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/mimecast/dtail/internal/config"
@@ -238,16 +239,45 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 
 func (s *Server) backgroundUserCallback(c gossh.ConnMetadata, authPayload []byte) (*gossh.Permissions, error) {
 	user := user.New(c.User(), c.RemoteAddr().String())
+	authInfo := string(authPayload)
 
-	if user.Name == config.ControlUser && string(authPayload) == config.ControlUser {
+	if user.Name == config.ControlUser && authInfo == config.ControlUser {
 		logger.Debug(user, "Granting permissions to control user")
 		return nil, nil
 	}
 
-	if user.Name == config.ScheduleUser && string(authPayload) == s.sched.authPayload {
-		logger.Debug(user, "Granting permissions to schedule user")
+	if user.Name == config.ScheduleUser && s.schedueleUserCanHaveSSHSession(c.RemoteAddr().String(), user, authInfo) {
+		logger.Debug(user, "Granting SSH connection to schedule user")
 		return nil, nil
 	}
 
 	return nil, fmt.Errorf("user %s not authorized", user)
+}
+
+func (s *Server) schedueleUserCanHaveSSHSession(addr string, user *user.User, jobName string) bool {
+	logger.Debug("schedueleUserCanHaveSSHSession", user, jobName)
+	splitted := strings.Split(addr, ":")
+	ip := splitted[0]
+
+	for _, job := range config.Server.Schedule {
+		if job.Name != jobName {
+			continue
+		}
+		for _, myAddr := range job.AllowFrom {
+			myIps, err := net.LookupIP(myAddr)
+			if err != nil {
+				logger.Error(user, myAddr, err)
+				continue
+			}
+
+			for _, myIp := range myIps {
+				logger.Debug("schedueleUserCanHaveSSHSession", "Comparing IP addresses", ip, myIp.String())
+				if ip == myIp.String() {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }

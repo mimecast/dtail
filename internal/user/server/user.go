@@ -79,23 +79,6 @@ func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error)
 	}
 	logger.Info(u, cleanPath, permissionType, "User with OS file system permissions to path")
 
-	// If file system permission is given, also check permissions
-	// as configured in DTail config file.
-	if len(u.permissions) == 0 {
-		p, err := config.ServerUserPermissions(u.Name)
-		if err != nil {
-			return false, err
-		}
-		u.permissions = p
-	}
-
-	var hasPermission bool
-	var err error
-
-	if hasPermission, err = u.iteratePaths(cleanPath, permissionType); err != nil {
-		return false, err
-	}
-
 	// Only allow to follow regular files or symlinks.
 	info, err := os.Lstat(cleanPath)
 	if err != nil {
@@ -106,10 +89,24 @@ func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error)
 		return false, fmt.Errorf("Can only open regular files or follow symlinks")
 	}
 
+	permissions, err := config.ServerUserPermissions(u.Name)
+	if err != nil {
+		return false, err
+	}
+	u.permissions = permissions
+
+	hasPermission, err := u.iteratePaths(cleanPath, permissionType)
+	if err != nil {
+		return false, err
+	}
+
 	return hasPermission, nil
 }
 
 func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
+	// By default assume no permissions
+	hasPermission := false
+
 	for _, permission := range u.permissions {
 		typeStr := "readfiles" // Assume ReadFiles by default.
 
@@ -138,13 +135,15 @@ func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 		}
 
 		if negate && re.MatchString(cleanPath) {
-			return false, fmt.Errorf("Permission test failed, matching negative pattern '%s'", permission)
+			logger.Info(u, cleanPath, "Permission test failed partially, matching negative pattern '%s'", permission)
+			hasPermission = false
 		}
 
 		if !negate && re.MatchString(cleanPath) {
 			logger.Info(u, cleanPath, "Permission test passed partially, matching positive pattern", permission)
+			hasPermission = true
 		}
 	}
 
-	return true, nil
+	return hasPermission, nil
 }

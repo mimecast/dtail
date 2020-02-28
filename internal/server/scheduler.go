@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -21,23 +20,17 @@ const authLength = 64
 const authCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@$%^&*()_+[]"
 
 type scheduler struct {
-	authPayload string
 }
 
 func newScheduler() *scheduler {
-	seededRand := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	b := make([]byte, authLength)
-	for i := range b {
-		b[i] = authCharset[seededRand.Intn(len(authCharset))]
-	}
-
-	return &scheduler{
-		authPayload: string(b),
-	}
+	return &scheduler{}
 }
 
 func (s *scheduler) start(ctx context.Context) {
+	// First run after just 10s!
+	time.Sleep(time.Second * 10)
+	s.runJobs(ctx)
+
 	for {
 		select {
 		case <-time.After(time.Minute):
@@ -75,7 +68,7 @@ func (s *scheduler) runJobs(ctx context.Context) {
 			continue
 		}
 
-		servers := scheduled.Servers
+		servers := strings.Join(scheduled.Servers, ",")
 		if servers == "" {
 			servers = config.Server.SSHBindAddress
 		}
@@ -88,7 +81,8 @@ func (s *scheduler) runJobs(ctx context.Context) {
 			Mode:              omode.MapClient,
 			UserName:          config.ScheduleUser,
 		}
-		args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(s.authPayload))
+
+		args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(scheduled.Name))
 
 		tmpOutfile := fmt.Sprintf("%s.tmp", outfile)
 		query := fmt.Sprintf("%s outfile %s", scheduled.Query, tmpOutfile)
