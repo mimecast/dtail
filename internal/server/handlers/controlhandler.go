@@ -87,6 +87,6 @@ func (h *ControlHandler) handleCommand(ctx context.Context, command string) {
 	case "debug":
 		h.serverMessages <- logger.Debug(h.user, "Receiving debug command", command, s)
 	default:
-		h.serverMessages <- logger.Warn(h.user, "Received unknown command", command, s)
+		h.serverMessages <- logger.Warn(h.user, "Received unknown control command", command, s)
 	}
 }

@@ -233,7 +233,7 @@ func (h *ServerHandler) handleControlCommand(argc int, args []string) {
 	case "debug":
 		h.send(h.serverMessages, logger.Debug(h.user, "Receiving debug command", argc, args))
 	default:
-		logger.Warn(h.user, "Received unknown command", argc, args)
+		logger.Warn(h.user, "Received unknown control command", argc, args)
 	}
 }
 
@@ -248,7 +248,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 	}
 
 	splitted := strings.Split(args[0], ":")
-	command := splitted[0]
+	commandName := splitted[0]
 
 	// TODO: Refactor: Create an "options" clase, combine makeOptions and readOptions there.
 	options, err := readOptions(splitted[1:])
@@ -258,7 +258,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		return
 	}
 
-	switch command {
+	switch commandName {
 	case "grep", "cat":
 		command := newReadCommand(h, omode.CatClient)
 		h.incrementActiveCommands()
@@ -369,7 +369,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		finished()
 
 	default:
-		h.sendServerMessage(logger.Error(h.user, "Received unknown command", argc, args))
+		h.sendServerMessage(logger.Error(h.user, "Received unknown user command", commandName, argc, args, options))
 		finished()
 	}
 }
