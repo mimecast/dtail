@@ -33,6 +33,7 @@ func New() Background {
 // Add a background job.
 func (b Background) Add(userName, jobName string, cancel context.CancelFunc, wg *sync.WaitGroup) error {
 	key := b.key(userName, jobName)
+	logger.Debug("background", "Add", key)
 
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
@@ -54,17 +55,25 @@ func (b Background) Add(userName, jobName string, cancel context.CancelFunc, wg 
 
 // Cancel a background job.
 func (b Background) Cancel(userName, jobName string) error {
-	return b.cancel(b.key(userName, jobName))
+	key := b.key(userName, jobName)
+	logger.Debug("background", "Cancel", key)
+
+	return b.cancel(key)
 }
 
 func (b Background) cancel(key string) error {
 	job, ok := b.get(key)
+	logger.Debug("background", "cancel", key, job, ok)
+
 	if !ok {
 		return errors.New("no job to cancel")
 	}
 
+	logger.Debug("background", "cancel", "run job.cancel()")
 	job.cancel()
+	logger.Debug("background", "cancel", "run job.wg.Wait()")
 	job.wg.Wait()
+	logger.Debug("background", "cancel", "run b.delete(key)")
 	b.delete(key)
 
 	return nil
@@ -72,6 +81,8 @@ func (b Background) cancel(key string) error {
 
 // ListJobsC returns a channel listing all jobs of the given user.
 func (b Background) ListJobsC(userName string) <-chan string {
+	logger.Debug("background", "ListJobC", userName)
+
 	ch := make(chan string)
 
 	go func() {
@@ -92,6 +103,8 @@ func (b Background) ListJobsC(userName string) <-chan string {
 }
 
 func (b Background) get(key string) (job, bool) {
+	logger.Debug("background", "get", key)
+
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
@@ -100,6 +113,8 @@ func (b Background) get(key string) (job, bool) {
 }
 
 func (b Background) delete(key string) {
+	logger.Debug("background", "delete", key)
+
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 

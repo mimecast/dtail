@@ -119,6 +119,8 @@ func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 			permission = strings.Join(splitted[1:], ":")
 		}
 
+		logger.Debug(u, cleanPath, typeStr, permission)
+
 		if typeStr != permissionType {
 			continue
 		}

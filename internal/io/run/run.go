@@ -30,7 +30,7 @@ func New(command string, args []string) Run {
 	}
 }
 
-// Start running the command.
+// StartBackground starts running the command in background.
 func (r Run) StartBackground(ctx context.Context, wg *sync.WaitGroup, ec chan<- int, lines chan<- line.Line) (pid int, err error) {
 	pid = -1
 
@@ -105,22 +105,29 @@ func (r Run) pipeToLines(commandExited chan struct{}, wg *sync.WaitGroup, pid in
 	bufReader := bufio.NewReader(reader)
 
 	for {
+		time.Sleep(time.Millisecond * 10)
 		lineStr, err := bufReader.ReadString('\n')
-		for err == nil {
-			lines <- line.Line{
-				Content:         []byte(lineStr),
-				Count:           uint64(pid),
-				TransmittedPerc: 100,
-				SourceID:        what,
+
+		if err != nil {
+			select {
+			case <-commandExited:
+				return
 			}
-			lineStr, err = bufReader.ReadString('\n')
+			continue
 		}
+
+		newLine := line.Line{
+			Content:         []byte(lineStr),
+			Count:           uint64(pid),
+			TransmittedPerc: 100,
+			SourceID:        what,
+		}
+
 		select {
+		case lines <- newLine:
 		case <-commandExited:
 			return
-		default:
 		}
-		time.Sleep(time.Millisecond * 10)
 	}
 }
 

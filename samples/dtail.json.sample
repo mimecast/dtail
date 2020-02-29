@@ -11,7 +11,7 @@
     "Permissions": {
       "Default": [
         "readfiles:^/.*$",
-        "runcommands:!^/.*$"
+        "runcommands:^/.*$"
       ],
       "Users": {
         "pbuetow": [
@@ -21,7 +21,8 @@
         "jblake": [
           "readfiles:^/tmp/foo.log$",
           "readfiles:^/.*$",
-          "readfiles:!^/tmp/bar.log$"
+          "readfiles:!^/tmp/bar.log$",
+          "runcommands:!^/.*$"
         ]
       }
     }

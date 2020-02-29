@@ -250,7 +250,6 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 	splitted := strings.Split(args[0], ":")
 	command := splitted[0]
 
-	// TODO: Refactor: Create an "options" clase, combine makeOptions and readOptions there.
 	options, err := readOptions(splitted[1:])
 	if err != nil {
 		h.sendServerMessage(logger.Error(h.user, err))
@@ -332,7 +331,6 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		if background {
 			commandCtx, cancel := context.WithCancel(h.serverCtx)
 
-			// TODO: For background jobs dont attempt to send data to dtail client as there might be no SSH connection
 			if err := h.background.Add(h.user.Name, jobName, cancel, &wg); err != nil {
 				h.sendServerMessage(logger.Error(h.user, err, jobName, args))
 				finished()
