@@ -176,11 +176,11 @@ func (h *ServerHandler) handleCommand(ctx context.Context, commandStr string) {
 			<-commandCtx.Done()
 			cancel()
 		}()
-		h.handleUserCommand(commandCtx, argc, args)
+		h.handleUserCommand(commandCtx, argc, args, timeout)
 		return
 	}
 
-	h.handleUserCommand(ctx, argc, args)
+	h.handleUserCommand(ctx, argc, args, timeout)
 }
 
 func (h *ServerHandler) handleProtocolVersion(args []string) ([]string, int, error) {
@@ -237,7 +237,7 @@ func (h *ServerHandler) handleControlCommand(argc int, args []string) {
 	}
 }
 
-func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []string) {
+func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []string, timeout time.Duration) {
 	logger.Debug(h.user, "handleUserCommand", argc, args)
 
 	h.incrementActiveCommands()
@@ -296,7 +296,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		jobName, _ := options["jobName"]
 		logger.Debug(h.user, "run", options)
 
-		if val, ok := options["background"]; ok && val == "cancel" {
+		if val, ok := options["background"]; ok && (val == "cancel" || val == "stop") {
 			if err := h.background.Cancel(h.user.Name, jobName); err != nil {
 				h.sendServerMessage(logger.Error(h.user, err, jobName, args))
 			} else {
@@ -330,7 +330,13 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		wg.Add(1)
 
 		if background {
-			commandCtx, cancel := context.WithCancel(h.serverCtx)
+			if timeout == 0 {
+				// Set default background timeout.
+				timeout = time.Hour * 1
+			}
+			// Use a new context based on the server context, so that background job does not get
+			// terminated when handler/SSH connection terminates.
+			commandCtx, cancel := context.WithTimeout(h.serverCtx, timeout)
 
 			// TODO: For background jobs dont attempt to send data to dtail client as there might be no SSH connection
 			if err := h.background.Add(h.user.Name, jobName, cancel, &wg); err != nil {
