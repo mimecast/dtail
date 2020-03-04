@@ -27,6 +27,7 @@ func main() {
 	var serversStr string
 	var silentEnable bool
 	var sshPort int
+	var timeout int
 	var trustAllHosts bool
 
 	userName := user.Name()
@@ -38,6 +39,7 @@ func main() {
 	flag.BoolVar(&trustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.IntVar(&connectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
+	flag.IntVar(&timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
 	flag.StringVar(&discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&files, "files", "", "File(s) to read")
@@ -67,6 +69,7 @@ func main() {
 		What:              files,
 		TrustAllHosts:     trustAllHosts,
 		Mode:              omode.MapClient,
+		Timeout:           timeout,
 	}
 
 	client, err := clients.NewMaprClient(args, queryStr)

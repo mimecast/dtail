@@ -38,5 +38,6 @@ func (c TailClient) makeCommands() (commands []string) {
 	for _, file := range strings.Split(c.What, ",") {
 		commands = append(commands, fmt.Sprintf("%s %s regex %s", c.Mode.String(), file, c.Regex))
 	}
+
 	return
 }

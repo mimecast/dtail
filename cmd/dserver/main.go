@@ -3,6 +3,10 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"net/http"
+	_ "net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -22,6 +26,7 @@ func main() {
 	var debugEnable bool
 	var displayVersion bool
 	var noColor bool
+	var pprof int
 	var shutdownAfter int
 	var sshPort int
 
@@ -32,6 +37,7 @@ func main() {
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Automatically shutdown after so many seconds")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
+	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
 
 	flag.Parse()
@@ -64,6 +70,13 @@ func main() {
 	silentEnable := false
 	nothingEnable := false
 	logger.Start(ctx, serverEnable, debugEnable, silentEnable, nothingEnable)
+
+	if pprof > -1 {
+		// For debugging purposes only
+		pprofArgs := fmt.Sprintf("0.0.0.0:%d", pprof)
+		logger.Info("Starting PProf", pprofArgs)
+		go http.ListenAndServe(pprofArgs, nil)
+	}
 
 	serv := server.New()
 	status := serv.Start(ctx)

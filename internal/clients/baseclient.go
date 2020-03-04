@@ -123,7 +123,7 @@ func (c *baseClient) waitUntilDone(ctx context.Context, active chan struct{}) {
 	// Put it back on the channel
 	active <- struct{}{}
 
-	if c.Mode == omode.TailClient {
+	if c.Mode == omode.TailClient && c.retry {
 		<-ctx.Done()
 	}
 

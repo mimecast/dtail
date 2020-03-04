@@ -53,8 +53,6 @@ func (c RunClient) makeCommands() (commands []string) {
 	}
 
 	commands = append(commands, fmt.Sprintf("run%s %s", c.options(), c.What))
-	logger.Debug(commands)
-
 	return
 }
 

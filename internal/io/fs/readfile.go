@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"regexp"
@@ -39,6 +40,16 @@ type readFile struct {
 	limiter chan struct{}
 }
 
+// String returns the string representation of the readFile
+func (f readFile) String() string {
+	return fmt.Sprintf("readFile(filePath:%s,globID:%s,retry:%v,canSkipLines:%v,seekEOF:%v)",
+		f.filePath,
+		f.globID,
+		f.retry,
+		f.canSkipLines,
+		f.seekEOF)
+}
+
 // FilePath returns the full file path.
 func (f readFile) FilePath() string {
 	return f.filePath
@@ -51,6 +62,7 @@ func (f readFile) Retry() bool {
 
 // Start tailing a log file.
 func (f readFile) Start(ctx context.Context, lines chan<- line.Line, regex string) error {
+	logger.Debug("readFile", f)
 	defer func() {
 		select {
 		case <-f.limiter:

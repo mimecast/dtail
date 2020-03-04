@@ -24,7 +24,7 @@ type MaprClient struct {
 	// The query object (constructed from queryStr)
 	query *mapr.Query
 	// Additative result or new result every run?
-	additative bool
+	cumulative bool
 }
 
 // NewMaprClient returns a new mapreduce client.
@@ -33,22 +33,27 @@ func NewMaprClient(args Args, queryStr string) (*MaprClient, error) {
 		return nil, errors.New("No mapreduce query specified, use '-query' flag")
 	}
 
+	query, err := mapr.NewQuery(queryStr)
+	if err != nil {
+		logger.FatalExit(queryStr, "Can't parse mapr query", err)
+	}
+
+	// Don't retry connection if in tail mode and no outfile specified.
+	retry := args.Mode == omode.TailClient && query.Outfile == ""
+
+	// Result is comulative if we are in MapClient mode or with outfile
+	cumulative := args.Mode == omode.MapClient || query.Outfile != ""
+
 	c := MaprClient{
 		baseClient: baseClient{
 			Args:       args,
 			throttleCh: make(chan struct{}, args.ConnectionsPerCPU*runtime.NumCPU()),
-			retry:      args.Mode == omode.TailClient,
+			retry:      retry,
 		},
+		query:      query,
 		queryStr:   queryStr,
-		additative: args.Mode == omode.MapClient,
+		cumulative: cumulative,
 	}
-
-	query, err := mapr.NewQuery(c.queryStr)
-	if err != nil {
-		logger.FatalExit(c.queryStr, "Can't parse mapr query", err)
-	}
-
-	c.query = query
 
 	switch c.query.Table {
 	case "*":
@@ -73,7 +78,7 @@ func (c *MaprClient) Start(ctx context.Context) (status int) {
 	}
 
 	status = c.baseClient.Start(ctx)
-	if c.additative {
+	if c.cumulative {
 		c.recievedFinalResult()
 	}
 
@@ -87,12 +92,16 @@ func (c MaprClient) makeHandler(server string) handlers.Handler {
 func (c MaprClient) makeCommands() (commands []string) {
 	commands = append(commands, fmt.Sprintf("map %s", c.query.RawQuery))
 
-	modeStr := "tail"
-	if c.additative {
-		modeStr = "cat"
+	modeStr := "cat"
+	if c.Mode == omode.TailClient {
+		modeStr = "tail"
 	}
 
 	for _, file := range strings.Split(c.What, ",") {
+		if c.Timeout > 0 {
+			commands = append(commands, fmt.Sprintf("timeout %d %s %s regex %s", c.Timeout, modeStr, file, c.Regex))
+			continue
+		}
 		commands = append(commands, fmt.Sprintf("%s %s regex %s", modeStr, file, c.Regex))
 	}
 
@@ -133,7 +142,7 @@ func (c *MaprClient) printResults() {
 	var err error
 	var numLines int
 
-	if c.additative {
+	if c.cumulative {
 		result, numLines, err = c.globalGroup.Result(c.query)
 	} else {
 		result, numLines, err = c.globalGroup.SwapOut().Result(c.query)
