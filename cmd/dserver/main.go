@@ -51,7 +51,6 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if shutdownAfter > 0 {
-		logger.Info("Enabling auto shutdown timer", shutdownAfter)
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(shutdownAfter)*time.Second)
 	}
 
@@ -66,10 +65,7 @@ func main() {
 		}
 	}()
 
-	serverEnable := true
-	silentEnable := false
-	nothingEnable := false
-	logger.Start(ctx, serverEnable, debugEnable, silentEnable, nothingEnable)
+	logger.Start(ctx, logger.Modes{Server: true, Debug: debugEnable})
 
 	if pprof > -1 {
 		// For debugging purposes only

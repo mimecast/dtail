@@ -23,7 +23,7 @@ func main() {
 	var files string
 	var noColor bool
 	var serversStr string
-	var silentEnable bool
+	var quietEnable bool
 	var sshPort int
 	var trustAllHosts bool
 
@@ -32,7 +32,7 @@ func main() {
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
-	flag.BoolVar(&silentEnable, "silent", false, "Reduce output")
+	flag.BoolVar(&quietEnable, "quiet", false, "Reduce output")
 	flag.BoolVar(&trustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.IntVar(&connectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
@@ -51,10 +51,8 @@ func main() {
 		version.PrintAndExit()
 	}
 
-	ctx := context.Background()
-	serverEnable := false
-
-	logger.Start(ctx, serverEnable, debugEnable, silentEnable, silentEnable)
+	ctx := context.TODO()
+	logger.Start(ctx, logger.Modes{Debug: debugEnable, Quiet: quietEnable})
 
 	args := clients.Args{
 		ConnectionsPerCPU: connectionsPerCPU,

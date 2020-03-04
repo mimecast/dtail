@@ -27,16 +27,22 @@ const (
 	traceStr  string = "TRACE"
 )
 
+// The configured logging mode(s)
+var mode Modes
+
+// Strategy is the current log strattegy used.
+var strategy Strategy
+
 // Synchronise access to logging.
 var mutex sync.Mutex
 
-// File descriptor of log file when logToFile enabled.
+// File descriptor of log file when mode.logToFile enabled.
 var fd *os.File
 
-// File write buffer of log file when logToFile enabled.
+// File write buffer of log file when mode.logToFile enabled.
 var writer *bufio.Writer
 
-// File write buffer of stdout when logToStdout enabled.
+// File write buffer of stdout when mode.logToStdout enabled.
 var stdoutWriter *bufio.Writer
 
 // Current hostname.
@@ -44,9 +50,6 @@ var hostname string
 
 // Used to detect change of day (create one log file per day0
 var lastDateStr string
-
-// True if log in server mode, false if log in client mode.
-var serverEnable bool
 
 // Used to make logging non-blocking.
 var fileLogBufCh chan buf
@@ -59,40 +62,6 @@ var resumeCh chan struct{}
 // Tell the logger about logrotation
 var rotateCh chan os.Signal
 
-// LogMode allows to specify the verbosity of logging.
-type LogMode int
-
-// Possible log modes.
-const (
-	NormalMode  LogMode = iota
-	DebugMode   LogMode = iota
-	SilentMode  LogMode = iota
-	TraceMode   LogMode = iota
-	NothingMode LogMode = iota
-)
-
-// Mode is the current log mode in use.
-var Mode LogMode
-
-// LogStrategy allows to specify a log rotation strategy.
-type LogStrategy int
-
-// Possible log strategies.
-const (
-	NormalStrategy LogStrategy = iota
-	DailyStrategy  LogStrategy = iota
-	StdoutStrategy LogStrategy = iota
-)
-
-// Strategy is the current log strattegy used.
-var Strategy LogStrategy
-
-// Enables logging to stdout.
-var logToStdout bool
-
-// Enables logging to file.
-var logToFile bool
-
 // Helper type to make logging non-blocking.
 type buf struct {
 	time    time.Time
@@ -100,30 +69,30 @@ type buf struct {
 }
 
 // Start logging.
-func Start(ctx context.Context, myServerEnable, debugEnable, silentEnable, nothingEnable bool) {
-	serverEnable = myServerEnable
+func Start(ctx context.Context, myMode Modes) {
+	mode = myMode
 
-	mode := logMode(debugEnable, silentEnable, nothingEnable)
-	strategy := logStrategy()
-
-	stdoutWriter = bufio.NewWriter(os.Stdout)
-	Mode = mode
-	Strategy = strategy
-
-	if Mode == NothingMode {
+	if mode.Nothing {
 		return
 	}
 
-	switch Strategy {
+	if mode.Trace {
+		mode.Debug = true
+	}
+
+	strategy := logStrategy()
+	stdoutWriter = bufio.NewWriter(os.Stdout)
+
+	switch strategy {
 	case DailyStrategy:
 		_, err := os.Stat(config.Common.LogDir)
-		logToFile = !os.IsNotExist(err)
-		logToStdout = !serverEnable || Mode == DebugMode || Mode == TraceMode
+		mode.logToFile = !os.IsNotExist(err)
+		mode.logToStdout = !mode.Server || mode.Debug || mode.Trace
 	case StdoutStrategy:
 		fallthrough
 	default:
-		logToFile = !serverEnable
-		logToStdout = true
+		mode.logToFile = !mode.Server
+		mode.logToStdout = true
 	}
 
 	fqdn, err := os.Hostname()
@@ -140,46 +109,20 @@ func Start(ctx context.Context, myServerEnable, debugEnable, silentEnable, nothi
 	rotateCh = make(chan os.Signal, 1)
 	signal.Notify(rotateCh, syscall.SIGHUP)
 
-	if logToStdout {
+	if mode.logToStdout {
 		stdoutBufCh = make(chan string, runtime.NumCPU()*100)
 		go writeToStdout(ctx)
 	}
 
-	if logToFile {
+	if mode.logToFile {
 		fileLogBufCh = make(chan buf, runtime.NumCPU()*100)
 		go writeToFile(ctx)
 	}
 }
 
-func logMode(debugEnable, silentEnable, nothingEnable bool) LogMode {
-	switch {
-	case debugEnable:
-		return DebugMode
-	case nothingEnable:
-		return NothingMode
-	case config.Common.TraceEnable:
-		return TraceMode
-	case config.Common.DebugEnable:
-		return DebugMode
-	case silentEnable:
-		return SilentMode
-	default:
-	}
-	return NormalMode
-}
-
-func logStrategy() LogStrategy {
-	switch config.Common.LogStrategy {
-	case "daily":
-		return DailyStrategy
-	default:
-	}
-	return StdoutStrategy
-}
-
 // Info message logging.
 func Info(args ...interface{}) string {
-	if serverEnable {
+	if mode.Server {
 		return log(serverStr, infoStr, args)
 	}
 
@@ -188,7 +131,7 @@ func Info(args ...interface{}) string {
 
 // Warn message logging.
 func Warn(args ...interface{}) string {
-	if serverEnable {
+	if mode.Server {
 		return log(serverStr, warnStr, args)
 	}
 
@@ -197,7 +140,7 @@ func Warn(args ...interface{}) string {
 
 // Error message logging.
 func Error(args ...interface{}) string {
-	if serverEnable {
+	if mode.Server {
 		return log(serverStr, errorStr, args)
 	}
 
@@ -207,7 +150,7 @@ func Error(args ...interface{}) string {
 // FatalExit logs an error and exists the process.
 func FatalExit(args ...interface{}) {
 	what := clientStr
-	if serverEnable {
+	if mode.Server {
 		what = serverStr
 	}
 	log(what, fatalStr, args)
@@ -222,8 +165,8 @@ func FatalExit(args ...interface{}) {
 
 // Debug message logging.
 func Debug(args ...interface{}) string {
-	if Mode == DebugMode || Mode == TraceMode {
-		if serverEnable {
+	if mode.Debug {
+		if mode.Server {
 			return log(serverStr, debugStr, args)
 		}
 		return log(clientStr, debugStr, args)
@@ -234,8 +177,8 @@ func Debug(args ...interface{}) string {
 
 // Trace message logging.
 func Trace(args ...interface{}) string {
-	if Mode == TraceMode {
-		if serverEnable {
+	if mode.Trace {
+		if mode.Server {
 			return log(serverStr, traceStr, args)
 		}
 		return log(clientStr, traceStr, args)
@@ -246,7 +189,7 @@ func Trace(args ...interface{}) string {
 
 // Write log line to buffer and/or log file.
 func write(what, severity, message string) {
-	if logToStdout && (Mode != SilentMode || severity != warnStr) {
+	if mode.logToStdout {
 		line := fmt.Sprintf("%s|%s|%s|%s\n", what, hostname, severity, message)
 
 		if color.Colored {
@@ -256,7 +199,7 @@ func write(what, severity, message string) {
 		stdoutBufCh <- line
 	}
 
-	if logToFile {
+	if mode.logToFile {
 		t := time.Now()
 		timeStr := t.Format("20060102-150405")
 		fileLogBufCh <- buf{
@@ -268,11 +211,14 @@ func write(what, severity, message string) {
 
 // Generig log message.
 func log(what string, severity string, args []interface{}) string {
-	if Mode == NothingMode {
+	if mode.Nothing {
+		return ""
+	}
+	if mode.Quiet && severity != errorStr && severity != fatalStr {
 		return ""
 	}
 
-	var messages []string
+	messages := []string{severity}
 
 	for _, arg := range args {
 		switch v := arg.(type) {
@@ -290,20 +236,20 @@ func log(what string, severity string, args []interface{}) string {
 	message := strings.Join(messages, "|")
 	write(what, severity, message)
 
-	return fmt.Sprintf("%s|%s", severity, message)
+	return message
 }
 
 // Raw message logging.
 func Raw(message string) {
-	if Mode == NothingMode {
+	if mode.Nothing {
 		return
 	}
 
-	if logToFile {
+	if mode.logToFile {
 		fileLogBufCh <- buf{time.Now(), message}
 	}
 
-	if logToStdout {
+	if mode.logToStdout {
 		if color.Colored {
 			message = color.Colorfy(message)
 		}
@@ -426,20 +372,20 @@ func writeToFile(ctx context.Context) {
 
 // Pause logging.
 func Pause() {
-	if logToStdout {
+	if mode.logToStdout {
 		pauseCh <- struct{}{}
 	}
-	if logToFile {
+	if mode.logToFile {
 		pauseCh <- struct{}{}
 	}
 }
 
 // Resume logging (after pausing).
 func Resume() {
-	if logToStdout {
+	if mode.logToStdout {
 		resumeCh <- struct{}{}
 	}
-	if logToFile {
+	if mode.logToFile {
 		resumeCh <- struct{}{}
 	}
 }

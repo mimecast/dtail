@@ -84,16 +84,6 @@ func (h *baseHandler) handleMessageType(message string) {
 		return
 	}
 
-	// Silent mode will only print out remote logs but not remote server
-	// commands. But remote server commands will be still logged to ./log/.
-	if logger.Mode == logger.SilentMode {
-		if h.receiveBuf[0] == 'R' {
-			logger.Raw(message)
-		}
-		h.receiveBuf = h.receiveBuf[:0]
-		return
-	}
-
 	logger.Raw(message)
 	h.receiveBuf = h.receiveBuf[:0]
 }
