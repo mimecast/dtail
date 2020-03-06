@@ -18,12 +18,6 @@ type CommonConfig struct {
 	LogDir string
 	// The cache directory
 	CacheDir string
-	// Do we want to enable pperf http server?
-	PProfEnable bool `json:",omitempty"`
-	// The HTTP port used by PProf
-	PProfPort int `json:",omitempty"`
-	// The PProf HTTP server bind address
-	PProfBindAddress string `json:",omitempty"`
 }
 
 // Create a new default configuration.
@@ -35,8 +29,5 @@ func newDefaultCommonConfig() *CommonConfig {
 		ExperimentalFeaturesEnable: false,
 		LogDir:                     "log",
 		CacheDir:                   "cache",
-		PProfEnable:                false,
-		PProfPort:                  6060,
-		PProfBindAddress:           "0.0.0.0",
 	}
 }

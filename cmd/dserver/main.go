@@ -9,7 +9,6 @@ import (
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
-	"github.com/mimecast/dtail/internal/pprof"
 	"github.com/mimecast/dtail/internal/server"
 	"github.com/mimecast/dtail/internal/user"
 	"github.com/mimecast/dtail/internal/version"
@@ -21,7 +20,6 @@ func main() {
 	var debugEnable bool
 	var displayVersion bool
 	var noColor bool
-	var pprofEnable bool
 	var shutdownAfter int
 	var sshPort int
 
@@ -30,7 +28,6 @@ func main() {
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
-	flag.BoolVar(&pprofEnable, "pprofEnable", false, "Enable pprof server")
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Automatically shutdown after so many seconds")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
@@ -62,10 +59,6 @@ func main() {
 			case <-ctx.Done():
 			}
 		}()
-	}
-
-	if pprofEnable || config.Common.PProfEnable {
-		pprof.Start()
 	}
 
 	serv := server.New()

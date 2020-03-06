@@ -32,9 +32,6 @@
     "LogStrategy": "stdout",
     "SSHPort": 2222,
     "DebugEnable": false,
-    "PPerfEnable": false,
-    "PPerfPort": 6060,
-    "PPerfBindAddress": "0.0.0.0",
     "ExperimentalFeaturesEnable": false
   }
 }
