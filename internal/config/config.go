@@ -9,8 +9,8 @@ import (
 // ControlUser is used for various DTail specific operations.
 const ControlUser string = "DTAIL-CONTROL-USER"
 
-// ScheduledUser is used for scheduled queries.
-const ScheduleUser string = "DTAIL-SCHEDULED-USER"
+// ScheduleUser is used for scheduled queries.
+const ScheduleUser string = "DTAIL-SCHEDULE-USER"
 
 // Client holds a DTail client configuration.
 var Client *ClientConfig

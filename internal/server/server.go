@@ -224,15 +224,15 @@ func (s *Server) schedueleUserCanHaveSSHSession(addr string, user *user.User, jo
 			continue
 		}
 		for _, myAddr := range job.AllowFrom {
-			myIps, err := net.LookupIP(myAddr)
+			myIPs, err := net.LookupIP(myAddr)
 			if err != nil {
 				logger.Error(user, myAddr, err)
 				continue
 			}
 
-			for _, myIp := range myIps {
-				logger.Debug("schedueleUserCanHaveSSHSession", "Comparing IP addresses", ip, myIp.String())
-				if ip == myIp.String() {
+			for _, myIP := range myIPs {
+				logger.Debug("schedueleUserCanHaveSSHSession", "Comparing IP addresses", ip, myIP.String())
+				if ip == myIP.String() {
 					return true
 				}
 			}
