@@ -10,9 +10,12 @@ type CommonConfig struct {
 	//   stdout: only log to stdout (useful when used with systemd)
 	//   daily: create a log file for every day
 	LogStrategy string
-	LogDir      string
-	CacheDir    string
-	TmpDir      string `json:",omitempty"`
+	// The log directory
+	LogDir string
+	// The cache directory
+	CacheDir string
+	// The temp directory
+	TmpDir string `json:",omitempty"`
 }
 
 // Create a new default configuration.
