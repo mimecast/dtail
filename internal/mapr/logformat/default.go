@@ -10,6 +10,9 @@ func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 	fields := make(map[string]string, 20)
 	splitted := strings.Split(maprLine, "|")
 
+	fields["*"] = "*"
+	fields["$line"] = maprLine
+	fields["$empty"] = ""
 	fields["$hostname"] = p.hostname
 
 	for _, kv := range splitted {

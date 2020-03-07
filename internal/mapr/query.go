@@ -148,9 +148,12 @@ func (q *Query) parse(tokens []token) error {
 		}
 	}
 
-	if q.Table == "" {
-		return errors.New(invalidQuery + "Empty table specified in 'from' clause")
-	}
+	// Comment out for empty table support, which is "all" log lines.
+	/*
+		if q.Table == "" {
+			return errors.New(invalidQuery + "Empty table specified in 'from' clause")
+		}
+	*/
 	if len(q.Select) < 1 {
 		return errors.New(invalidQuery + "Expected at least one field in 'select' clause but got none")
 	}

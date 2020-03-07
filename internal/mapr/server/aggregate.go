@@ -44,8 +44,13 @@ func NewAggregate(queryStr string) (*Aggregate, error) {
 	}
 	s := strings.Split(fqdn, ".")
 
-	logger.Info("Creating mapr log format parser", config.Server.MapreduceLogFormat)
-	logParser, err := logformat.NewParser(config.Server.MapreduceLogFormat)
+	parserName := config.Server.MapreduceLogFormat
+	if query.Table == "" {
+		parserName = "generic"
+	}
+
+	logger.Info("Creating mapr log format parser", parserName)
+	logParser, err := logformat.NewParser(parserName)
 	if err != nil {
 		logger.FatalExit("Could not create mapr log format parser", err)
 	}

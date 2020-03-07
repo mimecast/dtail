@@ -3,10 +3,11 @@ package logformat
 import (
 	"errors"
 	"fmt"
-	"github.com/mimecast/dtail/internal/io/logger"
 	"os"
 	"reflect"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // Parser is used to parse the mapreduce information from the server log files.
