@@ -27,7 +27,7 @@ const (
 	traceStr  string = "TRACE"
 )
 
-// The configured logging mode(s)
+// Mode specifies the configured logging mode(s)
 var Mode Modes
 
 // Strategy is the current log strattegy used.

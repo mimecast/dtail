@@ -112,6 +112,7 @@ func (r Run) pipeToLines(commandExited chan struct{}, wg *sync.WaitGroup, pid in
 			select {
 			case <-commandExited:
 				return
+			default:
 			}
 			continue
 		}

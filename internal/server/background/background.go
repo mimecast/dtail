@@ -91,7 +91,7 @@ func (b Background) ListJobsC(userName string) <-chan string {
 		b.mutex.Lock()
 		defer b.mutex.Unlock()
 
-		for k, _ := range b.jobs {
+		for k := range b.jobs {
 			logger.Debug("ListJobsC", k, userName)
 			if strings.HasPrefix(k, fmt.Sprintf("%s.", userName)) {
 				ch <- k

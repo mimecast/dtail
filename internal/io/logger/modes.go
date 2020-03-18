@@ -1,5 +1,6 @@
 package logger
 
+// Modes specifies the logging mode.
 type Modes struct {
 	Server      bool
 	Trace       bool

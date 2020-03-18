@@ -2,7 +2,7 @@ package logger
 
 import "github.com/mimecast/dtail/internal/config"
 
-// strategy allows to specify a log rotation strategy.
+// Strategy allows to specify a log rotation strategy.
 type Strategy int
 
 // Possible log strategies.
