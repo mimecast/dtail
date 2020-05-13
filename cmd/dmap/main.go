@@ -57,7 +57,7 @@ func main() {
 	}
 
 	ctx := context.TODO()
-	logger.Start(ctx, logger.Modes{Debug: debugEnable, Quiet: quietEnable})
+	logger.Start(ctx, logger.Modes{Debug: debugEnable || config.Common.DebugEnable, Quiet: quietEnable})
 
 	args := clients.Args{
 		ConnectionsPerCPU: connectionsPerCPU,

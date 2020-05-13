@@ -14,7 +14,7 @@ import (
 )
 
 // PublicKeyCallback is for the server to check whether a public SSH key is authorized ot not.
-func PublicKeyCallback(c gossh.ConnMetadata, pubKey gossh.PublicKey) (*gossh.Permissions, error) {
+func PublicKeyCallback(c gossh.ConnMetadata, offeredPubKey gossh.PublicKey) (*gossh.Permissions, error) {
 	user := user.New(c.User(), c.RemoteAddr().String())
 	logger.Info(user, "Incoming authorization")
 
@@ -41,22 +41,25 @@ func PublicKeyCallback(c gossh.ConnMetadata, pubKey gossh.PublicKey) (*gossh.Per
 
 	authorizedKeysMap := map[string]bool{}
 	for len(authorizedKeysBytes) > 0 {
-		pubKey, _, _, rest, err := gossh.ParseAuthorizedKey(authorizedKeysBytes)
+		authorizedPubKey, _, _, restBytes, err := gossh.ParseAuthorizedKey(authorizedKeysBytes)
 		if err != nil {
 			return nil, fmt.Errorf("Unable to parse authorized keys bytes|%s|%s", user, err.Error())
 		}
-		authorizedKeysMap[string(pubKey.Marshal())] = true
-		authorizedKeysBytes = rest
+		authorizedKeysMap[string(authorizedPubKey.Marshal())] = true
+		authorizedKeysBytes = restBytes
+
+		logger.Debug(user, "Authorized public key fingerprint", gossh.FingerprintSHA256(authorizedPubKey))
 	}
 
-	if authorizedKeysMap[string(pubKey.Marshal())] {
-		logger.Debug("Public key fingerprint", gossh.FingerprintSHA256(pubKey), user)
+	logger.Debug(user, "Offered public key fingerprint", gossh.FingerprintSHA256(offeredPubKey))
+
+	if authorizedKeysMap[string(offeredPubKey.Marshal())] {
 		return &gossh.Permissions{
 			Extensions: map[string]string{
-				"pubkey-fp": gossh.FingerprintSHA256(pubKey),
+				"pubkey-fp": gossh.FingerprintSHA256(offeredPubKey),
 			},
 		}, nil
 	}
 
-	return nil, fmt.Errorf("Unknown public key|%s", user)
+	return nil, fmt.Errorf("%s|Public key of user not authorized", user)
 }

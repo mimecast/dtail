@@ -65,7 +65,7 @@ func main() {
 		}
 	}()
 
-	logger.Start(ctx, logger.Modes{Server: true, Debug: debugEnable})
+	logger.Start(ctx, logger.Modes{Server: true, Debug: debugEnable || config.Common.DebugEnable})
 
 	if pprof > -1 {
 		// For debugging purposes only
