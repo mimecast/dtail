@@ -27,24 +27,24 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{}) ([]
 	var sshAuthMethods []gossh.AuthMethod
 	if config.Common.ExperimentalFeaturesEnable {
 		sshAuthMethods = append(sshAuthMethods, gossh.Password("experimental feature test"))
-		logger.Info("Added experimental method to list of auth methods")
+		logger.Debug("Added experimental method to list of auth methods")
 	}
 
 	keyPath := os.Getenv("HOME") + "/.ssh/id_rsa"
 	if authMethod, err := ssh.PrivateKey(keyPath); err == nil {
 		sshAuthMethods = append(sshAuthMethods, authMethod)
-		logger.Info("Added path to list of auth methods", keyPath)
+		logger.Debug("Added path to list of auth methods", keyPath)
 	}
 
 	keyPath = os.Getenv("HOME") + "/.ssh/id_dsa"
 	if authMethod, err := ssh.PrivateKey(keyPath); err == nil {
 		sshAuthMethods = append(sshAuthMethods, authMethod)
-		logger.Info("Added path to list of auth methods", keyPath)
+		logger.Debug("Added path to list of auth methods", keyPath)
 	}
 
 	if authMethod, err := ssh.Agent(); err == nil {
 		sshAuthMethods = append(sshAuthMethods, authMethod)
-		logger.Info("Added SSH Agent to list of auth methods")
+		logger.Debug("Added SSH Agent to list of auth methods")
 	}
 
 	knownHostsPath := os.Getenv("HOME") + "/.ssh/known_hosts"
@@ -52,6 +52,7 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{}) ([]
 	if err != nil {
 		logger.FatalExit(knownHostsPath, err)
 	}
+	logger.Debug("Added known hosts file path", knownHostsPath)
 
 	return sshAuthMethods, knownHostsCallback
 }
