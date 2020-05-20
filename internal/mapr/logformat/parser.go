@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/mimecast/dtail/internal/io/logger"
 )
@@ -16,6 +17,8 @@ type Parser struct {
 	logFormatName      string
 	makeFieldsFunc     reflect.Value
 	makeFieldsReceiver reflect.Value
+	timeZoneName       string
+	timeZoneOffset     string
 }
 
 // NewParser returns a new log parser.
@@ -26,8 +29,13 @@ func NewParser(logFormatName string) (*Parser, error) {
 		return nil, err
 	}
 
+	now := time.Now()
+	zone, offset := now.Zone()
+
 	p := Parser{
-		hostname: hostname,
+		hostname:       hostname,
+		timeZoneName:   zone,
+		timeZoneOffset: fmt.Sprintf("%d", offset),
 	}
 
 	err = p.reflectLogFormat(logFormatName)

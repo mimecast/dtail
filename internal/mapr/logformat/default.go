@@ -14,6 +14,8 @@ func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 	fields["$line"] = maprLine
 	fields["$empty"] = ""
 	fields["$hostname"] = p.hostname
+	fields["$timezone"] = p.timeZoneName
+	fields["$timeoffset"] = p.timeZoneOffset
 
 	for _, kv := range splitted {
 		keyAndValue := strings.SplitN(kv, "=", 2)

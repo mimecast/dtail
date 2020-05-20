@@ -8,6 +8,8 @@ func (p *Parser) MakeFieldsGENERIC(maprLine string) (map[string]string, error) {
 	fields["$hostname"] = p.hostname
 	fields["$line"] = maprLine
 	fields["$empty"] = ""
+	fields["$timezone"] = p.timeZoneName
+	fields["$timeoffset"] = p.timeZoneOffset
 
 	return fields, nil
 }
