@@ -51,7 +51,11 @@ SERVER|serv-001|INFO|Binding server|0.0.0.0:2222
 
 Make sure that your public SSH key is listed in ``~/.ssh/authorized_keys`` on all server machines involved. The private SSH key counterpart should preferably stay on your Laptop or workstation in ``~/.ssh/id_rsa`` or ``~/.ssh/id_dsa``.
 
-DTail relies on SSH for secure authentication and communication. The clients (all client binaries such as ``dtail``, ``dgrep`` and so on...) communicate with an auth backend via the SSH auth socket. The SSH auth socket is configured via the environment variable ``SSH_AUTH_SOCK`` which usually points to ``~/.ssh/ssh_auth_socket`` or similar (depending on your configuration it may also point to other auth backends such as GPG Agent, in which case ``SSH_AUTH_SOCK`` would point to ``~/.gnupg/S.gpg-agent.ssh`` or similar).
+DTail relies on SSH for secure authentication and communication. You can either use a SSH Agent or a private SSH key file directly. 
+
+### SSH Agent
+
+The clients (all client binaries such as ``dtail``, ``dgrep`` and so on...) communicate with an auth backend via the SSH auth socket. The SSH auth socket is configured via the environment variable ``SSH_AUTH_SOCK`` which usually points to ``~/.ssh/ssh_auth_socket`` or similar (depending on your configuration it may also point to other auth backends such as GPG Agent, in which case ``SSH_AUTH_SOCK`` would point to ``~/.gnupg/S.gpg-agent.ssh`` or similar).
 
 Usually you would use the SSH Auth Agent. For this the private SSH key has to be registered at the SSH Agent:
 
@@ -71,6 +75,10 @@ workstation01 ~ %
 ```
 
 Please consult the OpenSSH documentation of your distribution if the test above does not work for you.
+
+### SSH Private Key file
+
+As an alternative to using a SSH Agent a SSH private key file can be used directly. Just add the argument ``--key ~/.ssh/id_rsa`` (pointing to your private key) to the DTail client. This currently does not work with password protected keys. Use the SSH Agent method instead in case your key comes with a password (recommended).
 
 ## Run DTail client
 
