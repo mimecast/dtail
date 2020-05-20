@@ -31,6 +31,7 @@ func main() {
 	var sshPort int
 	var timeout int
 	var trustAllHosts bool
+	var privateKeyPathFile string
 
 	userName := user.Name()
 
@@ -49,6 +50,7 @@ func main() {
 	flag.StringVar(&jobName, "name", "", "The job name (if run in background)")
 	flag.StringVar(&serversStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&userName, "user", userName, "Your system user name")
+	flag.StringVar(&privateKeyPathFile, "key", "", "Path to private key")
 
 	flag.Parse()
 
@@ -64,14 +66,15 @@ func main() {
 
 	command, commandArgs := readCommand(command)
 	args := clients.Args{
-		ConnectionsPerCPU: connectionsPerCPU,
-		ServersStr:        serversStr,
-		Discovery:         discovery,
-		UserName:          userName,
-		What:              command,
-		Arguments:         commandArgs,
-		TrustAllHosts:     trustAllHosts,
-		Timeout:           timeout,
+		ConnectionsPerCPU:  connectionsPerCPU,
+		ServersStr:         serversStr,
+		Discovery:          discovery,
+		UserName:           userName,
+		What:               command,
+		Arguments:          commandArgs,
+		TrustAllHosts:      trustAllHosts,
+		Timeout:            timeout,
+		PrivateKeyPathFile: privateKeyPathFile,
 	}
 
 	client, err := clients.NewRunClient(args, background, jobName)

@@ -20,4 +20,5 @@ type Args struct {
 	Timeout            int
 	SSHAuthMethods     []gossh.AuthMethod
 	SSHHostKeyCallback gossh.HostKeyCallback
+	PrivateKeyPathFile string
 }

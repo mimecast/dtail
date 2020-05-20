@@ -29,6 +29,7 @@ func main() {
 	var sshPort int
 	var timeout int
 	var trustAllHosts bool
+	var privateKeyPathFile string
 
 	userName := user.Name()
 
@@ -46,6 +47,7 @@ func main() {
 	flag.StringVar(&queryStr, "query", "", "Map reduce query")
 	flag.StringVar(&serversStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&userName, "user", userName, "Your system user name")
+	flag.StringVar(&privateKeyPathFile, "key", "", "Path to private key")
 
 	flag.Parse()
 
@@ -60,14 +62,15 @@ func main() {
 	logger.Start(ctx, logger.Modes{Debug: debugEnable || config.Common.DebugEnable, Quiet: quietEnable})
 
 	args := clients.Args{
-		ConnectionsPerCPU: connectionsPerCPU,
-		ServersStr:        serversStr,
-		Discovery:         discovery,
-		UserName:          userName,
-		What:              files,
-		TrustAllHosts:     trustAllHosts,
-		Mode:              omode.MapClient,
-		Timeout:           timeout,
+		ConnectionsPerCPU:  connectionsPerCPU,
+		ServersStr:         serversStr,
+		Discovery:          discovery,
+		UserName:           userName,
+		What:               files,
+		TrustAllHosts:      trustAllHosts,
+		Mode:               omode.MapClient,
+		Timeout:            timeout,
+		PrivateKeyPathFile: privateKeyPathFile,
 	}
 
 	client, err := clients.NewMaprClient(args, queryStr)

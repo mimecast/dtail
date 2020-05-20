@@ -36,6 +36,7 @@ func main() {
 	var sshPort int
 	var timeout int
 	var trustAllHosts bool
+	var privateKeyPathFile string
 
 	userName := user.Name()
 
@@ -56,6 +57,7 @@ func main() {
 	flag.StringVar(&regex, "regex", ".", "Regular expression")
 	flag.StringVar(&serversStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&userName, "user", userName, "Your system user name")
+	flag.StringVar(&privateKeyPathFile, "key", "", "Path to private key")
 
 	flag.Parse()
 
@@ -83,15 +85,16 @@ func main() {
 	}
 
 	args := clients.Args{
-		ConnectionsPerCPU: connectionsPerCPU,
-		ServersStr:        serversStr,
-		Discovery:         discovery,
-		UserName:          userName,
-		What:              files,
-		TrustAllHosts:     trustAllHosts,
-		Regex:             regex,
-		Mode:              omode.TailClient,
-		Timeout:           timeout,
+		ConnectionsPerCPU:  connectionsPerCPU,
+		ServersStr:         serversStr,
+		Discovery:          discovery,
+		UserName:           userName,
+		What:               files,
+		TrustAllHosts:      trustAllHosts,
+		Regex:              regex,
+		Mode:               omode.TailClient,
+		Timeout:            timeout,
+		PrivateKeyPathFile: privateKeyPathFile,
 	}
 
 	var client clients.Client

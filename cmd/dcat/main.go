@@ -26,6 +26,7 @@ func main() {
 	var quietEnable bool
 	var sshPort int
 	var trustAllHosts bool
+	var privateKeyPathFile string
 
 	userName := user.Name()
 
@@ -41,6 +42,7 @@ func main() {
 	flag.StringVar(&files, "files", "", "File(s) to read")
 	flag.StringVar(&serversStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&userName, "user", userName, "Your system user name")
+	flag.StringVar(&privateKeyPathFile, "key", "", "Path to private key")
 
 	flag.Parse()
 
@@ -55,12 +57,13 @@ func main() {
 	logger.Start(ctx, logger.Modes{Debug: debugEnable || config.Common.DebugEnable, Quiet: quietEnable})
 
 	args := clients.Args{
-		ConnectionsPerCPU: connectionsPerCPU,
-		ServersStr:        serversStr,
-		Discovery:         discovery,
-		UserName:          userName,
-		What:              files,
-		TrustAllHosts:     trustAllHosts,
+		ConnectionsPerCPU:  connectionsPerCPU,
+		ServersStr:         serversStr,
+		Discovery:          discovery,
+		UserName:           userName,
+		What:               files,
+		TrustAllHosts:      trustAllHosts,
+		PrivateKeyPathFile: privateKeyPathFile,
 	}
 
 	client, err := clients.NewCatClient(args)
