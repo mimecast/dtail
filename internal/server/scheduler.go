@@ -16,9 +16,6 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
-const authLength = 64
-const authCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@$%^&*()_+[]"
-
 type scheduler struct {
 }
 
@@ -79,7 +76,7 @@ func (s *scheduler) runJobs(ctx context.Context) {
 			ServersStr:        servers,
 			What:              files,
 			Mode:              omode.MapClient,
-			UserName:          config.ScheduleUser,
+			UserName:          config.BackgroundUser,
 		}
 
 		args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(scheduled.Name))
@@ -110,21 +107,4 @@ func (s *scheduler) runJobs(ctx context.Context) {
 		}
 		logger.Info(logMessage)
 	}
-}
-
-func fillDates(str string) string {
-	yyyesterday := time.Now().Add(3 * -24 * time.Hour).Format("20060102")
-	str = strings.ReplaceAll(str, "$yyyesterday", yyyesterday)
-
-	yyesterday := time.Now().Add(2 * -24 * time.Hour).Format("20060102")
-	str = strings.ReplaceAll(str, "$yyesterday", yyesterday)
-
-	yesterday := time.Now().Add(1 * -24 * time.Hour).Format("20060102")
-	str = strings.ReplaceAll(str, "$yesterday", yesterday)
-
-	today := time.Now().Format("20060102")
-	str = strings.ReplaceAll(str, "$today", today)
-
-	tomorrow := time.Now().Add(1 * 24 * time.Hour).Format("20060102")
-	return strings.ReplaceAll(str, "$tomorrow", tomorrow)
 }

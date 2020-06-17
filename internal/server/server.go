@@ -32,6 +32,8 @@ type Server struct {
 	tailLimiter chan struct{}
 	// To run scheduled tasks (if configured)
 	sched *scheduler
+	// Mointor log files for pattern (if configured)
+	mon *monitoring
 	// Wait counter, e.g. there might be still subprocesses (forked by drun) to be killed.
 	shutdownWaitFor chan struct{}
 	// Background jobs
@@ -48,6 +50,7 @@ func New() *Server {
 		tailLimiter:     make(chan struct{}, config.Server.MaxConcurrentTails),
 		shutdownWaitFor: make(chan struct{}, 1000),
 		sched:           newScheduler(),
+		mon:             newMonitoring(),
 		background:      background.New(),
 	}
 
@@ -77,6 +80,7 @@ func (s *Server) Start(ctx context.Context) int {
 
 	go s.stats.start(ctx)
 	go s.sched.start(ctx)
+	go s.mon.start(ctx)
 	go s.listenerLoop(ctx, listener)
 
 	select {
@@ -246,16 +250,16 @@ func (s *Server) backgroundUserCallback(c gossh.ConnMetadata, authPayload []byte
 		return nil, nil
 	}
 
-	if user.Name == config.ScheduleUser && s.schedueleUserCanHaveSSHSession(c.RemoteAddr().String(), user, authInfo) {
-		logger.Debug(user, "Granting SSH connection to schedule user")
+	if user.Name == config.BackgroundUser && s.backgroundJobUserCanHaveSSHSession(c.RemoteAddr().String(), user, authInfo) {
+		logger.Debug(user, "Granting SSH connection to background user")
 		return nil, nil
 	}
 
 	return nil, fmt.Errorf("user %s not authorized", user)
 }
 
-func (s *Server) schedueleUserCanHaveSSHSession(addr string, user *user.User, jobName string) bool {
-	logger.Debug("schedueleUserCanHaveSSHSession", user, jobName)
+func (s *Server) backgroundJobUserCanHaveSSHSession(addr string, user *user.User, jobName string) bool {
+	logger.Debug("backgroundJobUserCanHaveSSHSession", user, jobName)
 	splitted := strings.Split(addr, ":")
 	ip := splitted[0]
 
@@ -271,7 +275,7 @@ func (s *Server) schedueleUserCanHaveSSHSession(addr string, user *user.User, jo
 			}
 
 			for _, myIP := range myIPs {
-				logger.Debug("schedueleUserCanHaveSSHSession", "Comparing IP addresses", ip, myIP.String())
+				logger.Debug("backgroundJobUserCanHaveSSHSession", "Comparing IP addresses", ip, myIP.String())
 				if ip == myIP.String() {
 					return true
 				}

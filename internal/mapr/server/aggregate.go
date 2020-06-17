@@ -192,6 +192,12 @@ func (a *Aggregate) aggregate(group *mapr.GroupSet, fields map[string]string) {
 	var addedSample bool
 	for _, sc := range a.query.Select {
 		if val, ok := fields[sc.Field]; ok {
+			/*
+				if sc.Field == "$line" {
+					// Complete log line as to arrive untouched on the client side.
+					val = base64.StdEncoding.EncodeToString([]byte(val))
+				}
+			*/
 			if err := set.Aggregate(sc.FieldStorage, sc.Operation, val, false); err != nil {
 				logger.Error(err)
 				continue

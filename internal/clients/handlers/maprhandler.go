@@ -63,7 +63,7 @@ func (h *MaprHandler) handleAggregateMessage(message string) {
 
 	// Index 0 contains 'AGGREGATE', 1 contains server host.
 	// Aggregation data begins from index 2.
-	logger.Debug("Received aggregate data", h.server, h.count)
+	logger.Debug("Received aggregate data", h.server, h.count, parts)
 	h.aggregate.Aggregate(parts[2:])
 	logger.Debug("Aggregated aggregate data", h.server, h.count)
 }

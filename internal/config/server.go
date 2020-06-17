@@ -26,6 +26,19 @@ type Scheduled struct {
 	AllowFrom []string `json:",omitempty"`
 }
 
+// Monitoring on log files.
+type Monitoring struct {
+	Name           string
+	Enable         bool
+	Files          string
+	Query          string
+	ExcludeRegexes []string `json:",omitempty"`
+	Outfile        string   `json:",omitempty"`
+	Discovery      string   `json:",omitempty"`
+	Servers        []string `json:",omitempty"`
+	AllowFrom      []string `json:",omitempty"`
+}
+
 // ServerConfig represents the server configuration.
 type ServerConfig struct {
 	// The SSH server bind port.
@@ -46,6 +59,8 @@ type ServerConfig struct {
 	HostKeyBits int
 	// Scheduled mapreduce jobs.
 	Schedule []Scheduled `json:",omitempty"`
+	// Monitoring on log files.
+	Monitoring []Monitoring `json:",omitempty"`
 }
 
 // Create a new default server configuration.

@@ -2,9 +2,12 @@ package mapr
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // AggregateSet represents aggregated key/value pairs from the
@@ -82,6 +85,15 @@ func (s *AggregateSet) Serialize(ctx context.Context, groupKey string, ch chan<-
 	for k, v := range s.SValues {
 		sb.WriteString(k)
 		sb.WriteString("=")
+		if k == "$line" {
+			decoded, err := base64.StdEncoding.DecodeString(v)
+			if err != nil {
+				logger.Error("Unable to decode $line", err, v)
+			}
+			sb.WriteString(string(decoded))
+			sb.WriteString("|")
+			continue
+		}
 		sb.WriteString(v)
 		sb.WriteString("|")
 	}

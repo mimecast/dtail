@@ -41,8 +41,8 @@ func (u *User) String() string {
 func (u *User) HasFilePermission(filePath, permissionType string) (hasPermission bool) {
 	logger.Debug(u, filePath, permissionType, "Checking config permissions")
 
-	if u.Name == config.ScheduleUser {
-		// Schedule user has same permissions as dtail process itself.
+	if u.Name == config.BackgroundUser {
+		// Background user has same permissions as dtail process itself.
 		return true
 	}
 
