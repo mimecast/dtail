@@ -15,7 +15,7 @@ const (
 	// Additional information for DTail
 	Additional string = "develop"
 	// ProtocolCompat -ibility version.
-	ProtocolCompat string = "3"
+	ProtocolCompat string = "2"
 )
 
 // String representation of the DTail version.
