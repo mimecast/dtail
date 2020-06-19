@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/2019-09/schema",
+  "description": "Schema for dtail.json",
+  "type": "object",
+  "properties": {
+    "Client": {
+      "properties": {},
+      "additionalProperties": false
+    },
+    "Server": {
+      "properties": {
+        "Schedule": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "Name": {
+                "type": "string"
+              },
+              "Enable": {
+                "type": "boolean"
+              },
+              "TimeRange": {
+                "type": "array",
+                "items": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "Files": {
+                "type": "string"
+              },
+              "Outfile": {
+                "type": "string"
+              },
+              "Query": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "HostKeyFile": {
+          "type": "string"
+        },
+        "HostKeyBits": {
+          "type": "integer",
+          "minimum": 2048
+        },
+        "MapreduceLogFormat": {
+          "type": "string"
+        },
+        "SSHBindAddress": {
+          "type": "string"
+        },
+        "MaxConcurrentCats": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "MaxConcurrentTails": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "MaxConnections": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "Permissions": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "additionalProperties": false
+    },
+    "Common": {
+      "properties": {
+        "LogDir": {
+          "type": "string"
+        },
+        "CacheDir": {
+          "type": "string"
+        },
+        "TmpDir": {
+          "type": "string"
+        },
+        "LogStrategy": {
+          "type": "string"
+        },
+        "SSHPort": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 16000
+        },
+        "DebugEnable": {
+          "type": "boolean"
+        },
+        "ExperimentalFeaturesEnable": {
+          "type": "boolean"
+        },
+        "TraceEnable": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "Client",
+    "Server",
+    "Common"
+  ]
+}
