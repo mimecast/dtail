@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // AggregateSet represents aggregated key/value pairs from the
@@ -86,11 +84,7 @@ func (s *AggregateSet) Serialize(ctx context.Context, groupKey string, ch chan<-
 		sb.WriteString(k)
 		sb.WriteString("=")
 		if k == "$line" {
-			decoded, err := base64.StdEncoding.DecodeString(v)
-			if err != nil {
-				logger.Error("Unable to decode $line", err, v)
-			}
-			sb.WriteString(string(decoded))
+			sb.WriteString(base64.StdEncoding.EncodeToString([]byte(v)))
 			sb.WriteString("|")
 			continue
 		}

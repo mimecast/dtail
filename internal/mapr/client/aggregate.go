@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/base64"
 	"strconv"
 	"strings"
 
@@ -35,7 +36,7 @@ func (a *Aggregate) Aggregate(parts []string) {
 	groupKey := parts[0]
 	samples, err := strconv.Atoi(parts[1])
 	if err != nil {
-		logger.FatalExit(parts, err)
+		logger.FatalExit("Unable to parse sample count", parts[1], err, parts)
 	}
 	fields := a.makeFields(parts[2:])
 	set := a.group.GetSet(groupKey)
@@ -72,6 +73,15 @@ func (a *Aggregate) makeFields(parts []string) map[string]string {
 	for _, part := range parts {
 		kv := strings.Split(part, "=")
 		if len(kv) != 2 {
+			continue
+		}
+		if kv[0] == "$line" {
+			decoded, err := base64.StdEncoding.DecodeString(kv[1])
+			if err != nil {
+				logger.Error("Unable to decode $line", kv[1], err)
+				continue
+			}
+			fields[kv[0]] = string(decoded)
 			continue
 		}
 		fields[kv[0]] = kv[1]
