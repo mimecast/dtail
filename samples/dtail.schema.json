@@ -43,7 +43,7 @@
             }
           }
         },
-        "Monitor": {
+        "Continuous": {
           "type": "array",
           "items": {
             "type": "object",
@@ -52,6 +52,9 @@
                 "type": "string"
               },
               "Enable": {
+                "type": "boolean"
+              },
+              "RestartOnDayChange": {
                 "type": "boolean"
               },
               "Files": {

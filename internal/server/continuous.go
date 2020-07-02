@@ -16,14 +16,14 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
-type scheduler struct {
+type continuous struct {
 }
 
-func newScheduler() *scheduler {
-	return &scheduler{}
+func newContinuous() *continuous {
+	return &continuous{}
 }
 
-func (s *scheduler) start(ctx context.Context) {
+func (s *continuous) start(ctx context.Context) {
 	// First run after just 10s!
 	time.Sleep(time.Second * 10)
 	s.runJobs(ctx)
@@ -38,7 +38,7 @@ func (s *scheduler) start(ctx context.Context) {
 	}
 }
 
-func (s *scheduler) runJobs(ctx context.Context) {
+func (s *continuous) runJobs(ctx context.Context) {
 	for _, job := range config.Server.Schedule {
 		if !job.Enable {
 			logger.Debug(job.Name, "Not running job as not enabled")
