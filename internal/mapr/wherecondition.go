@@ -18,6 +18,7 @@ const (
 	StringEq            QueryOperation = iota
 	StringNe            QueryOperation = iota
 	StringContains      QueryOperation = iota
+	StringNotContains   QueryOperation = iota
 	FloatOperation      QueryOperation = iota
 	FloatEq             QueryOperation = iota
 	FloatNe             QueryOperation = iota
@@ -99,6 +100,8 @@ func makeWhereConditions(tokens []token) (where []whereCondition, err error) {
 			wc.Operation = StringNe
 		case "contains":
 			wc.Operation = StringContains
+		case "lacks":
+			wc.Operation = StringNotContains
 		default:
 			return wc, nil, errors.New(invalidQuery + "Unknown operation in 'where' clause: " + whereOp)
 		}
@@ -187,6 +190,8 @@ func (wc *whereCondition) stringClause(lValue string, rValue string) bool {
 		return lValue != rValue
 	case StringContains:
 		return strings.Contains(lValue, rValue)
+	case StringNotContains:
+		return !strings.Contains(lValue, rValue)
 	default:
 		logger.Error("Unknown string operation", lValue, wc.Operation, rValue)
 	}

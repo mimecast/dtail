@@ -43,6 +43,29 @@
             }
           }
         },
+        "Monitor": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "Name": {
+                "type": "string"
+              },
+              "Enable": {
+                "type": "boolean"
+              },
+              "Files": {
+                "type": "string"
+              },
+              "Outfile": {
+                "type": "string"
+              },
+              "Query": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "HostKeyFile": {
           "type": "string"
         },
