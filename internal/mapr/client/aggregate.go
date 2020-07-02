@@ -71,8 +71,8 @@ func (a *Aggregate) makeFields(parts []string) map[string]string {
 	fields := make(map[string]string, len(parts))
 
 	for _, part := range parts {
-		kv := strings.Split(part, "=")
-		if len(kv) != 2 {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) < 2 {
 			continue
 		}
 		if kv[0] == "$line" {

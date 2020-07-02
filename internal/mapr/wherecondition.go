@@ -3,9 +3,10 @@ package mapr
 import (
 	"errors"
 	"fmt"
-	"github.com/mimecast/dtail/internal/io/logger"
 	"strconv"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // QueryOperation determines the mapreduce operation.
