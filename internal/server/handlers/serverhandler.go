@@ -101,7 +101,7 @@ func (h *ServerHandler) Read(p []byte) (n int, err error) {
 
 		case message := <-h.aggregatedMessages:
 			// Send mapreduce-aggregated data as a message.
-			data := fmt.Sprintf("AGGREGATE|%s|%s\n", h.hostname, message)
+			data := fmt.Sprintf("AGGREGATE➔%s➔%s\n", h.hostname, message)
 			wholePayload := []byte(data)
 			n = copy(p, wholePayload)
 			return
@@ -192,7 +192,7 @@ func (h *ServerHandler) handleProtocolVersion(args []string) ([]string, int, err
 	}
 
 	if args[1] != version.ProtocolCompat {
-		err := fmt.Errorf("server with protool version '%s' but client with '%s', please update DTail", version.ProtocolCompat, args[1])
+		err := fmt.Errorf("server with protocol version '%s' but client with '%s', please update DTail", version.ProtocolCompat, args[1])
 		return args, argc, err
 	}
 

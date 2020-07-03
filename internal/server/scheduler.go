@@ -24,6 +24,7 @@ func newScheduler() *scheduler {
 }
 
 func (s *scheduler) start(ctx context.Context) {
+	logger.Info("Starting scheduled job runner after 10s")
 	// First run after just 10s!
 	time.Sleep(time.Second * 10)
 	s.runJobs(ctx)
@@ -47,7 +48,7 @@ func (s *scheduler) runJobs(ctx context.Context) {
 
 		hour, err := strconv.Atoi(time.Now().Format("15"))
 		if err != nil {
-			logger.Error(job.Name, "Unable to create job job", err)
+			logger.Error(job.Name, "Unable to create job", err)
 			continue
 		}
 
@@ -76,30 +77,24 @@ func (s *scheduler) runJobs(ctx context.Context) {
 			ServersStr:        servers,
 			What:              files,
 			Mode:              omode.MapClient,
-			UserName:          config.BackgroundUser,
+			UserName:          config.ScheduleUser,
 		}
 
 		args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(job.Name))
 
-		tmpOutfile := fmt.Sprintf("%s.tmp", outfile)
-		query := fmt.Sprintf("%s outfile %s", job.Query, tmpOutfile)
-
+		query := fmt.Sprintf("%s outfile %s", job.Query, outfile)
 		client, err := clients.NewMaprClient(args, query, clients.CumulativeMode)
 		if err != nil {
-			logger.Error(fmt.Sprintf("Unable to create job job %s", job.Name), err)
+			logger.Error(fmt.Sprintf("Unable to create job %s", job.Name), err)
 			continue
 		}
 
 		jobCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
-		logger.Info(fmt.Sprintf("Starting job job %s", job.Name))
+		logger.Info(fmt.Sprintf("Starting job %s", job.Name))
 		status := client.Start(jobCtx)
 		logMessage := fmt.Sprintf("Job exited with status %d", status)
-
-		if err := os.Rename(tmpOutfile, outfile); err == nil {
-			logger.Info(job.Name, fmt.Sprintf("Renamed %s to %s", tmpOutfile, outfile))
-		}
 
 		if status != 0 {
 			logger.Warn(logMessage)

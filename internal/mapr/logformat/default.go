@@ -24,5 +24,6 @@ func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 		}
 		fields[strings.ToLower(keyAndValue[0])] = keyAndValue[1]
 	}
+
 	return fields, nil
 }

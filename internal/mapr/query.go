@@ -20,6 +20,7 @@ type Query struct {
 	Select       []selectCondition
 	Table        string
 	Where        []whereCondition
+	Set          []setCondition
 	GroupBy      []string
 	OrderBy      string
 	ReverseOrder bool
@@ -29,13 +30,15 @@ type Query struct {
 	Outfile      string
 	RawQuery     string
 	tokens       []token
+	LogFormat    string
 }
 
 func (q Query) String() string {
-	return fmt.Sprintf("Query(Select:%v,Table:%s,Where:%v,GroupBy:%v,GroupKey:%s,OrderBy:%v,ReverseOrder:%v,Interval:%v,Limit:%d,Outfile:%s,RawQuery:%s,tokens:%v)",
+	return fmt.Sprintf("Query(Select:%v,Table:%s,Where:%v,Set:%vGroupBy:%v,GroupKey:%s,OrderBy:%v,ReverseOrder:%v,Interval:%v,Limit:%d,Outfile:%s,RawQuery:%s,tokens:%v,LogFormat:%s)",
 		q.Select,
 		q.Table,
 		q.Where,
+		q.Set,
 		q.GroupBy,
 		q.GroupKey,
 		q.OrderBy,
@@ -44,7 +47,8 @@ func (q Query) String() string {
 		q.Limit,
 		q.Outfile,
 		q.RawQuery,
-		q.tokens)
+		q.tokens,
+		q.LogFormat)
 }
 
 // NewQuery returns a new mapreduce query.
@@ -68,8 +72,14 @@ func NewQuery(queryStr string) (*Query, error) {
 	return &q, err
 }
 
+// HasOutfile returns true if query result will be written to a CVS output file.
 func (q *Query) HasOutfile() bool {
 	return q.Outfile != ""
+}
+
+// Has is a helper to determine whether a query contains a substring
+func (q *Query) Has(what string) bool {
+	return strings.Contains(q.RawQuery, what)
 }
 
 func (q *Query) parse(tokens []token) error {
@@ -86,12 +96,21 @@ func (q *Query) parse(tokens []token) error {
 			}
 		case "from":
 			tokens, found = tokensConsume(tokens[1:])
-			if len(found) > 0 {
-				q.Table = strings.ToUpper(found[0].str)
+			if len(found) == 0 {
+				return errors.New(invalidQuery + "expected table name after 'from'")
 			}
+			if len(found) > 1 {
+				return errors.New(invalidQuery + "expected only one table name after 'from'")
+			}
+			q.Table = strings.ToUpper(found[0].str)
 		case "where":
 			tokens, found = tokensConsume(tokens[1:])
 			if q.Where, err = makeWhereConditions(found); err != nil {
+				return err
+			}
+		case "set":
+			tokens, found = tokensConsume(tokens[1:])
+			if q.Set, err = makeSetConditions(found); err != nil {
 				return err
 			}
 		case "group":
@@ -147,6 +166,12 @@ func (q *Query) parse(tokens []token) error {
 				return errors.New(invalidQuery + unexpectedEnd)
 			}
 			q.Outfile = found[0].str
+		case "logformat":
+			tokens, found = tokensConsume(tokens[1:])
+			if len(found) == 0 {
+				return errors.New(invalidQuery + unexpectedEnd)
+			}
+			q.LogFormat = found[0].str
 		default:
 			return errors.New(invalidQuery + "Unexpected keyword " + tokens[0].str)
 		}
@@ -180,74 +205,4 @@ func (q *Query) parse(tokens []token) error {
 	}
 
 	return nil
-}
-
-// WhereClause interprets the where clause of the mapreduce query.
-func (q *Query) WhereClause(fields map[string]string) bool {
-	floatValue := func(str string, float float64, t whereType) (float64, bool) {
-		switch t {
-		case Float:
-			return float, true
-		case Field:
-			value, ok := fields[str]
-			if !ok {
-				return 0, false
-			}
-			f, err := strconv.ParseFloat(value, 64)
-			if err != nil {
-				return 0, false
-			}
-			return f, true
-		default:
-			logger.Error("Unexpected argument in 'where' clause", str, float, t)
-			return 0, false
-		}
-	}
-
-	stringValue := func(str string, t whereType) (string, bool) {
-		switch t {
-		case Field:
-			value, ok := fields[str]
-			if !ok {
-				return str, false
-			}
-			return value, true
-		case String:
-			return str, true
-		default:
-			logger.Error("Unexpected argument in 'where' clause", str, t)
-			return str, false
-		}
-	}
-
-	for _, wc := range q.Where {
-		var ok bool
-
-		if wc.Operation > FloatOperation {
-			var lValue, rValue float64
-			if lValue, ok = floatValue(wc.lString, wc.lFloat, wc.lType); !ok {
-				return false
-			}
-			if rValue, ok = floatValue(wc.rString, wc.rFloat, wc.rType); !ok {
-				return false
-			}
-			if ok = wc.floatClause(lValue, rValue); !ok {
-				return false
-			}
-			continue
-		}
-
-		var lValue, rValue string
-		if lValue, ok = stringValue(wc.lString, wc.lType); !ok {
-			return false
-		}
-		if rValue, ok = stringValue(wc.rString, wc.rType); !ok {
-			return false
-		}
-		if ok = wc.stringClause(lValue, rValue); !ok {
-			return false
-		}
-	}
-
-	return true
 }

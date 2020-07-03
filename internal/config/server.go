@@ -14,7 +14,7 @@ type Permissions struct {
 }
 
 // JobCommons summarises common job fields
-type JobCommons struct {
+type jobCommons struct {
 	Name      string
 	Enable    bool
 	Files     string
@@ -27,13 +27,13 @@ type JobCommons struct {
 
 // Scheduled allows to configure scheduled mapreduce jobs.
 type Scheduled struct {
-	JobCommons
+	jobCommons
 	TimeRange [2]int
 }
 
 // Continuous allows to configure continuous running mapreduce jobs.
 type Continuous struct {
-	JobCommons
+	jobCommons
 	RestartOnDayChange bool `json:",omitempty"`
 }
 

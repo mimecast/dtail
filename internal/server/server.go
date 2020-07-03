@@ -54,7 +54,7 @@ func New() *Server {
 		background:      background.New(),
 	}
 
-	s.sshServerConfig.PasswordCallback = s.backgroundUserCallback
+	s.sshServerConfig.PasswordCallback = s.Callback
 	s.sshServerConfig.PublicKeyCallback = server.PublicKeyCallback
 
 	private, err := gossh.ParsePrivateKey(server.PrivateHostKey())
@@ -241,44 +241,59 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 	return nil
 }
 
-func (s *Server) backgroundUserCallback(c gossh.ConnMetadata, authPayload []byte) (*gossh.Permissions, error) {
+// Callback for SSH authentication.
+func (s *Server) Callback(c gossh.ConnMetadata, authPayload []byte) (*gossh.Permissions, error) {
 	user := user.New(c.User(), c.RemoteAddr().String())
 	authInfo := string(authPayload)
 
-	if user.Name == config.ControlUser && authInfo == config.ControlUser {
-		logger.Debug(user, "Granting permissions to control user")
-		return nil, nil
-	}
+	splitted := strings.Split(c.RemoteAddr().String(), ":")
+	remoteIP := splitted[0]
 
-	if user.Name == config.BackgroundUser && s.backgroundJobUserCanHaveSSHSession(c.RemoteAddr().String(), user, authInfo) {
-		logger.Debug(user, "Granting SSH connection to background user")
-		return nil, nil
+	switch user.Name {
+	case config.ControlUser:
+		if authInfo == config.ControlUser {
+			logger.Debug(user, "Granting permissions to control user")
+			return nil, nil
+		}
+	case config.ScheduleUser:
+		for _, job := range config.Server.Schedule {
+			if s.backgroundCanSSH(user, authInfo, remoteIP, job.Name, job.AllowFrom) {
+				logger.Debug(user, "Granting SSH connection")
+				return nil, nil
+			}
+		}
+	case config.ContinuousUser:
+		for _, job := range config.Server.Continuous {
+			if s.backgroundCanSSH(user, authInfo, remoteIP, job.Name, job.AllowFrom) {
+				logger.Debug(user, "Granting SSH connection")
+				return nil, nil
+			}
+		}
+	default:
 	}
 
 	return nil, fmt.Errorf("user %s not authorized", user)
 }
 
-func (s *Server) backgroundJobUserCanHaveSSHSession(addr string, user *user.User, jobName string) bool {
-	logger.Debug("backgroundJobUserCanHaveSSHSession", user, jobName)
-	splitted := strings.Split(addr, ":")
-	ip := splitted[0]
+func (s *Server) backgroundCanSSH(user *user.User, jobName, remoteIP, allowedJobName string, allowFrom []string) bool {
+	logger.Debug("backgroundCanSSH", user, jobName, remoteIP, allowedJobName, allowFrom)
 
-	for _, job := range config.Server.Schedule {
-		if job.Name != jobName {
+	if jobName != allowedJobName {
+		logger.Debug(user, jobName, "backgroundCanSSH", "Job name does not match, skipping to next one...", allowedJobName)
+		return false
+	}
+
+	for _, myAddr := range allowFrom {
+		ips, err := net.LookupIP(myAddr)
+		if err != nil {
+			logger.Debug(user, jobName, "backgroundCanSSH", "Unable to lookup IP address for allowed hosts lookup, skipping to next one...", myAddr, err)
 			continue
 		}
-		for _, myAddr := range job.AllowFrom {
-			myIPs, err := net.LookupIP(myAddr)
-			if err != nil {
-				logger.Error(user, myAddr, err)
-				continue
-			}
 
-			for _, myIP := range myIPs {
-				logger.Debug("backgroundJobUserCanHaveSSHSession", "Comparing IP addresses", ip, myIP.String())
-				if ip == myIP.String() {
-					return true
-				}
+		for _, ip := range ips {
+			logger.Debug(user, jobName, "backgroundCanSSH", "Comparing IP addresses", remoteIP, ip.String())
+			if remoteIP == ip.String() {
+				return true
 			}
 		}
 	}

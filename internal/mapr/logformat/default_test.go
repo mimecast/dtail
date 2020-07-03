@@ -5,7 +5,7 @@ import (
 )
 
 func TestDefaultLogFormat(t *testing.T) {
-	parser, err := NewParser("default")
+	parser, err := NewParser("default", nil)
 	if err != nil {
 		t.Errorf("Unable to create parser: %s", err.Error())
 	}

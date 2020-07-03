@@ -2,7 +2,6 @@ package mapr
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -71,25 +70,20 @@ func (s *AggregateSet) Serialize(ctx context.Context, groupKey string, ch chan<-
 	var sb strings.Builder
 
 	sb.WriteString(groupKey)
-	sb.WriteString("|")
-	sb.WriteString(fmt.Sprintf("%d|", s.Samples))
+	sb.WriteString("➔")
+	sb.WriteString(fmt.Sprintf("%d➔", s.Samples))
 
 	for k, v := range s.FValues {
 		sb.WriteString(k)
 		sb.WriteString("=")
-		sb.WriteString(fmt.Sprintf("%v|", v))
+		sb.WriteString(fmt.Sprintf("%v➔", v))
 	}
 
 	for k, v := range s.SValues {
 		sb.WriteString(k)
 		sb.WriteString("=")
-		if k == "$line" {
-			sb.WriteString(base64.StdEncoding.EncodeToString([]byte(v)))
-			sb.WriteString("|")
-			continue
-		}
 		sb.WriteString(v)
-		sb.WriteString("|")
+		sb.WriteString("➔")
 	}
 
 	select {

@@ -8,13 +8,13 @@ import (
 func TestParseQuerySimple(t *testing.T) {
 	errorQueries := []string{
 		"select",
-		"select foo",
 		"select foo from",
 		"select foo from bar where baz",
 		"select foo from bar where baz <",
 		"select foo from bar where baz < 100 bay eq 12 group",
 		"select foo from bar where baz < 100 bay eq 12 group by foo order by",
 		"select foo from bar where baz < 100 bay eq 12 group by foo, bar, baz order by foo limit",
+		"select foo from bar where baz < 100 bay eq 12 group by foo, bar, baz order by foo limit set foo = bar;",
 	}
 	okQueries := []string{"select foo from bar",
 		"select foo from bar where",
@@ -24,6 +24,7 @@ func TestParseQuerySimple(t *testing.T) {
 		"select foo from bar where baz < 100 bay eq 12 group by foo, bar, baz order by foo",
 		"select foo from bar where baz < 100 bay eq 12 group by foo, bar, baz order by foo limit 23",
 		"select foo from bar where baz < 100 bay eq 12 group by foo, bar, baz order by foo limit 23 outfile \"result.csv\"",
+		"select foo from bar where baz < 100 bay eq 12 group by foo, bar, baz order by foo limit 23 outfile \"result.csv\" set $foo = maskdigits(bar), $baz = 12, $bay = $foo;",
 	}
 
 	for _, queryStr := range errorQueries {
@@ -45,13 +46,8 @@ func TestParseQuerySimple(t *testing.T) {
 
 func TestParseQueryDeep(t *testing.T) {
 	dialects := []string{
-		"select s1, `from`, count(s3) from table where w1 == 2 and w2 eq \"free beer\" group by g1, g2 order by count(s3) interval 10 limit 23",
-		"SELECT s1, `from` COUNT(s3) FROM table WHERE w1 == 2 AND w2 eq \"free beer\" GROUP g1, g2 ORDER count(s3) INTERVAL 10 LIMIT 23",
-		"select s1, `from` count(s3) from table where w1 == 2 and w2 eq \"free beer\" group by g1, g2 order by count(s3) interval 10 limit 23",
-		"sElEct s1, `from` coUnt(s3) from taBle where w1 == 2 aNd w2 eq \"free beer\" Group By g1, g2 order bY count(s3) intervaL 10 LiMiT 23",
-		"SELECT s1 `from` COUNT(s3) FROM table WHERE w1 == 2 AND w2 eq \"free beer\" GROUP BY g1 g2 ORDER BY count(s3) INTERVAL 10 LIMIT 23",
-		"select s1 `from` count(s3) from table where w1 == 2 w2 eq \"free beer\" group g1 g2 order count(s3) interval 10 limit 23",
-		"limit 23 interval 10 order count(s3) group g1 g2 where w1 == 2 w2 eq \"free beer\" from table select s1 `from` count(s3)",
+		"select s1, `from`, count(s3) from table where w1 == 2 and w2 eq \"free beer\" group by g1, g2 order by count(s3) interval 10 limit 23 set $foo = maskdigits(bar), $baz = 12, $bay = $foo logformat generic",
+		"SELECT s1, `from`, COUNT(s3) FROM table WHERE w1 == 2 AND w2 eq \"free beer\" GROUP g1, g2 ORDER count(s3) INTERVAL 10 LIMIT 23 SET $foo = maskdigits(bar), $baz = 12, $bay = $foo logformat generic",
 	}
 
 	for _, queryStr := range dialects {
@@ -59,6 +55,8 @@ func TestParseQueryDeep(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: %s", err.Error(), queryStr)
 		}
+
+		t.Log(q)
 
 		// 'select' clause
 		if len(q.Select) != 3 {
@@ -144,6 +142,32 @@ func TestParseQueryDeep(t *testing.T) {
 		// 'limit' clause
 		if q.Limit != 23 {
 			t.Errorf("Expected '23' as limit in 'limit' clause but got '%v': %s\n%v", q.Limit, queryStr, q)
+		}
+
+		// 'set' clause
+		if q.Set[0].lString != "$foo" {
+			t.Errorf("Expected '$foo' lvalue in first 'set' condition clause but got '%v': %s\n%v", q.Set[0].lString, queryStr, q)
+		}
+		if q.Set[0].rString != "bar" {
+			t.Errorf("Expected 'bar' rvalue in first 'set' condition clause but got '%v': %s\n%v", q.Set[0].rString, queryStr, q)
+		}
+
+		if q.Set[1].lString != "$baz" {
+			t.Errorf("Expected '$baz' lvalue in second 'set' condition clause but got '%v': %s\n%v", q.Set[1].lString, queryStr, q)
+		}
+		if q.Set[1].rString != "12" {
+			t.Errorf("Expected '12' rvalue in second 'set' condition clause but got '%v': %s\n%v", q.Set[1].rString, queryStr, q)
+		}
+
+		if q.Set[2].lString != "$bay" {
+			t.Errorf("Expected '$bay' lvalue in third 'set' condition clause but got '%v': %s\n%v", q.Set[2].lString, queryStr, q)
+		}
+		if q.Set[2].rString != "$foo" {
+			t.Errorf("Expected '$foo' rvalue in third 'set' condition clause but got '%v': %s\n%v", q.Set[2].rString, queryStr, q)
+		}
+
+		if q.LogFormat != "generic" {
+			t.Errorf("Expected 'generic' logformat got '%v': %s\n%v", q.LogFormat, queryStr, q)
 		}
 	}
 }

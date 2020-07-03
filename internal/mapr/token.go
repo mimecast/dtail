@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-var keywords = [...]string{"select", "from", "where", "group", "rorder", "order", "interval", "limit", "outfile"}
+var keywords = [...]string{"select", "from", "where", "set", "group", "rorder", "order", "interval", "limit", "outfile", "logformat"}
 
 // Represents a parsed token, used to parse the mapr query.
 type token struct {

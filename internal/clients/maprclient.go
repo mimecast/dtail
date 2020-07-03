@@ -14,11 +14,15 @@ import (
 	"github.com/mimecast/dtail/internal/omode"
 )
 
+// MaprClientMode determines whether to use cumulative mode or not.
 type MaprClientMode int
 
 const (
-	DefaultMode       MaprClientMode = iota
-	CumulativeMode    MaprClientMode = iota
+	// DefaultMode behaviour
+	DefaultMode MaprClientMode = iota
+	// CumulativeMode means results are added to prev interval
+	CumulativeMode MaprClientMode = iota
+	// NonCumulativeMode means results are from 0 for each interval
 	NonCumulativeMode MaprClientMode = iota
 )
 
@@ -59,6 +63,8 @@ func NewMaprClient(args Args, queryStr string, maprClientMode MaprClientMode) (*
 		// Result is comulative if we are in MapClient mode or with outfile
 		cumulative = args.Mode == omode.MapClient || query.HasOutfile()
 	}
+
+	logger.Debug("Cumulative mapreduce mode?", cumulative)
 
 	c := MaprClient{
 		baseClient: baseClient{

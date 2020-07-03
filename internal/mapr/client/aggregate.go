@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/base64"
 	"strconv"
 	"strings"
 
@@ -73,15 +72,6 @@ func (a *Aggregate) makeFields(parts []string) map[string]string {
 	for _, part := range parts {
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) < 2 {
-			continue
-		}
-		if kv[0] == "$line" {
-			decoded, err := base64.StdEncoding.DecodeString(kv[1])
-			if err != nil {
-				logger.Error("Unable to decode $line", kv[1], err)
-				continue
-			}
-			fields[kv[0]] = string(decoded)
 			continue
 		}
 		fields[kv[0]] = kv[1]

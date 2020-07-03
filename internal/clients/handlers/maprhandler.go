@@ -59,16 +59,11 @@ func (h *MaprHandler) Write(p []byte) (n int, err error) {
 // related data.
 func (h *MaprHandler) handleAggregateMessage(message string) {
 	h.count++
-	parts := strings.Split(message, "|")
+	parts := strings.Split(message, "➔")
 
 	// Index 0 contains 'AGGREGATE', 1 contains server host.
 	// Aggregation data begins from index 2.
 	logger.Debug("Received aggregate data", h.server, h.count, parts)
-	/*
-		for k, v := range parts {
-			logger.Debug(k, v)
-		}
-	*/
 	h.aggregate.Aggregate(parts[2:])
 	logger.Debug("Aggregated aggregate data", h.server, h.count)
 }

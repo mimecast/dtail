@@ -1,5 +1,5 @@
 GO ?= go
-all: build
+all: test build
 build:
 	${GO} build -o dserver ./cmd/dserver/main.go
 	${GO} build -o dcat ./cmd/dcat/main.go
@@ -29,3 +29,5 @@ lint:
 	  echo ${GOPATH}/bin/golint $$dir; \
 	  ${GOPATH}/bin/golint $$dir; \
 	done
+test:
+	${GO} test ./... -v

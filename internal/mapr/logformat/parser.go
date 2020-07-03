@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/mapr"
 )
 
 // Parser is used to parse the mapreduce information from the server log files.
@@ -22,7 +23,7 @@ type Parser struct {
 }
 
 // NewParser returns a new log parser.
-func NewParser(logFormatName string) (*Parser, error) {
+func NewParser(logFormatName string, query *mapr.Query) (*Parser, error) {
 	hostname, err := os.Hostname()
 
 	if err != nil {

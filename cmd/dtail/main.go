@@ -71,9 +71,12 @@ func main() {
 		version.PrintAndExit()
 	}
 
-	ctx, _ := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	if shutdownAfter > 0 {
-		ctx, _ = context.WithTimeout(ctx, time.Duration(shutdownAfter)*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(shutdownAfter)*time.Second)
+		defer cancel()
 	}
 
 	if checkHealth {

@@ -28,40 +28,17 @@ const (
 	FloatGe             QueryOperation = iota
 )
 
-type whereType int
-
-// The possible field types.
-const (
-	UndefWhereType whereType = iota
-	Field          whereType = iota
-	String         whereType = iota
-	Float          whereType = iota
-)
-
-func (w whereType) String() string {
-	switch w {
-	case Field:
-		return fmt.Sprintf("Field")
-	case String:
-		return fmt.Sprintf("String")
-	case Float:
-		return fmt.Sprintf("Float")
-	default:
-		return fmt.Sprintf("UndefWhereType")
-	}
-}
-
 // Represent a parsed "where" clause, used by mapr.Query
 type whereCondition struct {
+	lType   fieldType
 	lString string
 	lFloat  float64
-	lType   whereType
 
 	Operation QueryOperation
 
+	rType   fieldType
 	rString string
 	rFloat  float64
-	rType   whereType
 }
 
 func (wc *whereCondition) String() string {

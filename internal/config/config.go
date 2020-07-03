@@ -7,10 +7,13 @@ import (
 )
 
 // ControlUser is used for various DTail specific operations.
-const ControlUser string = "DTAIL-CONTROL-USER"
+const ControlUser string = "DTAIL-CONTROL"
 
-// BackgroundUser is used for non-interactive scheduled queries and log monitoring and such.
-const BackgroundUser string = "DTAIL-BACKGROUND-USER"
+// ScheduleUser is used for non-interactive scheduled mapreduce queries.
+const ScheduleUser string = "DTAIL-SCHEDULE"
+
+// ContinuousUser is used for non-interactive continuous mapreduce queries.
+const ContinuousUser string = "DTAIL-CONTINUOUS"
 
 // Client holds a DTail client configuration.
 var Client *ClientConfig
