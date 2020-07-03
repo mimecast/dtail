@@ -8,6 +8,7 @@ import (
 	_ "net/http"
 	_ "net/http/pprof"
 	"os"
+	"time"
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/color"
@@ -25,6 +26,7 @@ func main() {
 	var connectionsPerCPU int
 	var debugEnable bool
 	var discovery string
+	var shutdownAfter int
 	var pprof int
 	var displayVersion bool
 	var files string
@@ -44,6 +46,7 @@ func main() {
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
+	flag.IntVar(&shutdownAfter, "shutdownAfter", 3600*24, "Automatically shutdown after so many seconds")
 	flag.BoolVar(&quietEnable, "quiet", false, "Reduce output")
 	flag.BoolVar(&trustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.IntVar(&connectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
@@ -68,7 +71,10 @@ func main() {
 		version.PrintAndExit()
 	}
 
-	ctx := context.TODO()
+	ctx, _ := context.WithCancel(context.Background())
+	if shutdownAfter > 0 {
+		ctx, _ = context.WithTimeout(ctx, time.Duration(shutdownAfter)*time.Second)
+	}
 
 	if checkHealth {
 		healthClient, _ := clients.NewHealthClient(omode.HealthClient)
