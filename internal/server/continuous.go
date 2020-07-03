@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -45,25 +44,8 @@ func (s *continuous) runJobs(ctx context.Context) {
 			continue
 		}
 
-		hour, err := strconv.Atoi(time.Now().Format("15"))
-		if err != nil {
-			logger.Error(job.Name, "Unable to create job job", err)
-			continue
-		}
-
-		if hour < job.TimeRange[0] || hour >= job.TimeRange[1] {
-			logger.Debug(job.Name, "Not running job out of time range")
-			continue
-		}
-
 		files := fillDates(job.Files)
 		outfile := fillDates(job.Outfile)
-
-		_, err = os.Stat(outfile)
-		if !os.IsNotExist(err) {
-			logger.Debug(job.Name, "Not running job as outfile already exists", outfile)
-			continue
-		}
 
 		servers := strings.Join(job.Servers, ",")
 		if servers == "" {
@@ -84,7 +66,7 @@ func (s *continuous) runJobs(ctx context.Context) {
 		tmpOutfile := fmt.Sprintf("%s.tmp", outfile)
 		query := fmt.Sprintf("%s outfile %s", job.Query, tmpOutfile)
 
-		client, err := clients.NewMaprClient(args, query)
+		client, err := clients.NewMaprClient(args, query, clients.NonCumulativeMode)
 		if err != nil {
 			logger.Error(fmt.Sprintf("Unable to create job job %s", job.Name), err)
 			continue

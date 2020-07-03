@@ -73,7 +73,7 @@ func main() {
 		PrivateKeyPathFile: privateKeyPathFile,
 	}
 
-	client, err := clients.NewMaprClient(args, queryStr)
+	client, err := clients.NewMaprClient(args, queryStr, clients.DefaultMode)
 	if err != nil {
 		panic(err)
 	}

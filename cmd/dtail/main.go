@@ -106,7 +106,7 @@ func main() {
 			panic(err)
 		}
 	default:
-		if client, err = clients.NewMaprClient(args, queryStr); err != nil {
+		if client, err = clients.NewMaprClient(args, queryStr, clients.DefaultMode); err != nil {
 			panic(err)
 		}
 	}

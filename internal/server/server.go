@@ -33,7 +33,7 @@ type Server struct {
 	// To run scheduled tasks (if configured)
 	sched *scheduler
 	// Mointor log files for pattern (if configured)
-	mon *monitoring
+	cont *continuous
 	// Wait counter, e.g. there might be still subprocesses (forked by drun) to be killed.
 	shutdownWaitFor chan struct{}
 	// Background jobs
@@ -50,7 +50,7 @@ func New() *Server {
 		tailLimiter:     make(chan struct{}, config.Server.MaxConcurrentTails),
 		shutdownWaitFor: make(chan struct{}, 1000),
 		sched:           newScheduler(),
-		mon:             newMonitoring(),
+		cont:            newContinuous(),
 		background:      background.New(),
 	}
 
@@ -80,7 +80,7 @@ func (s *Server) Start(ctx context.Context) int {
 
 	go s.stats.start(ctx)
 	go s.sched.start(ctx)
-	go s.mon.start(ctx)
+	go s.cont.start(ctx)
 	go s.listenerLoop(ctx, listener)
 
 	select {

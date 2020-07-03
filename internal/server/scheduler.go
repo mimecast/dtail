@@ -84,7 +84,7 @@ func (s *scheduler) runJobs(ctx context.Context) {
 		tmpOutfile := fmt.Sprintf("%s.tmp", outfile)
 		query := fmt.Sprintf("%s outfile %s", job.Query, tmpOutfile)
 
-		client, err := clients.NewMaprClient(args, query)
+		client, err := clients.NewMaprClient(args, query, clients.CumulativeMode)
 		if err != nil {
 			logger.Error(fmt.Sprintf("Unable to create job job %s", job.Name), err)
 			continue

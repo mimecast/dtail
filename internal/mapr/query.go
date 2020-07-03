@@ -68,6 +68,10 @@ func NewQuery(queryStr string) (*Query, error) {
 	return &q, err
 }
 
+func (q *Query) HasOutfile() bool {
+	return q.Outfile != ""
+}
+
 func (q *Query) parse(tokens []token) error {
 	var found []token
 	var err error

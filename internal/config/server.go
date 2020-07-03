@@ -13,8 +13,8 @@ type Permissions struct {
 	Users map[string][]string
 }
 
-// Scheduled allows to configure scheduled mapreduce jobs.
-type Scheduled struct {
+// JobCommons summarises common job fields
+type JobCommons struct {
 	Name      string
 	Enable    bool
 	Files     string
@@ -22,21 +22,19 @@ type Scheduled struct {
 	Outfile   string   `json:",omitempty"`
 	Discovery string   `json:",omitempty"`
 	Servers   []string `json:",omitempty"`
-	TimeRange [2]int
 	AllowFrom []string `json:",omitempty"`
 }
 
-// Monitoring on log files.
-type Monitoring struct {
-	Name           string
-	Enable         bool
-	Files          string
-	Query          string
-	ExcludeRegexes []string `json:",omitempty"`
-	Outfile        string   `json:",omitempty"`
-	Discovery      string   `json:",omitempty"`
-	Servers        []string `json:",omitempty"`
-	AllowFrom      []string `json:",omitempty"`
+// Scheduled allows to configure scheduled mapreduce jobs.
+type Scheduled struct {
+	JobCommons
+	TimeRange [2]int
+}
+
+// Continuous allows to configure continuous running mapreduce jobs.
+type Continuous struct {
+	JobCommons
+	RestartOnDayChange bool `json:",omitempty"`
 }
 
 // ServerConfig represents the server configuration.
@@ -59,8 +57,8 @@ type ServerConfig struct {
 	HostKeyBits int
 	// Scheduled mapreduce jobs.
 	Schedule []Scheduled `json:",omitempty"`
-	// Monitoring on log files.
-	Monitoring []Monitoring `json:",omitempty"`
+	// Continuous mapreduce jobs
+	Continuous []Continuous `json:",omitempty"`
 }
 
 // Create a new default server configuration.

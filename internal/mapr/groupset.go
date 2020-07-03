@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // GroupSet represents a map of aggregate sets. The group sets
@@ -60,7 +63,7 @@ func (g *GroupSet) Result(query *Query) (string, int, error) {
 
 // WriteResult writes the result to an outfile.
 func (g *GroupSet) WriteResult(query *Query) error {
-	if query.Outfile == "" {
+	if !query.HasOutfile() {
 		return errors.New("No outfile specified")
 	}
 
@@ -70,7 +73,19 @@ func (g *GroupSet) WriteResult(query *Query) error {
 		return err
 	}
 
-	return ioutil.WriteFile(query.Outfile, []byte(result), 0644)
+	logger.Info("Writing outfile", query.Outfile)
+	tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile)
+
+	if err := ioutil.WriteFile(tmpOutfile, []byte(result), 0644); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpOutfile, query.Outfile); err != nil {
+		os.Remove(tmpOutfile)
+		return err
+	}
+
+	return nil
 }
 
 // Return a nicely formated result of the query from the group set.
