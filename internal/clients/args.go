@@ -13,7 +13,8 @@ type Args struct {
 	UserName           string
 	What               string
 	Arguments          []string
-	Regex              string
+	RegexStr           string
+	RegexInvert        bool
 	TrustAllHosts      bool
 	Discovery          string
 	ConnectionsPerCPU  int

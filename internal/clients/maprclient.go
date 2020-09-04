@@ -79,11 +79,11 @@ func NewMaprClient(args Args, queryStr string, maprClientMode MaprClientMode) (*
 
 	switch c.query.Table {
 	case "", ".":
-		c.Regex = "."
+		c.RegexStr = "."
 	case "*":
-		c.Regex = fmt.Sprintf("\\|MAPREDUCE:\\|")
+		c.RegexStr = fmt.Sprintf("\\|MAPREDUCE:\\|")
 	default:
-		c.Regex = fmt.Sprintf("\\|MAPREDUCE:%s\\|", c.query.Table)
+		c.RegexStr = fmt.Sprintf("\\|MAPREDUCE:%s\\|", c.query.Table)
 	}
 
 	c.globalGroup = mapr.NewGlobalGroupSet()

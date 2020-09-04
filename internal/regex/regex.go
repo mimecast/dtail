@@ -27,6 +27,9 @@ func NewNoop() Regex {
 }
 
 func New(regexStr string, flag Flag) (Regex, error) {
+	if regexStr == "" || regexStr == "." || regexStr == ".*" {
+		return NewNoop(), nil
+	}
 	return new(regexStr, []Flag{flag})
 }
 
@@ -46,11 +49,24 @@ func new(regexStr string, flags []Flag) (Regex, error) {
 	return r, nil
 }
 
+func (r Regex) Match(bytes []byte) bool {
+	switch r.flags[0] {
+	case Default:
+		return r.re.Match(bytes)
+	case Invert:
+		return !r.re.Match(bytes)
+	case Noop:
+		return true
+	default:
+		return false
+	}
+}
+
 func (r Regex) MatchString(str string) bool {
 	switch r.flags[0] {
 	case Default:
 		return r.re.MatchString(str)
-	case Negate:
+	case Invert:
 		return !r.re.MatchString(str)
 	case Noop:
 		return true
@@ -72,7 +88,8 @@ func Deserialize(str string) (Regex, error) {
 	// Get regex string
 	s := strings.SplitN(str, " ", 2)
 	if len(s) < 2 {
-		return Regex{}, fmt.Errorf("unable to deserialize regex '%s'", str)
+		logger.Debug("Using noop regex", str)
+		return NewNoop(), nil
 	}
 
 	flagsStr := s[0]

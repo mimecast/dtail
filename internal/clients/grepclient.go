@@ -17,7 +17,7 @@ type GrepClient struct {
 
 // NewGrepClient creates a new grep client.
 func NewGrepClient(args Args) (*GrepClient, error) {
-	if args.Regex == "" {
+	if args.RegexStr == "" {
 		return nil, errors.New("No regex specified, use '-regex' flag")
 	}
 	args.Mode = omode.GrepClient
@@ -41,7 +41,7 @@ func (c GrepClient) makeHandler(server string) handlers.Handler {
 
 func (c GrepClient) makeCommands() (commands []string) {
 	for _, file := range strings.Split(c.What, ",") {
-		commands = append(commands, fmt.Sprintf("%s %s regex %s", c.Mode.String(), file, c.Regex))
+		commands = append(commands, fmt.Sprintf("%s %s %s", c.Mode.String(), file, c.Regex.Serialize()))
 	}
 	return
 }

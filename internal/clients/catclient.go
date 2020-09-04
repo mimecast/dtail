@@ -17,11 +17,10 @@ type CatClient struct {
 
 // NewCatClient returns a new cat client.
 func NewCatClient(args Args) (*CatClient, error) {
-	if args.Regex != "" {
+	if args.RegexStr != "" {
 		return nil, errors.New("Can't use regex with 'cat' operating mode")
 	}
 
-	args.Regex = "."
 	args.Mode = omode.CatClient
 
 	c := CatClient{

@@ -29,7 +29,7 @@ func TestRegex(t *testing.T) {
 			r2.String(), r.String())
 	}
 
-	r, err = New(".hello", Negate)
+	r, err = New(".hello", Invert)
 	if err != nil {
 		t.Errorf("unable to create regex: %v\n", err)
 	}

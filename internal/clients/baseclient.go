@@ -50,7 +50,11 @@ func (c *baseClient) init(maker maker) {
 		c.connections = append(c.connections, c.makeConnection(server, c.sshAuthMethods, c.hostKeyCallback))
 	}
 
-	regex, err := regex.New(c.Args.Regex, regex.Default)
+	flag := regex.Default
+	if c.Args.RegexInvert {
+		flag = regex.Invert
+	}
+	regex, err := regex.New(c.Args.RegexStr, flag)
 	if err != nil {
 		logger.FatalExit(c.Regex, "invalid regex!", err, regex)
 	}

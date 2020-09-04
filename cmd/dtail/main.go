@@ -32,7 +32,8 @@ func main() {
 	var files string
 	var noColor bool
 	var queryStr string
-	var regex string
+	var regexStr string
+	var regexInvert bool
 	var serversStr string
 	var quietEnable bool
 	var sshPort int
@@ -57,7 +58,9 @@ func main() {
 	flag.StringVar(&discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&files, "files", "", "File(s) to read")
 	flag.StringVar(&queryStr, "query", "", "Map reduce query")
-	flag.StringVar(&regex, "regex", ".", "Regular expression")
+	flag.StringVar(&regexStr, "regex", ".", "Regular expression")
+	flag.StringVar(&regexStr, "grep", ".", "Alias for -regex")
+	flag.BoolVar(&regexInvert, "invert", false, "Invert regex")
 	flag.StringVar(&serversStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&userName, "user", userName, "Your system user name")
 	flag.StringVar(&privateKeyPathFile, "key", "", "Path to private key")
@@ -100,7 +103,8 @@ func main() {
 		UserName:           userName,
 		What:               files,
 		TrustAllHosts:      trustAllHosts,
-		Regex:              regex,
+		RegexStr:           regexStr,
+		RegexInvert:        regexInvert,
 		Mode:               omode.TailClient,
 		Timeout:            timeout,
 		PrivateKeyPathFile: privateKeyPathFile,

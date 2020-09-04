@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/regex"
 
 	"github.com/DataDog/zstd"
 )
@@ -25,8 +25,6 @@ type readFile struct {
 	stats
 	// Path of log file to tail.
 	filePath string
-	// Only consider all log lines matching this regular expression.
-	re *regexp.Regexp
 	// The glob identifier of the file.
 	globID string
 	// Channel to send a server message to the dtail client
@@ -61,7 +59,7 @@ func (f readFile) Retry() bool {
 }
 
 // Start tailing a log file.
-func (f readFile) Start(ctx context.Context, lines chan<- line.Line, regex string) error {
+func (f readFile) Start(ctx context.Context, lines chan<- line.Line, re regex.Regex) error {
 	logger.Debug("readFile", f)
 	defer func() {
 		select {
@@ -98,7 +96,7 @@ func (f readFile) Start(ctx context.Context, lines chan<- line.Line, regex strin
 	wg.Add(1)
 
 	go f.periodicTruncateCheck(ctx, truncate)
-	go f.filter(ctx, &wg, rawLines, lines, regex)
+	go f.filter(ctx, &wg, rawLines, lines, re)
 
 	err = f.read(ctx, fd, rawLines, truncate)
 	close(rawLines)
@@ -229,19 +227,8 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan []byte, t
 }
 
 // Filter log lines matching a given regular expression.
-func (f readFile) filter(ctx context.Context, wg *sync.WaitGroup, rawLines <-chan []byte, lines chan<- line.Line, regex string) {
+func (f readFile) filter(ctx context.Context, wg *sync.WaitGroup, rawLines <-chan []byte, lines chan<- line.Line, re regex.Regex) {
 	defer wg.Done()
-
-	if regex == "" {
-		regex = "."
-	}
-
-	re, err := regexp.Compile(regex)
-	if err != nil {
-		logger.Error(regex, "Can't compile regex, using '.' instead", err)
-		re = regexp.MustCompile(".")
-	}
-	f.re = re
 
 	for {
 		select {
@@ -250,7 +237,7 @@ func (f readFile) filter(ctx context.Context, wg *sync.WaitGroup, rawLines <-cha
 			if !ok {
 				return
 			}
-			if filteredLine, ok := f.transmittable(line, len(lines), cap(lines)); ok {
+			if filteredLine, ok := f.transmittable(line, len(lines), cap(lines), re); ok {
 				select {
 				case lines <- filteredLine:
 				case <-ctx.Done():
@@ -261,10 +248,10 @@ func (f readFile) filter(ctx context.Context, wg *sync.WaitGroup, rawLines <-cha
 	}
 }
 
-func (f readFile) transmittable(lineBytes []byte, length, capacity int) (line.Line, bool) {
+func (f readFile) transmittable(lineBytes []byte, length, capacity int, re regex.Regex) (line.Line, bool) {
 	var read line.Line
 
-	if !f.re.Match(lineBytes) {
+	if !re.Match(lineBytes) {
 		f.updateLineNotMatched()
 		f.updateLineNotTransmitted()
 		return read, false
