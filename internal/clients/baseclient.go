@@ -2,7 +2,6 @@ package clients
 
 import (
 	"context"
-	"regexp"
 	"sync"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/mimecast/dtail/internal/discovery"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/omode"
+	"github.com/mimecast/dtail/internal/regex"
 	"github.com/mimecast/dtail/internal/ssh/client"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -34,6 +34,8 @@ type baseClient struct {
 	retry bool
 	// Connection maker helper.
 	maker maker
+	// Regex is the regular expresion object for line filtering
+	Regex regex.Regex
 }
 
 func (c *baseClient) init(maker maker) {
@@ -48,9 +50,11 @@ func (c *baseClient) init(maker maker) {
 		c.connections = append(c.connections, c.makeConnection(server, c.sshAuthMethods, c.hostKeyCallback))
 	}
 
-	if _, err := regexp.Compile(c.Regex); err != nil {
-		logger.FatalExit(c.Regex, "Can't test compile regex", err)
+	regex, err := regex.New(c.Args.Regex, regex.Default)
+	if err != nil {
+		logger.FatalExit(c.Regex, "invalid regex!", err, regex)
 	}
+	c.Regex = regex
 
 	c.stats = newTailStats(len(c.connections))
 }

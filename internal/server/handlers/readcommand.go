@@ -27,6 +27,8 @@ func newReadCommand(server *ServerHandler, mode omode.Mode) *readCommand {
 func (r *readCommand) Start(ctx context.Context, argc int, args []string) {
 	regex := "."
 	if argc >= 4 {
+		switch args[2] {
+		}
 		regex = strings.Join(args[3:], " ")
 		logger.Debug("Joined regex", regex)
 	}

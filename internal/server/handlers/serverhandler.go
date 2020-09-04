@@ -200,7 +200,7 @@ func (h *ServerHandler) handleProtocolVersion(args []string) ([]string, int, err
 }
 
 func (h *ServerHandler) handleBase64(args []string, argc int) ([]string, int, error) {
-	err := errors.New("Unable to decode client message, DTail server and client versions not compatible")
+	err := errors.New("Unable to decode client message, DTail server and client versions may not be compatible")
 
 	if argc != 2 || args[0] != "base64" {
 		return args, argc, err

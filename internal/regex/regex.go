@@ -1,69 +1,101 @@
 package regex
 
 import (
+	"fmt"
 	"regexp"
-)
+	"strings"
 
-type Flag int
-
-const (
-    // Default is the default regex mode (positive matching)
-    Default = iota
-    // Negative negates the regex 
-    Negative = iota
-    // Noop means no regex matching enabled, all defaults to true
-    Noop = iota
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 type Regex struct {
-    str string
-    re *regexp.Regexp
-    flag Flag
+	// The original regex string
+	regexStr string
+	// The Golang regexp object
+	re *regexp.Regexp
+	// For now only use the first flag at flags[0], but in the future we can
+	// set and use multiple flags.
+	flags []Flag
 }
 
-func (r Regex) Noop() Regex {
-    return Regex{
-        flag: Noop,
-    }
+func (r Regex) String() string {
+	return fmt.Sprintf("Regex(regexStr:%s,flags:%s,re==nil:%t)", r.regexStr, r.flags, r.re == nil)
 }
 
-func New(str string, flag Flag) (Regex, error) {
-    r := Regex{
-        str:  str,
-        flag: flag,
-    }
+func NewNoop() Regex {
+	return Regex{flags: []Flag{Noop}}
+}
 
-	re, err := regexp.Compile(str)
+func New(regexStr string, flag Flag) (Regex, error) {
+	return new(regexStr, []Flag{flag})
+}
+
+func new(regexStr string, flags []Flag) (Regex, error) {
+	r := Regex{
+		regexStr: regexStr,
+		flags:    flags,
+	}
+
+	re, err := regexp.Compile(regexStr)
 
 	if err != nil {
-	    return r, err
+		return r, err
 	}
 
 	r.re = re
-    return r, nil
+	return r, nil
 }
 
 func (r Regex) MatchString(str string) bool {
-    switch r.flag {
-    case Default:
-        return r.re.MatchString(str)
-    case Negative:
-        return !r.re.MatchString(str)
-    case Noop:
-        return true
-    default:
-        return false
-    }
+	switch r.flags[0] {
+	case Default:
+		return r.re.MatchString(str)
+	case Negate:
+		return !r.re.MatchString(str)
+	case Noop:
+		return true
+	default:
+		return false
+	}
 }
 
-/*
 func (r Regex) Serialize() string {
-    // TODO: Serialize to hex encoded str
-    return fmt.Sprintf("%b,%s",r.negate,r,str)
+	var flags []string
+	for _, flag := range r.flags {
+		flags = append(flags, flag.String())
+	}
+
+	return fmt.Sprintf("regex:%s %s", strings.Join(flags, ","), r.regexStr)
 }
 
-func (r Regex) Deserialize(input string) (Regex, error) {
+func Deserialize(str string) (Regex, error) {
+	// Get regex string
+	s := strings.SplitN(str, " ", 2)
+	if len(s) < 2 {
+		return Regex{}, fmt.Errorf("unable to deserialize regex '%s'", str)
+	}
 
+	flagsStr := s[0]
+	regexStr := s[1]
+
+	if !strings.HasPrefix(flagsStr, "regex") {
+		return Regex{}, fmt.Errorf("unable to deserialize regex '%s': should start with string 'regex'", str)
+	}
+
+	// Parse regex flags, e.g. "regex:flag1,flag2,flag3..."
+	var flags []Flag
+	if strings.Contains(flagsStr, ":") {
+		s := strings.SplitN(flagsStr, ":", 2)
+		for _, flagStr := range strings.Split(s[1], ",") {
+			flag, err := NewFlag(flagStr)
+			if err != nil {
+				logger.Error("ignoring flag", err)
+				continue
+			}
+			logger.Debug("Adding regex flag", flag)
+			flags = append(flags, flag)
+		}
+	}
+
+	return new(regexStr, flags)
 }
-
-*/
