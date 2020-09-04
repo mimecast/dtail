@@ -21,6 +21,7 @@ import (
 
 // The evil begins here.
 func main() {
+	var args clients.Args
 	var cfgFile string
 	var checkHealth bool
 	var debugEnable bool
@@ -32,10 +33,6 @@ func main() {
 	var quietEnable bool
 	var shutdownAfter int
 	var sshPort int
-
-	args := clients.Args{
-		Mode: omode.TailClient,
-	}
 
 	userName := user.Name()
 

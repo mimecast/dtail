@@ -38,7 +38,9 @@ func NewRunClient(args Args, background, jobName string) (*RunClient, error) {
 		background: background,
 	}
 
-	c.init(c)
+	c.init()
+	c.makeConnections(c)
+
 	return &c, nil
 }
 

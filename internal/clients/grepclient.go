@@ -30,7 +30,8 @@ func NewGrepClient(args Args) (*GrepClient, error) {
 		},
 	}
 
-	c.init(c)
+	c.init()
+	c.makeConnections(c)
 
 	return &c, nil
 }

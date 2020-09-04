@@ -38,17 +38,8 @@ type baseClient struct {
 	Regex regex.Regex
 }
 
-func (c *baseClient) init(maker maker) {
+func (c *baseClient) init() {
 	logger.Info("Initiating base client")
-
-	c.maker = maker
-	c.sshAuthMethods, c.hostKeyCallback = client.InitSSHAuthMethods(c.Args.SSHAuthMethods, c.Args.SSHHostKeyCallback, c.Args.TrustAllHosts, c.throttleCh, c.Args.PrivateKeyPathFile)
-
-	discoveryService := discovery.New(c.Discovery, c.ServersStr, discovery.Shuffle)
-
-	for _, server := range discoveryService.ServerList() {
-		c.connections = append(c.connections, c.makeConnection(server, c.sshAuthMethods, c.hostKeyCallback))
-	}
 
 	flag := regex.Default
 	if c.Args.RegexInvert {
@@ -59,6 +50,18 @@ func (c *baseClient) init(maker maker) {
 		logger.FatalExit(c.Regex, "invalid regex!", err, regex)
 	}
 	c.Regex = regex
+	logger.Debug("Regex", c.Regex)
+
+	c.sshAuthMethods, c.hostKeyCallback = client.InitSSHAuthMethods(c.Args.SSHAuthMethods, c.Args.SSHHostKeyCallback, c.Args.TrustAllHosts, c.throttleCh, c.Args.PrivateKeyPathFile)
+}
+
+func (c *baseClient) makeConnections(maker maker) {
+	c.maker = maker
+
+	discoveryService := discovery.New(c.Discovery, c.ServersStr, discovery.Shuffle)
+	for _, server := range discoveryService.ServerList() {
+		c.connections = append(c.connections, c.makeConnection(server, c.sshAuthMethods, c.hostKeyCallback))
+	}
 
 	c.stats = newTailStats(len(c.connections))
 }

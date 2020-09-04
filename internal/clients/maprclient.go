@@ -87,7 +87,8 @@ func NewMaprClient(args Args, queryStr string, maprClientMode MaprClientMode) (*
 	}
 
 	c.globalGroup = mapr.NewGlobalGroupSet()
-	c.baseClient.init(c)
+	c.baseClient.init()
+	c.baseClient.makeConnections(c)
 
 	return &c, nil
 }
@@ -119,10 +120,10 @@ func (c MaprClient) makeCommands() (commands []string) {
 
 	for _, file := range strings.Split(c.What, ",") {
 		if c.Timeout > 0 {
-			commands = append(commands, fmt.Sprintf("timeout %d %s %s regex %s", c.Timeout, modeStr, file, c.Regex))
+			commands = append(commands, fmt.Sprintf("timeout %d %s %s %s", c.Timeout, modeStr, file, c.Regex.Serialize()))
 			continue
 		}
-		commands = append(commands, fmt.Sprintf("%s %s regex %s", modeStr, file, c.Regex))
+		commands = append(commands, fmt.Sprintf("%s %s regex %s", modeStr, file, c.Regex.Serialize()))
 	}
 
 	return

@@ -31,7 +31,8 @@ func NewCatClient(args Args) (*CatClient, error) {
 		},
 	}
 
-	c.init(c)
+	c.init()
+	c.makeConnections(c)
 
 	return &c, nil
 }
@@ -42,7 +43,7 @@ func (c CatClient) makeHandler(server string) handlers.Handler {
 
 func (c CatClient) makeCommands() (commands []string) {
 	for _, file := range strings.Split(c.What, ",") {
-		commands = append(commands, fmt.Sprintf("%s %s regex %s", c.Mode.String(), file, c.Regex))
+		commands = append(commands, fmt.Sprintf("%s %s %s", c.Mode.String(), file, c.Regex.Serialize()))
 	}
 	return
 }

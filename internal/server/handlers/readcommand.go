@@ -29,7 +29,7 @@ func (r *readCommand) Start(ctx context.Context, argc int, args []string) {
 	re := regex.NewNoop()
 
 	if argc >= 4 {
-		deserializedRegex, err := regex.Deserialize(strings.Join(args[3:], " "))
+		deserializedRegex, err := regex.Deserialize(strings.Join(args[2:], " "))
 		if err != nil {
 			logger.Error(err)
 			r.server.sendServerMessage(logger.Error(r.server.user, commandParseWarning, err))

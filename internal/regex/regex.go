@@ -15,15 +15,20 @@ type Regex struct {
 	re *regexp.Regexp
 	// For now only use the first flag at flags[0], but in the future we can
 	// set and use multiple flags.
-	flags []Flag
+	flags       []Flag
+	initialized bool
 }
 
 func (r Regex) String() string {
-	return fmt.Sprintf("Regex(regexStr:%s,flags:%s,re==nil:%t)", r.regexStr, r.flags, r.re == nil)
+	return fmt.Sprintf("Regex(regexStr:%s,flags:%s,initialized:%t,re==nil:%t)",
+		r.regexStr, r.flags, r.initialized, r.re == nil)
 }
 
 func NewNoop() Regex {
-	return Regex{flags: []Flag{Noop}}
+	return Regex{
+		flags:       []Flag{Noop},
+		initialized: true,
+	}
 }
 
 func New(regexStr string, flag Flag) (Regex, error) {
@@ -46,6 +51,7 @@ func new(regexStr string, flags []Flag) (Regex, error) {
 	}
 
 	r.re = re
+	r.initialized = true
 	return r, nil
 }
 
@@ -79,6 +85,10 @@ func (r Regex) Serialize() string {
 	var flags []string
 	for _, flag := range r.flags {
 		flags = append(flags, flag.String())
+	}
+
+	if !r.initialized {
+		logger.FatalExit("Unable to serialize regex as not initialized properly", r)
 	}
 
 	return fmt.Sprintf("regex:%s %s", strings.Join(flags, ","), r.regexStr)
