@@ -223,7 +223,7 @@ func log(what string, severity string, args []interface{}) string {
 	if Mode.Nothing {
 		return ""
 	}
-	if Mode.Quiet && severity != errorStr && severity != fatalStr {
+	if severity != errorStr && severity != fatalStr {
 		return ""
 	}
 

@@ -25,7 +25,6 @@ func main() {
 	var displayVersion bool
 	var jobName string
 	var noColor bool
-	var quietEnable bool
 	var sshPort int
 
 	userName := user.Name()
@@ -34,7 +33,6 @@ func main() {
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
-	flag.BoolVar(&quietEnable, "quiet", false, "Reduce output")
 	flag.IntVar(&args.ConnectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
 	flag.IntVar(&args.Timeout, "timeout", 0, "Command execution timeout")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
@@ -57,7 +55,7 @@ func main() {
 	}
 
 	ctx := context.TODO()
-	logger.Start(ctx, logger.Modes{Debug: debugEnable || config.Common.DebugEnable, Quiet: quietEnable})
+	logger.Start(ctx, logger.Modes{Debug: debugEnable || config.Common.DebugEnable})
 
 	args.What, args.Arguments = readCommand(command)
 	client, err := clients.NewRunClient(args, background, jobName)
