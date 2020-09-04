@@ -17,37 +17,34 @@ import (
 // The evil begins here.
 func main() {
 	var cfgFile string
-	var connectionsPerCPU int
 	var debugEnable bool
-	var discovery string
 	var displayVersion bool
-	var files string
 	var noColor bool
 	var queryStr string
-	var serversStr string
 	var quietEnable bool
 	var sshPort int
-	var timeout int
-	var trustAllHosts bool
-	var privateKeyPathFile string
+
+	args := clients.Args{
+		Mode: omode.MapClient,
+	}
 
 	userName := user.Name()
 
+	flag.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
 	flag.BoolVar(&quietEnable, "quiet", false, "Reduce output")
-	flag.BoolVar(&trustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
-	flag.IntVar(&connectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
+	flag.IntVar(&args.ConnectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
+	flag.IntVar(&args.Timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
-	flag.IntVar(&timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
+	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
+	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
+	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")
+	flag.StringVar(&args.UserName, "user", userName, "Your system user name")
+	flag.StringVar(&args.What, "files", "", "File(s) to read")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
-	flag.StringVar(&discovery, "discovery", "", "Server discovery method")
-	flag.StringVar(&files, "files", "", "File(s) to read")
 	flag.StringVar(&queryStr, "query", "", "Map reduce query")
-	flag.StringVar(&serversStr, "servers", "", "Remote servers to connect")
-	flag.StringVar(&userName, "user", userName, "Your system user name")
-	flag.StringVar(&privateKeyPathFile, "key", "", "Path to private key")
 
 	flag.Parse()
 
@@ -60,18 +57,6 @@ func main() {
 
 	ctx := context.TODO()
 	logger.Start(ctx, logger.Modes{Debug: debugEnable || config.Common.DebugEnable, Quiet: quietEnable})
-
-	args := clients.Args{
-		ConnectionsPerCPU:  connectionsPerCPU,
-		ServersStr:         serversStr,
-		Discovery:          discovery,
-		UserName:           userName,
-		What:               files,
-		TrustAllHosts:      trustAllHosts,
-		Mode:               omode.MapClient,
-		Timeout:            timeout,
-		PrivateKeyPathFile: privateKeyPathFile,
-	}
 
 	client, err := clients.NewMaprClient(args, queryStr, clients.DefaultMode)
 	if err != nil {

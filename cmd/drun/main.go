@@ -17,40 +17,35 @@ import (
 
 // The evil begins here.
 func main() {
+	var args clients.Args
 	var background string
 	var cfgFile string
 	var command string
-	var connectionsPerCPU int
 	var debugEnable bool
-	var discovery string
 	var displayVersion bool
 	var jobName string
 	var noColor bool
-	var serversStr string
 	var quietEnable bool
 	var sshPort int
-	var timeout int
-	var trustAllHosts bool
-	var privateKeyPathFile string
 
 	userName := user.Name()
 
+	flag.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
 	flag.BoolVar(&quietEnable, "quiet", false, "Reduce output")
-	flag.BoolVar(&trustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
-	flag.IntVar(&connectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
+	flag.IntVar(&args.ConnectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
+	flag.IntVar(&args.Timeout, "timeout", 0, "Command execution timeout")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
-	flag.IntVar(&timeout, "timeout", 0, "Command execution timeout")
+	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
+	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
+	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")
+	flag.StringVar(&args.UserName, "user", userName, "Your system user name")
 	flag.StringVar(&background, "background", "", "Can be one of 'start', 'cancel', 'list' or empty")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
 	flag.StringVar(&command, "command", "", "Command to run")
-	flag.StringVar(&discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&jobName, "name", "", "The job name (if run in background)")
-	flag.StringVar(&serversStr, "servers", "", "Remote servers to connect")
-	flag.StringVar(&userName, "user", userName, "Your system user name")
-	flag.StringVar(&privateKeyPathFile, "key", "", "Path to private key")
 
 	flag.Parse()
 
@@ -64,19 +59,7 @@ func main() {
 	ctx := context.TODO()
 	logger.Start(ctx, logger.Modes{Debug: debugEnable || config.Common.DebugEnable, Quiet: quietEnable})
 
-	command, commandArgs := readCommand(command)
-	args := clients.Args{
-		ConnectionsPerCPU:  connectionsPerCPU,
-		ServersStr:         serversStr,
-		Discovery:          discovery,
-		UserName:           userName,
-		What:               command,
-		Arguments:          commandArgs,
-		TrustAllHosts:      trustAllHosts,
-		Timeout:            timeout,
-		PrivateKeyPathFile: privateKeyPathFile,
-	}
-
+	args.What, args.Arguments = readCommand(command)
 	client, err := clients.NewRunClient(args, background, jobName)
 	if err != nil {
 		panic(err)

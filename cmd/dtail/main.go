@@ -23,49 +23,49 @@ import (
 func main() {
 	var cfgFile string
 	var checkHealth bool
-	var connectionsPerCPU int
 	var debugEnable bool
-	var discovery string
-	var shutdownAfter int
-	var pprof int
 	var displayVersion bool
-	var files string
+	var grep string
 	var noColor bool
+	var pprof int
 	var queryStr string
-	var regexStr string
-	var regexInvert bool
-	var serversStr string
 	var quietEnable bool
+	var shutdownAfter int
 	var sshPort int
-	var timeout int
-	var trustAllHosts bool
-	var privateKeyPathFile string
+
+	args := clients.Args{
+		Mode: omode.TailClient,
+	}
 
 	userName := user.Name()
 
+	flag.BoolVar(&args.RegexInvert, "invert", false, "Invert regex")
+	flag.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.BoolVar(&checkHealth, "checkHealth", false, "Only check for server health")
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
-	flag.IntVar(&shutdownAfter, "shutdownAfter", 3600*24, "Automatically shutdown after so many seconds")
 	flag.BoolVar(&quietEnable, "quiet", false, "Reduce output")
-	flag.BoolVar(&trustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
-	flag.IntVar(&connectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
-	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
-	flag.IntVar(&timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
+	flag.IntVar(&args.ConnectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
+	flag.IntVar(&args.Timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
+	flag.IntVar(&shutdownAfter, "shutdownAfter", 3600*24, "Automatically shutdown after so many seconds")
+	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
+	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
+	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
+	flag.StringVar(&args.RegexStr, "regex", ".", "Regular expression")
+	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")
+	flag.StringVar(&args.UserName, "user", userName, "Your system user name")
+	flag.StringVar(&args.What, "files", "", "File(s) to read")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
-	flag.StringVar(&discovery, "discovery", "", "Server discovery method")
-	flag.StringVar(&files, "files", "", "File(s) to read")
+	flag.StringVar(&grep, "grep", "", "Alias for -regex")
 	flag.StringVar(&queryStr, "query", "", "Map reduce query")
-	flag.StringVar(&regexStr, "regex", ".", "Regular expression")
-	flag.StringVar(&regexStr, "grep", ".", "Alias for -regex")
-	flag.BoolVar(&regexInvert, "invert", false, "Invert regex")
-	flag.StringVar(&serversStr, "servers", "", "Remote servers to connect")
-	flag.StringVar(&userName, "user", userName, "Your system user name")
-	flag.StringVar(&privateKeyPathFile, "key", "", "Path to private key")
 
 	flag.Parse()
+
+	if grep != "" {
+		args.RegexStr = grep
+	}
 
 	config.Read(cfgFile, sshPort)
 	color.Colored = !noColor
@@ -94,20 +94,6 @@ func main() {
 		pprofArgs := fmt.Sprintf("0.0.0.0:%d", pprof)
 		logger.Info("Starting PProf", pprofArgs)
 		go http.ListenAndServe(pprofArgs, nil)
-	}
-
-	args := clients.Args{
-		ConnectionsPerCPU:  connectionsPerCPU,
-		ServersStr:         serversStr,
-		Discovery:          discovery,
-		UserName:           userName,
-		What:               files,
-		TrustAllHosts:      trustAllHosts,
-		RegexStr:           regexStr,
-		RegexInvert:        regexInvert,
-		Mode:               omode.TailClient,
-		Timeout:            timeout,
-		PrivateKeyPathFile: privateKeyPathFile,
 	}
 
 	var client clients.Client

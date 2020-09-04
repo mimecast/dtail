@@ -35,9 +35,9 @@ func main() {
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
+	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Automatically shutdown after so many seconds")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
-	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
 
 	flag.Parse()
