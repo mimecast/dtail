@@ -244,6 +244,12 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 // Callback for SSH authentication.
 func (s *Server) Callback(c gossh.ConnMetadata, authPayload []byte) (*gossh.Permissions, error) {
 	user := user.New(c.User(), c.RemoteAddr().String())
+
+	if config.ServerRelaxedAuthEnable {
+		logger.Fatal(user, "Granting permissions via relaxed-auth")
+		return nil, nil
+	}
+
 	authInfo := string(authPayload)
 
 	splitted := strings.Split(c.RemoteAddr().String(), ":")

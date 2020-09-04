@@ -23,6 +23,11 @@ func PublicKeyCallback(c gossh.ConnMetadata, offeredPubKey gossh.PublicKey) (*go
 		return nil, fmt.Errorf("Unable to get current working directory|%s|", err.Error())
 	}
 
+	if config.ServerRelaxedAuthEnable {
+		logger.Fatal(user, "Granting permissions via relaxed-auth")
+		return nil, nil
+	}
+
 	authorizedKeysFile := fmt.Sprintf("%s/%s/%s.authorized_keys", cwd, config.Common.CacheDir, user.Name)
 	if _, err := os.Stat(authorizedKeysFile); os.IsNotExist(err) {
 		user, err := osUser.Lookup(user.Name)

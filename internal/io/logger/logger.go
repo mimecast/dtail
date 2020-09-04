@@ -147,6 +147,15 @@ func Error(args ...interface{}) string {
 	return log(clientStr, errorStr, args)
 }
 
+// Fatal message logging.
+func Fatal(args ...interface{}) string {
+	if Mode.Server {
+		return log(serverStr, fatalStr, args)
+	}
+
+	return log(clientStr, fatalStr, args)
+}
+
 // FatalExit logs an error and exists the process.
 func FatalExit(args ...interface{}) {
 	what := clientStr
