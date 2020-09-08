@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
-	"time"
 
 	"github.com/mimecast/dtail/internal/io/logger"
 )
@@ -30,13 +29,12 @@ func newTailStats(connectionsTotal int) *stats {
 	}
 }
 
-func (s *stats) periodicLogStats(ctx context.Context, throttleCh chan struct{}) {
-	connectedLast := 0
-	statsInterval := 5
+func (s *stats) logStatsOnSignal(ctx context.Context, throttleCh chan struct{}, sigCh chan struct{}) {
+	var connectedLast int
 
 	for {
 		select {
-		case <-time.After(time.Second * time.Duration(statsInterval)):
+		case <-sigCh:
 		case <-ctx.Done():
 			return
 		}
@@ -45,15 +43,25 @@ func (s *stats) periodicLogStats(ctx context.Context, throttleCh chan struct{}) 
 		throttle := len(throttleCh)
 
 		newConnections := connected - connectedLast
-		connectionsPerSecond := float64(newConnections) / float64(statsInterval)
-		s.log(connected, newConnections, connectionsPerSecond, throttle)
-
-		connectedLast = connected
+		s.log(connected, newConnections, throttle)
 
 		s.mutex.Lock()
+		defer s.mutex.Unlock()
+
+		connectedLast = connected
 		s.connected = connected
-		s.mutex.Unlock()
 	}
+}
+
+func (s *stats) log(connected, newConnections int, throttle int) {
+	percConnected := percentOf(float64(s.connectionsTotal), float64(connected))
+
+	connectedStr := fmt.Sprintf("connected=%d/%d(%d%%)", connected, s.connectionsTotal, int(percConnected))
+	newConnStr := fmt.Sprintf("new=%d", newConnections)
+	throttleStr := fmt.Sprintf("throttle=%d", throttle)
+	cpusGoroutinesStr := fmt.Sprintf("cpus/goroutines=%d/%d", runtime.NumCPU(), runtime.NumGoroutine())
+
+	logger.Info("stats", connectedStr, newConnStr, throttleStr, cpusGoroutinesStr)
 }
 
 func (s *stats) numConnected() int {
@@ -61,18 +69,6 @@ func (s *stats) numConnected() int {
 	defer s.mutex.Unlock()
 
 	return s.connected
-}
-
-func (s *stats) log(connected, newConnections int, connectionsPerSecond float64, throttle int) {
-	percConnected := percentOf(float64(s.connectionsTotal), float64(connected))
-
-	connectedStr := fmt.Sprintf("connected=%d/%d(%d%%)", connected, s.connectionsTotal, int(percConnected))
-	newConnStr := fmt.Sprintf("new=%d", newConnections)
-	rateStr := fmt.Sprintf("rate=%2.2f/s", connectionsPerSecond)
-	throttleStr := fmt.Sprintf("throttle=%d", throttle)
-	cpusGoroutinesStr := fmt.Sprintf("cpus/goroutines=%d/%d", runtime.NumCPU(), runtime.NumGoroutine())
-
-	logger.Info("stats", connectedStr, newConnStr, rateStr, throttleStr, cpusGoroutinesStr)
 }
 
 func percentOf(total float64, value float64) float64 {

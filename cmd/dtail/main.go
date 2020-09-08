@@ -105,6 +105,11 @@ func main() {
 		}
 	}
 
+	/*
+		sigCh := make(chan os.Signal)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGINFO)
+	*/
+
 	status := client.Start(ctx)
 	logger.Flush()
 	os.Exit(status)
