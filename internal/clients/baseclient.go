@@ -66,11 +66,11 @@ func (c *baseClient) makeConnections(maker maker) {
 	c.stats = newTailStats(len(c.connections))
 }
 
-func (c *baseClient) Start(ctx context.Context) (status int) {
+func (c *baseClient) Start(ctx context.Context, statsCh <-chan struct{}) (status int) {
 	// Periodically check for unknown hosts, and ask the user whether to trust them or not.
 	go c.hostKeyCallback.PromptAddHosts(ctx)
-	// Periodically print out connection stats to the client.
-	go c.stats.periodicLogStats(ctx, c.throttleCh)
+	// Print client stats every time something on statsCh is recieved.
+	go c.stats.Start(ctx, c.throttleCh, statsCh)
 	// Keep count of active connections
 	active := make(chan struct{}, len(c.connections))
 

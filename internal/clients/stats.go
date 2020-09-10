@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/mimecast/dtail/internal/io/logger"
 )
@@ -29,12 +30,18 @@ func newTailStats(connectionsTotal int) *stats {
 	}
 }
 
-func (s *stats) logStatsOnSignal(ctx context.Context, throttleCh chan struct{}, sigCh chan struct{}) {
+// Start starts printing client connection stats every time a signal is recieved or
+// connection count has changed.
+func (s *stats) Start(ctx context.Context, throttleCh, statsCh <-chan struct{}) {
 	var connectedLast int
 
 	for {
+		var force bool
+
 		select {
-		case <-sigCh:
+		case <-statsCh:
+			force = true
+		case <-time.After(time.Second * 2):
 		case <-ctx.Done():
 			return
 		}
@@ -43,13 +50,16 @@ func (s *stats) logStatsOnSignal(ctx context.Context, throttleCh chan struct{}, 
 		throttle := len(throttleCh)
 
 		newConnections := connected - connectedLast
+
+		if connected == connectedLast && !force {
+			continue
+		}
 		s.log(connected, newConnections, throttle)
 
-		s.mutex.Lock()
-		defer s.mutex.Unlock()
-
 		connectedLast = connected
+		s.mutex.Lock()
 		s.connected = connected
+		s.mutex.Unlock()
 	}
 }
 

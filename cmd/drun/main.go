@@ -11,6 +11,7 @@ import (
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/signal"
 	"github.com/mimecast/dtail/internal/user"
 	"github.com/mimecast/dtail/internal/version"
 )
@@ -63,7 +64,7 @@ func main() {
 		panic(err)
 	}
 
-	status := client.Start(ctx)
+	status := client.Start(ctx, signal.StatsCh(ctx))
 	logger.Flush()
 	os.Exit(status)
 }

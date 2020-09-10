@@ -94,10 +94,10 @@ func NewMaprClient(args Args, queryStr string, maprClientMode MaprClientMode) (*
 }
 
 // Start starts the mapreduce client.
-func (c *MaprClient) Start(ctx context.Context) (status int) {
+func (c *MaprClient) Start(ctx context.Context, statsCh <-chan struct{}) (status int) {
 	go c.periodicReportResults(ctx)
 
-	status = c.baseClient.Start(ctx)
+	status = c.baseClient.Start(ctx, statsCh)
 	if c.cumulative {
 		logger.Info("Received final mapreduce result")
 		c.reportResults()

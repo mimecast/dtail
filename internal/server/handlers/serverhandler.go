@@ -85,8 +85,11 @@ func NewServerHandler(handlerCtx, serverCtx context.Context, user *user.User, ca
 func (h *ServerHandler) Read(p []byte) (n int, err error) {
 	for {
 		select {
-
 		case message := <-h.serverMessages:
+			if len(message) == 0 {
+				logger.Warn(h.user, "Empty message recieved")
+				return
+			}
 			if message[0] == '.' {
 				// Handle hidden message (don't display to the user, interpreted by dtail client)
 				wholePayload := []byte(fmt.Sprintf("%s\n", message))

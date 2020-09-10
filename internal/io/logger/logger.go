@@ -223,9 +223,6 @@ func log(what string, severity string, args []interface{}) string {
 	if Mode.Nothing {
 		return ""
 	}
-	if severity != errorStr && severity != fatalStr {
-		return ""
-	}
 
 	messages := []string{severity}
 
