@@ -10,7 +10,7 @@ import (
 // StatsCh returns a channel for "please print stats" signalling.
 func StatsCh(ctx context.Context) <-chan struct{} {
 	sigCh := make(chan os.Signal)
-	gosignal.Notify(sigCh, syscall.SIGINFO, syscall.SIGUSR1)
+	gosignal.Notify(sigCh, syscall.SIGUSR1)
 
 	statsCh := make(chan struct{})
 
