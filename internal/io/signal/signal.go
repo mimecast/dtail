@@ -4,13 +4,15 @@ import (
 	"context"
 	"os"
 	gosignal "os/signal"
-	"syscall"
+	"time"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // StatsCh returns a channel for "please print stats" signalling.
-func StatsCh(ctx context.Context) <-chan struct{} {
+func InterruptCh(ctx context.Context) <-chan struct{} {
 	sigCh := make(chan os.Signal)
-	gosignal.Notify(sigCh, syscall.SIGUSR1)
+	gosignal.Notify(sigCh, os.Interrupt)
 
 	statsCh := make(chan struct{})
 
@@ -20,6 +22,12 @@ func StatsCh(ctx context.Context) <-chan struct{} {
 			case <-sigCh:
 				select {
 				case statsCh <- struct{}{}:
+					logger.Info("Hit Ctrl+C twice to exit")
+					select {
+					case <-sigCh:
+						os.Exit(0)
+					case <-time.After(time.Second):
+					}
 				default:
 					// Stats currently already printed.
 				}

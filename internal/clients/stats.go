@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,7 +55,8 @@ func (s *stats) Start(ctx context.Context, throttleCh, statsCh <-chan struct{}) 
 		if connected == connectedLast && !force {
 			continue
 		}
-		s.log(connected, newConnections, throttle)
+
+		logger.Info(s.statsLine(connected, newConnections, throttle))
 
 		connectedLast = connected
 		s.mutex.Lock()
@@ -63,15 +65,16 @@ func (s *stats) Start(ctx context.Context, throttleCh, statsCh <-chan struct{}) 
 	}
 }
 
-func (s *stats) log(connected, newConnections int, throttle int) {
+func (s *stats) statsLine(connected, newConnections int, throttle int) string {
 	percConnected := percentOf(float64(s.connectionsTotal), float64(connected))
 
-	connectedStr := fmt.Sprintf("connected=%d/%d(%d%%)", connected, s.connectionsTotal, int(percConnected))
-	newConnStr := fmt.Sprintf("new=%d", newConnections)
-	throttleStr := fmt.Sprintf("throttle=%d", throttle)
-	cpusGoroutinesStr := fmt.Sprintf("cpus/goroutines=%d/%d", runtime.NumCPU(), runtime.NumGoroutine())
+	var stats []string
+	stats = append(stats, fmt.Sprintf("connected=%d/%d(%d%%)", connected, s.connectionsTotal, int(percConnected)))
+	stats = append(stats, fmt.Sprintf("new=%d", newConnections))
+	stats = append(stats, fmt.Sprintf("throttle=%d", throttle))
+	stats = append(stats, fmt.Sprintf("cpus/goroutines=%d/%d", runtime.NumCPU(), runtime.NumGoroutine()))
 
-	logger.Info("stats", connectedStr, newConnStr, throttleStr, cpusGoroutinesStr)
+	return strings.Join(stats, "|")
 }
 
 func (s *stats) numConnected() int {

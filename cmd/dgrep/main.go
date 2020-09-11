@@ -63,7 +63,7 @@ func main() {
 		panic(err)
 	}
 
-	status := client.Start(ctx, signal.StatsCh(ctx))
+	status := client.Start(ctx, signal.InterruptCh(ctx))
 	logger.Flush()
 	os.Exit(status)
 }
