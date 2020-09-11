@@ -39,6 +39,10 @@ func New(regexStr string, flag Flag) (Regex, error) {
 }
 
 func new(regexStr string, flags []Flag) (Regex, error) {
+	if len(flags) == 0 {
+		flags = append(flags, Default)
+	}
+
 	r := Regex{
 		regexStr: regexStr,
 		flags:    flags,

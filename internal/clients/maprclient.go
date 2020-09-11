@@ -123,7 +123,7 @@ func (c MaprClient) makeCommands() (commands []string) {
 			commands = append(commands, fmt.Sprintf("timeout %d %s %s %s", c.Timeout, modeStr, file, c.Regex.Serialize()))
 			continue
 		}
-		commands = append(commands, fmt.Sprintf("%s %s regex %s", modeStr, file, c.Regex.Serialize()))
+		commands = append(commands, fmt.Sprintf("%s %s %s", modeStr, file, c.Regex.Serialize()))
 	}
 
 	return
