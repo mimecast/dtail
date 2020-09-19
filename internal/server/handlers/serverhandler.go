@@ -266,7 +266,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 			if h.aggregate == nil {
 				return
 			}
-			h.aggregate.Cancel()
+			h.aggregate.Shutdown()
 		}
 	}
 
