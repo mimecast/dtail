@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/io/logger"
 )
 
@@ -19,9 +20,7 @@ func NewClientHandler(server string) *ClientHandler {
 			shellStarted: false,
 			commands:     make(chan string),
 			status:       -1,
-			withCancel: withCancel{
-				done: make(chan struct{}),
-			},
+			done:         internal.NewDone(),
 		},
 	}
 }
