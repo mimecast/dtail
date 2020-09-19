@@ -99,7 +99,7 @@ func (c *baseClient) start(ctx context.Context, active chan struct{}, i int, con
 	defer func() { <-active }()
 
 	for {
-		connCtx, cancel := conn.Handler.WithCancel(ctx)
+		connCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
 		conn.Start(connCtx, cancel, c.throttleCh, c.stats.connectionsEstCh)

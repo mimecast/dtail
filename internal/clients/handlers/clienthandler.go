@@ -19,9 +19,7 @@ func NewClientHandler(server string) *ClientHandler {
 			shellStarted: false,
 			commands:     make(chan string),
 			status:       -1,
-			withCancel: withCancel{
-				done: make(chan struct{}),
-			},
+			done:         NewDone(),
 		},
 	}
 }

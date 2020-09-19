@@ -8,7 +8,7 @@ import (
 
 // HealthHandler implements the handler required for health checks.
 type HealthHandler struct {
-	withCancel
+	done *Done
 	// Buffer of incoming data from server.
 	receiveBuf []byte
 	// To send commands to the server.
@@ -27,9 +27,7 @@ func NewHealthHandler(server string, receive chan<- string) *HealthHandler {
 		receive:  receive,
 		commands: make(chan string),
 		status:   -1,
-		withCancel: withCancel{
-			done: make(chan struct{}),
-		},
+		done:     NewDone(),
 	}
 
 	return &h
@@ -45,12 +43,21 @@ func (h *HealthHandler) Status() int {
 	return h.status
 }
 
+func (h *HealthHandler) Done() <-chan struct{} {
+	return h.done.Done()
+}
+
+func (h *HealthHandler) Shutdown() {
+	h.done.Shutdown()
+}
+
 // SendMessage sends a DTail command to the server.
 func (h *HealthHandler) SendMessage(command string) error {
 	select {
 	case h.commands <- fmt.Sprintf("%s;", command):
 	case <-time.NewTimer(time.Second * 10).C:
 		return errors.New("Timed out sending command " + command)
+	case <-h.Done():
 	}
 
 	return nil

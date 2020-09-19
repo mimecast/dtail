@@ -24,9 +24,7 @@ func NewMaprHandler(server string, query *mapr.Query, globalGroup *mapr.GlobalGr
 			shellStarted: false,
 			commands:     make(chan string),
 			status:       -1,
-			withCancel: withCancel{
-				done: make(chan struct{}),
-			},
+			done:         NewDone(),
 		},
 		query:     query,
 		aggregate: client.NewAggregate(server, query, globalGroup),

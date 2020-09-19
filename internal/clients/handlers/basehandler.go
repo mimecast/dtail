@@ -13,7 +13,7 @@ import (
 )
 
 type baseHandler struct {
-	withCancel
+	done         *Done
 	server       string
 	shellStarted bool
 	commands     chan string
@@ -29,6 +29,14 @@ func (h *baseHandler) Status() int {
 	return h.status
 }
 
+func (h *baseHandler) Done() <-chan struct{} {
+	return h.done.Done()
+}
+
+func (h *baseHandler) Shutdown() {
+	h.done.Shutdown()
+}
+
 // SendMessage to the server.
 func (h *baseHandler) SendMessage(command string) error {
 	encoded := base64.StdEncoding.EncodeToString([]byte(command))
@@ -38,7 +46,8 @@ func (h *baseHandler) SendMessage(command string) error {
 	case h.commands <- fmt.Sprintf("protocol %s base64 %v;", version.ProtocolCompat, encoded):
 	case <-time.After(time.Second * 5):
 		return fmt.Errorf("Timed out sending command '%s' (base64: '%s')", command, encoded)
-	case <-h.ctx.Done():
+	case <-h.Done():
+		return nil
 	}
 
 	return nil
@@ -65,7 +74,7 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 	select {
 	case command := <-h.commands:
 		n = copy(p, []byte(command))
-	case <-h.ctx.Done():
+	case <-h.Done():
 		return 0, io.EOF
 	}
 	return
@@ -95,10 +104,11 @@ func (h *baseHandler) handleHiddenMessage(message string) {
 	case strings.HasPrefix(message, ".syn close connection"):
 		h.SendMessage(".ack close connection")
 		select {
-		case <-time.After(time.Second * 1):
+		case <-time.After(time.Second * 5):
 			logger.Debug("Shutting down client after timeout and sending ack to server")
-			h.withCancel.shutdown()
-		case <-h.ctx.Done():
+			h.Shutdown()
+		case <-h.Done():
+			return
 		}
 
 	case strings.HasPrefix(message, ".run exitstatus"):
