@@ -3,6 +3,7 @@ package handlers
 import (
 	"strings"
 
+	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/mapr/client"
@@ -24,7 +25,7 @@ func NewMaprHandler(server string, query *mapr.Query, globalGroup *mapr.GlobalGr
 			shellStarted: false,
 			commands:     make(chan string),
 			status:       -1,
-			done:         NewDone(),
+			done:         internal.NewDone(),
 		},
 		query:     query,
 		aggregate: client.NewAggregate(server, query, globalGroup),

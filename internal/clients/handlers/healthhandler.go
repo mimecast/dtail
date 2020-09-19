@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/mimecast/dtail/internal"
 )
 
 // HealthHandler implements the handler required for health checks.
 type HealthHandler struct {
-	done *Done
+	done *internal.Done
 	// Buffer of incoming data from server.
 	receiveBuf []byte
 	// To send commands to the server.
@@ -27,7 +29,7 @@ func NewHealthHandler(server string, receive chan<- string) *HealthHandler {
 		receive:  receive,
 		commands: make(chan string),
 		status:   -1,
-		done:     NewDone(),
+		done:     internal.NewDone(),
 	}
 
 	return &h

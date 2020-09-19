@@ -8,12 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/version"
 )
 
 type baseHandler struct {
-	done         *Done
+	done         *internal.Done
 	server       string
 	shellStarted bool
 	commands     chan string
