@@ -178,53 +178,46 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 
 		switch req.Type {
 		case "shell":
-			handlerCtx, cancel := context.WithCancel(ctx)
-
 			var handler handlers.Handler
-			var done <-chan struct{}
-
 			switch user.Name {
 			case config.ControlUser:
-				handler, done = handlers.NewControlHandler(handlerCtx, user)
+				handler = handlers.NewControlHandler(user)
 			default:
-				handler, done = handlers.NewServerHandler(handlerCtx, ctx, user, s.catLimiter, s.tailLimiter, s.shutdownWaitFor, s.background)
+				handler = handlers.NewServerHandler(user, s.catLimiter, s.tailLimiter, s.shutdownWaitFor, s.background)
+			}
+
+			terminate := func() {
+				handler.Shutdown()
+				sshConn.Close()
 			}
 
 			go func() {
-				// Handler finished work, cancel all remaining routines
-				defer cancel()
-
-				<-done
-			}()
-
-			go func() {
 				// Broken pipe, cancel
-				defer cancel()
-
 				io.Copy(channel, handler)
+				terminate()
 			}()
 
 			go func() {
 				// Broken pipe, cancel
-				defer cancel()
-
 				io.Copy(handler, channel)
+				terminate()
 			}()
 
 			go func() {
-				defer cancel()
+				select {
+				case <-ctx.Done():
+				case <-handler.Done():
+				}
+				terminate()
+			}()
 
+			go func() {
 				if err := sshConn.Wait(); err != nil && err != io.EOF {
 					logger.Error(user, err)
 				}
 				s.stats.decrementConnections()
 				logger.Info(user, "Good bye Mister!")
-			}()
-
-			go func() {
-				<-handlerCtx.Done()
-				sshConn.Close()
-				logger.Info(user, "Closed SSH connection")
+				terminate()
 			}()
 
 			// Only serving shell type

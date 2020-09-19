@@ -50,7 +50,7 @@ func (c *HealthClient) Start(ctx context.Context) (status int) {
 	conn.Handler = handlers.NewHealthHandler(c.server, receive)
 	conn.Commands = []string{c.mode.String()}
 
-	connCtx, cancel := conn.Handler.WithCancel(ctx)
+	connCtx, cancel := context.WithCancel(ctx)
 	go conn.Start(connCtx, cancel, throttleCh, statsCh)
 
 	for {

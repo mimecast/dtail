@@ -177,21 +177,21 @@ func (c *Connection) handle(ctx context.Context, cancel context.CancelFunc, sess
 	}
 
 	go func() {
-		defer cancel()
 		io.Copy(stdinPipe, c.Handler)
+		cancel()
 	}()
 
 	go func() {
-		defer cancel()
 		io.Copy(c.Handler, stdoutPipe)
+		cancel()
 	}()
 
 	go func() {
-		defer cancel()
 		select {
 		case <-c.Handler.Done():
 		case <-ctx.Done():
 		}
+		cancel()
 	}()
 
 	// Send all commands to client.
@@ -207,5 +207,6 @@ func (c *Connection) handle(ctx context.Context, cancel context.CancelFunc, sess
 	}
 
 	<-ctx.Done()
+	c.Handler.Shutdown()
 	return nil
 }
