@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -147,7 +146,6 @@ func (h *ServerHandler) Write(p []byte) (n int, err error) {
 
 func (h *ServerHandler) handleCommand(commandStr string) {
 	logger.Debug(h.user, commandStr)
-	var timeout time.Duration
 	ctx := context.Background()
 
 	args, argc, err := h.handleProtocolVersion(strings.Split(commandStr, " "))
@@ -157,12 +155,6 @@ func (h *ServerHandler) handleCommand(commandStr string) {
 	}
 
 	args, argc, err = h.handleBase64(args, argc)
-	if err != nil {
-		h.send(h.serverMessages, logger.Error(h.user, err))
-		return
-	}
-
-	args, argc, timeout, err = h.handleTimeout(args, argc)
 	if err != nil {
 		h.send(h.serverMessages, logger.Error(h.user, err))
 		return
@@ -179,19 +171,7 @@ func (h *ServerHandler) handleCommand(commandStr string) {
 		cancel()
 	}()
 
-	if timeout > 0 {
-		logger.Info(h.user, "Command with timeout context", argc, args, timeout)
-		ctx, cancel := context.WithTimeout(ctx, timeout)
-		go func() {
-			<-ctx.Done()
-			logger.Info(h.user, "Command timed out, canceling it", args, args, timeout)
-			cancel()
-		}()
-		h.handleUserCommand(ctx, argc, args, timeout)
-		return
-	}
-
-	h.handleUserCommand(ctx, argc, args, timeout)
+	h.handleUserCommand(ctx, argc, args)
 }
 
 func (h *ServerHandler) handleProtocolVersion(args []string) ([]string, int, error) {
@@ -229,16 +209,6 @@ func (h *ServerHandler) handleBase64(args []string, argc int) ([]string, int, er
 	return args, argc, nil
 }
 
-func (h *ServerHandler) handleTimeout(args []string, argc int) ([]string, int, time.Duration, error) {
-	if argc <= 2 || args[0] != "timeout" {
-		// No timeout specified
-		return args, argc, time.Duration(0) * time.Second, nil
-	}
-
-	timeout, err := strconv.Atoi(args[1])
-	return args[2:], argc - 2, time.Duration(timeout) * time.Second, err
-}
-
 func (h *ServerHandler) handleControlCommand(argc int, args []string) {
 	switch args[0] {
 	case "debug":
@@ -248,7 +218,7 @@ func (h *ServerHandler) handleControlCommand(argc int, args []string) {
 	}
 }
 
-func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []string, timeout time.Duration) {
+func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []string) {
 	logger.Debug(h.user, "handleUserCommand", argc, args)
 
 	h.incrementActiveCommands()
