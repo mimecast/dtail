@@ -9,7 +9,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/mapr/server"
 	"github.com/mimecast/dtail/internal/omode"
-	"github.com/mimecast/dtail/internal/server/background"
 	user "github.com/mimecast/dtail/internal/user/server"
 	"github.com/mimecast/dtail/internal/version"
 )
@@ -47,11 +45,10 @@ type ServerHandler struct {
 	ackCloseReceived    chan struct{}
 	activeCommands      int32
 	activeReaders       int32
-	background          background.Background
 }
 
 // NewServerHandler returns the server handler.
-func NewServerHandler(user *user.User, catLimiter, tailLimiter, globalServerWaitFor chan struct{}, background background.Background) *ServerHandler {
+func NewServerHandler(user *user.User, catLimiter, tailLimiter, globalServerWaitFor chan struct{}) *ServerHandler {
 	h := ServerHandler{
 		done:                internal.NewDone(),
 		lines:               make(chan line.Line, 100),
@@ -63,7 +60,6 @@ func NewServerHandler(user *user.User, catLimiter, tailLimiter, globalServerWait
 		globalServerWaitFor: globalServerWaitFor,
 		regex:               ".",
 		user:                user,
-		background:          background,
 	}
 
 	fqdn, err := os.Hostname()
@@ -313,85 +309,6 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 			command.Start(ctx, h.aggregatedMessages)
 			commandFinished()
 		}()
-
-	case "run":
-		// TODO: Refactor this "run" case, move code to runcommand.go
-		command := newRunCommand(h)
-
-		jobName, _ := options["jobName"]
-		logger.Debug(h.user, "run", options)
-
-		if val, ok := options["background"]; ok && (val == "cancel" || val == "stop") {
-			if err := h.background.Cancel(h.user.Name, jobName); err != nil {
-				h.sendServerMessage(logger.Error(h.user, err, jobName, args))
-			} else {
-				h.sendServerMessage(logger.Info(h.user, "job cancelled", jobName))
-			}
-			commandFinished()
-			return
-		}
-
-		if val, ok := options["background"]; ok && val == "list" {
-			h.sendServerMessage("Listing jobs")
-			count := 0
-			for jobName := range h.background.ListJobsC(h.user.Name) {
-				h.sendServerMessage(jobName)
-				count++
-			}
-			h.sendServerMessage(fmt.Sprintf("Found %d jobs", count))
-			commandFinished()
-			return
-		}
-
-		str, _ := options["outerArgs"]
-		outerArgs := strings.Split(str, " ")
-
-		var background bool
-		if val, ok := options["background"]; ok && val == "start" {
-			background = true
-		}
-
-		var wg sync.WaitGroup
-		wg.Add(1)
-
-		if background {
-			if timeout == 0 {
-				// Set default background timeout.
-				timeout = time.Hour * 1
-			}
-
-			commandCtx, cancel := context.WithTimeout(ctx, timeout)
-
-			if err := h.background.Add(h.user.Name, jobName, cancel, &wg); err != nil {
-				h.sendServerMessage(logger.Error(h.user, err, jobName, args))
-				commandFinished()
-				return
-			}
-			ctx = commandCtx
-		}
-
-		if err := command.StartBackground(ctx, &wg, argc, args, outerArgs); err != nil {
-			h.sendServerMessage(logger.Error(h.user, "Unable to execute command", argc, args, err))
-			commandFinished()
-			return
-		}
-
-		// Make sure that server waits for all sub-processes to finish on shutdown
-		go func() { h.globalServerWaitFor <- struct{}{} }()
-		go func() {
-			wg.Wait()
-			<-h.globalServerWaitFor
-		}()
-
-		if background {
-			h.sendServerMessage(logger.Info(h.user, jobName, "job started in background"))
-			commandFinished()
-			return
-		}
-
-		// Command run in foreground, wait for it to complete before finishing the connection.
-		wg.Wait()
-		commandFinished()
 
 	case "ack", ".ack":
 		h.handleAckCommand(argc, args)
