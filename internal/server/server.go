@@ -11,7 +11,6 @@ import (
 
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
-	"github.com/mimecast/dtail/internal/server/background"
 	"github.com/mimecast/dtail/internal/server/handlers"
 	"github.com/mimecast/dtail/internal/ssh/server"
 	user "github.com/mimecast/dtail/internal/user/server"
@@ -36,8 +35,6 @@ type Server struct {
 	cont *continuous
 	// Wait counter, e.g. there might be still subprocesses (forked by drun) to be killed.
 	shutdownWaitFor chan struct{}
-	// Background jobs
-	background background.Background
 }
 
 // New returns a new server.
@@ -51,7 +48,6 @@ func New() *Server {
 		shutdownWaitFor: make(chan struct{}, 1000),
 		sched:           newScheduler(),
 		cont:            newContinuous(),
-		background:      background.New(),
 	}
 
 	s.sshServerConfig.PasswordCallback = s.Callback
@@ -183,7 +179,7 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 			case config.ControlUser:
 				handler = handlers.NewControlHandler(user)
 			default:
-				handler = handlers.NewServerHandler(user, s.catLimiter, s.tailLimiter, s.shutdownWaitFor, s.background)
+				handler = handlers.NewServerHandler(user, s.catLimiter, s.tailLimiter, s.shutdownWaitFor)
 			}
 
 			terminate := func() {

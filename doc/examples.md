@@ -52,17 +52,6 @@ The following example demonstrates how to grep files (display only the lines whi
 
 ![dgrep](dgrep.gif "Grep example")
 
-# How to use ``drun``
-
-The following example demonstrates how to execute a command on multiple machines remotely:
-
-```shell
-% drun --servers <(head -n 30 serverlist.txt) \
-    --command uptime
-```
-
-![dgrep](drun.gif "Run example")
-
 # How to use ``dmap``
 
 To run a mapreduce aggregation over logs written in the past the ``dmap`` command can be used. For example the following command aggregates all mapreduce fields of all the logs and calculates the average memory free grouped by day of the month, hour, minute and the server hostname. ``dmap`` will print interim results every few seconds. The final result however will be written to file ``mapreduce.csv``.
