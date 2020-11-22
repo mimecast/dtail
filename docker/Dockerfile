@@ -3,17 +3,16 @@
 # Purposes
 
 FROM centos:8
+RUN mkdir -p /etc/dserver /var/run/dserver/ /var/log/dserver
 
-RUN mkdir -p /etc/dserver /var/run/dserver
-
-ADD ./samples/dtail.json.sample /etc/dserver/dtail.json
+ADD ./dtail.json /etc/dserver/dtail.json
 ADD ./dserver /usr/local/bin/dserver
 
 RUN useradd dserver
-RUN chown -R dserver /var/run/dserver
+RUN chown -R dserver /var/run/dserver /var/log/dserver
 USER dserver
 
 WORKDIR /var/run/dserver
 EXPOSE 2222/tcp
 
-CMD ["/usr/local/bin/dserver", "-cfg", "/etc/dserver/dtail.json"]
+CMD ["/usr/local/bin/dserver", "-relaxedAuth", "-cfg", "/etc/dserver/dtail.json"]

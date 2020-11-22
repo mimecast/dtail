@@ -1,0 +1,39 @@
+{
+  "Client": {},
+  "Server": {
+    "SSHBindAddress": "0.0.0.0",
+    "MaxConcurrentCats": 2,
+    "MaxConcurrentTails": 50,
+    "MaxConnections": 50,
+    "MapreduceLogFormat" : "default",
+    "HostKeyFile" : "cache/ssh_host_key",
+    "HostKeyBits" : 2048,
+    "Permissions": {
+      "Default": [
+        "readfiles:^/.*$",
+        "runcommands:^/.*$"
+      ],
+      "Users": {
+        "pbuetow": [
+          "readfiles:^/.*$",
+          "runcommands:^/.*$"
+        ],
+        "jblake": [
+          "readfiles:^/tmp/foo.log$",
+          "readfiles:^/.*$",
+          "readfiles:!^/tmp/bar.log$",
+          "runcommands:!^/.*$"
+        ]
+      }
+    }
+  },
+  "Common": {
+    "LogDir" : "/var/log/dserver",
+    "CacheDir" : "cache",
+    "TmpDir" : "tmp",
+    "LogStrategy": "daily",
+    "SSHPort": 2222,
+    "DebugEnable": true,
+    "ExperimentalFeaturesEnable": false
+  }
+}

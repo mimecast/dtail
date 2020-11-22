@@ -17,7 +17,7 @@ install: build
 	cp -pv dmap ${GOPATH}/bin/dmap
 	cp -pv dtail ${GOPATH}/bin/dtail
 vet:
-	find . -type d | while read dir; do \
+	find . -type d | egrep -v '(./samples|./log|./doc)' | while read dir; do \
 	  echo ${GO} vet $$dir; \
 	  ${GO} vet $$dir; \
 	done
@@ -29,5 +29,3 @@ lint:
 	done
 test:
 	${GO} test ./... -v
-docker_build:
-	docker build . -t dtail:latest
