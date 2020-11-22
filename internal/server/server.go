@@ -34,6 +34,7 @@ type Server struct {
 	// Mointor log files for pattern (if configured)
 	cont *continuous
 	// Wait counter, e.g. there might be still subprocesses (forked by drun) to be killed.
+	// TODO: Remove this counter.
 	shutdownWaitFor chan struct{}
 }
 

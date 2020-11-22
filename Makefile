@@ -29,3 +29,5 @@ lint:
 	done
 test:
 	${GO} test ./... -v
+docker_build:
+	docker build . -t dtail:latest
