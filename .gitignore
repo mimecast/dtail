@@ -1,3 +1,8 @@
 *_proprietary.go
-cache/
-log/
+/cache/
+/log/
+/dtail
+/dgrep
+/dcat
+/dmap
+/dserver
