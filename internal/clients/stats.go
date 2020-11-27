@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
 )
 
@@ -62,7 +63,7 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 		switch force {
 		case true:
 			messages = append(messages, fmt.Sprintf("Connection stats: %s", stats))
-			s.forcePrintStats(messages)
+			s.printStatsOnInterrupt(messages)
 		default:
 			logger.Info(stats)
 		}
@@ -74,12 +75,12 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 	}
 }
 
-func (s *stats) forcePrintStats(messages []string) {
+func (s *stats) printStatsOnInterrupt(messages []string) {
 	logger.Pause()
 	for _, message := range messages {
-		fmt.Println(fmt.Sprintf("\t%s", message))
+		fmt.Println(fmt.Sprintf(" %s", message))
 	}
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * time.Duration(config.InterruptTimeoutS))
 	logger.Resume()
 }
 

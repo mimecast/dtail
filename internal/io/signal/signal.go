@@ -6,6 +6,8 @@ import (
 	gosignal "os/signal"
 	"syscall"
 	"time"
+
+	"github.com/mimecast/dtail/internal/config"
 )
 
 // StatsCh returns a channel for "please print stats" signalling.
@@ -27,7 +29,7 @@ func InterruptCh(ctx context.Context) <-chan string {
 					select {
 					case <-sigIntCh:
 						os.Exit(0)
-					case <-time.After(time.Second * 3):
+					case <-time.After(time.Second * time.Duration(config.InterruptTimeoutS)):
 					}
 				default:
 					// Stats already printed.
