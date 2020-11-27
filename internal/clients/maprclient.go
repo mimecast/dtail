@@ -94,7 +94,7 @@ func NewMaprClient(args Args, queryStr string, maprClientMode MaprClientMode) (*
 }
 
 // Start starts the mapreduce client.
-func (c *MaprClient) Start(ctx context.Context, statsCh <-chan struct{}) (status int) {
+func (c *MaprClient) Start(ctx context.Context, statsCh <-chan string) (status int) {
 	go c.periodicReportResults(ctx)
 
 	status = c.baseClient.Start(ctx, statsCh)

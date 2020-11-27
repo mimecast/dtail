@@ -33,16 +33,18 @@ func newTailStats(connectionsTotal int) *stats {
 
 // Start starts printing client connection stats every time a signal is recieved or
 // connection count has changed.
-func (s *stats) Start(ctx context.Context, throttleCh, statsCh <-chan struct{}) {
+func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <-chan string) {
 	var connectedLast int
 
 	for {
 		var force bool
+		var messages []string
 
 		select {
-		case <-statsCh:
+		case message := <-statsCh:
+			messages = append(messages, message)
 			force = true
-		case <-time.After(time.Second * 2):
+		case <-time.After(time.Second * 10):
 		case <-ctx.Done():
 			return
 		}
@@ -56,13 +58,29 @@ func (s *stats) Start(ctx context.Context, throttleCh, statsCh <-chan struct{}) 
 			continue
 		}
 
-		logger.Info(s.statsLine(connected, newConnections, throttle))
+		stats := s.statsLine(connected, newConnections, throttle)
+		switch force {
+		case true:
+			messages = append(messages, fmt.Sprintf("Connection stats: %s", stats))
+			s.forcePrintStats(messages)
+		default:
+			logger.Info(stats)
+		}
 
 		connectedLast = connected
 		s.mutex.Lock()
 		s.connected = connected
 		s.mutex.Unlock()
 	}
+}
+
+func (s *stats) forcePrintStats(messages []string) {
+	logger.Pause()
+	for _, message := range messages {
+		fmt.Println(fmt.Sprintf("\t%s", message))
+	}
+	time.Sleep(time.Second * 3)
+	logger.Resume()
 }
 
 func (s *stats) statsLine(connected, newConnections int, throttle int) string {
