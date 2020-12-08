@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"io"
 )
 
@@ -11,6 +10,6 @@ type Handler interface {
 	SendMessage(command string) error
 	Server() string
 	Status() int
-	WithCancel(ctx context.Context) (context.Context, context.CancelFunc)
+	Shutdown()
 	Done() <-chan struct{}
 }

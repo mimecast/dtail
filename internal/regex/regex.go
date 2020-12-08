@@ -8,6 +8,7 @@ import (
 	"github.com/mimecast/dtail/internal/io/logger"
 )
 
+// Regex for filtering lines.
 type Regex struct {
 	// The original regex string
 	regexStr string
@@ -24,6 +25,7 @@ func (r Regex) String() string {
 		r.regexStr, r.flags, r.initialized, r.re == nil)
 }
 
+// NewNoop is a noop regex (doing nothing).
 func NewNoop() Regex {
 	return Regex{
 		flags:       []Flag{Noop},
@@ -31,6 +33,7 @@ func NewNoop() Regex {
 	}
 }
 
+// New returns a new regex object.
 func New(regexStr string, flag Flag) (Regex, error) {
 	if regexStr == "" || regexStr == "." || regexStr == ".*" {
 		return NewNoop(), nil
@@ -39,6 +42,10 @@ func New(regexStr string, flag Flag) (Regex, error) {
 }
 
 func new(regexStr string, flags []Flag) (Regex, error) {
+	if len(flags) == 0 {
+		flags = append(flags, Default)
+	}
+
 	r := Regex{
 		regexStr: regexStr,
 		flags:    flags,
@@ -55,6 +62,7 @@ func new(regexStr string, flags []Flag) (Regex, error) {
 	return r, nil
 }
 
+// Match a byte string.
 func (r Regex) Match(bytes []byte) bool {
 	switch r.flags[0] {
 	case Default:
@@ -68,6 +76,7 @@ func (r Regex) Match(bytes []byte) bool {
 	}
 }
 
+// MatchString matches a string.
 func (r Regex) MatchString(str string) bool {
 	switch r.flags[0] {
 	case Default:
@@ -81,6 +90,7 @@ func (r Regex) MatchString(str string) bool {
 	}
 }
 
+// Serialize the regex.
 func (r Regex) Serialize() string {
 	var flags []string
 	for _, flag := range r.flags {
@@ -94,6 +104,7 @@ func (r Regex) Serialize() string {
 	return fmt.Sprintf("regex:%s %s", strings.Join(flags, ","), r.regexStr)
 }
 
+// Deserialize the regex.
 func Deserialize(str string) (Regex, error) {
 	// Get regex string
 	s := strings.SplitN(str, " ", 2)

@@ -2,6 +2,7 @@ package regex
 
 import "fmt"
 
+// Flag for regex.
 type Flag int
 
 const (
@@ -15,6 +16,7 @@ const (
 	Noop Flag = iota
 )
 
+// NewFlag returns a new regex flag.
 func NewFlag(str string) (Flag, error) {
 	switch str {
 	case "default":

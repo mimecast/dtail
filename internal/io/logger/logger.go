@@ -224,7 +224,7 @@ func log(what string, severity string, args []interface{}) string {
 		return ""
 	}
 
-	messages := []string{severity}
+	messages := []string{}
 
 	for _, arg := range args {
 		switch v := arg.(type) {

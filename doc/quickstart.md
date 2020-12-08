@@ -16,7 +16,7 @@ On Linux you need to install the libacl development library for file system ACL 
 To compile and install all DTail binaries directly from GitHub run:
 
 ```console
-% for cmd in dcat dgrep dmap drun dtail dserver; do
+% for cmd in dcat dgrep dmap dtail dserver; do
     go get github.com/mimecast/dtail/cmd/$cmd;
   done
 ```
@@ -26,7 +26,6 @@ It produces the following executables in ``$GOPATH/bin``:
 * ``dcat``: Client for displaying whole files remotely (distributed cat)
 * ``dgrep``: Client for searching whole files files remotely using a regex (distributed grep)
 * ``dmap``: Client for executing distributed mapreduce queries (may will consume a lot of RAM and CPU)
-* ``drun``: Client for executing commands on remote servers.
 * ``dtail``: Client for tailing/following log files remotely (distributed tail)
 * ``dserver``: The DTail server
 

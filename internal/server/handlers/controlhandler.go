@@ -1,20 +1,19 @@
 package handlers
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/io/logger"
 	user "github.com/mimecast/dtail/internal/user/server"
 )
 
 // ControlHandler is used for control functions and health monitoring.
 type ControlHandler struct {
-	ctx            context.Context
-	done           chan struct{}
+	done           *internal.Done
 	hostname       string
 	payload        []byte
 	serverMessages chan string
@@ -22,12 +21,11 @@ type ControlHandler struct {
 }
 
 // NewControlHandler returns a new control handler.
-func NewControlHandler(ctx context.Context, user *user.User) (*ControlHandler, <-chan struct{}) {
+func NewControlHandler(user *user.User) *ControlHandler {
 	logger.Debug(user, "Creating control handler")
 
 	h := ControlHandler{
-		ctx:            ctx,
-		done:           make(chan struct{}),
+		done:           internal.NewDone(),
 		serverMessages: make(chan string, 10),
 		user:           user,
 	}
@@ -40,7 +38,17 @@ func NewControlHandler(ctx context.Context, user *user.User) (*ControlHandler, <
 	s := strings.Split(fqdn, ".")
 	h.hostname = s[0]
 
-	return &h, h.done
+	return &h
+}
+
+// Shutdown the handler.
+func (h *ControlHandler) Shutdown() {
+	h.done.Shutdown()
+}
+
+// Done channel of the handler.
+func (h *ControlHandler) Done() <-chan struct{} {
+	return h.done.Done()
 }
 
 // Read is to send data to the client via the Reader interface.
@@ -51,7 +59,7 @@ func (h *ControlHandler) Read(p []byte) (n int, err error) {
 			wholePayload := []byte(fmt.Sprintf("SERVER|%s|%s\n", h.hostname, message))
 			n = copy(p, wholePayload)
 			return
-		case <-h.ctx.Done():
+		case <-h.done.Done():
 			return 0, io.EOF
 		}
 	}
@@ -63,7 +71,7 @@ func (h *ControlHandler) Write(p []byte) (n int, err error) {
 		switch c {
 		case ';':
 			wholePayload := strings.TrimSpace(string(h.payload))
-			h.handleCommand(h.ctx, wholePayload)
+			h.handleCommand(wholePayload)
 			h.payload = nil
 
 		default:
@@ -75,7 +83,7 @@ func (h *ControlHandler) Write(p []byte) (n int, err error) {
 	return
 }
 
-func (h *ControlHandler) handleCommand(ctx context.Context, command string) {
+func (h *ControlHandler) handleCommand(command string) {
 	logger.Info(h.user, command)
 	s := strings.Split(command, " ")
 	logger.Debug(h.user, "Receiving command", command, s)

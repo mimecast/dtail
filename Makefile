@@ -5,7 +5,6 @@ build:
 	${GO} build -o dcat ./cmd/dcat/main.go
 	${GO} build -o dgrep ./cmd/dgrep/main.go
 	${GO} build -o dmap ./cmd/dmap/main.go
-	${GO} build -o drun ./cmd/drun/main.go
 	${GO} build -o dtail ./cmd/dtail/main.go
 clean:
 	ls ./cmd/ | while read cmd; do \
@@ -16,7 +15,6 @@ install: build
 	cp -pv dcat ${GOPATH}/bin/dcat
 	cp -pv dgrep ${GOPATH}/bin/dgrep
 	cp -pv dmap ${GOPATH}/bin/dmap
-	cp -pv drun ${GOPATH}/bin/drun
 	cp -pv dtail ${GOPATH}/bin/dtail
 vet:
 	find . -type d | while read dir; do \
@@ -26,8 +24,8 @@ vet:
 lint:
 	${GO} get golang.org/x/lint/golint
 	find . -type d | while read dir; do \
-	  echo ${GOPATH}/bin/golint $$dir; \
-	  ${GOPATH}/bin/golint $$dir; \
+	  echo golint $$dir; \
+	  golint $$dir; \
 	done
 test:
 	${GO} test ./... -v

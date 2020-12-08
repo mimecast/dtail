@@ -92,7 +92,7 @@ func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
 	}
 
 	logger.Info(fmt.Sprintf("Starting job %s", job.Name))
-	status := client.Start(jobCtx, make(chan struct{}))
+	status := client.Start(jobCtx, make(chan string))
 	logMessage := fmt.Sprintf("Job exited with status %d", status)
 
 	if status != 0 {

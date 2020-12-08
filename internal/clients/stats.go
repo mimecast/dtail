@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
 )
 
@@ -32,16 +34,18 @@ func newTailStats(connectionsTotal int) *stats {
 
 // Start starts printing client connection stats every time a signal is recieved or
 // connection count has changed.
-func (s *stats) Start(ctx context.Context, throttleCh, statsCh <-chan struct{}) {
+func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <-chan string) {
 	var connectedLast int
 
 	for {
 		var force bool
+		var messages []string
 
 		select {
-		case <-statsCh:
+		case message := <-statsCh:
+			messages = append(messages, message)
 			force = true
-		case <-time.After(time.Second * 2):
+		case <-time.After(time.Second * 10):
 		case <-ctx.Done():
 			return
 		}
@@ -54,7 +58,15 @@ func (s *stats) Start(ctx context.Context, throttleCh, statsCh <-chan struct{}) 
 		if connected == connectedLast && !force {
 			continue
 		}
-		s.log(connected, newConnections, throttle)
+
+		stats := s.statsLine(connected, newConnections, throttle)
+		switch force {
+		case true:
+			messages = append(messages, fmt.Sprintf("Connection stats: %s", stats))
+			s.printStatsOnInterrupt(messages)
+		default:
+			logger.Info(stats)
+		}
 
 		connectedLast = connected
 		s.mutex.Lock()
@@ -63,15 +75,25 @@ func (s *stats) Start(ctx context.Context, throttleCh, statsCh <-chan struct{}) 
 	}
 }
 
-func (s *stats) log(connected, newConnections int, throttle int) {
+func (s *stats) printStatsOnInterrupt(messages []string) {
+	logger.Pause()
+	for _, message := range messages {
+		fmt.Println(fmt.Sprintf(" %s", message))
+	}
+	time.Sleep(time.Second * time.Duration(config.InterruptTimeoutS))
+	logger.Resume()
+}
+
+func (s *stats) statsLine(connected, newConnections int, throttle int) string {
 	percConnected := percentOf(float64(s.connectionsTotal), float64(connected))
 
-	connectedStr := fmt.Sprintf("connected=%d/%d(%d%%)", connected, s.connectionsTotal, int(percConnected))
-	newConnStr := fmt.Sprintf("new=%d", newConnections)
-	throttleStr := fmt.Sprintf("throttle=%d", throttle)
-	cpusGoroutinesStr := fmt.Sprintf("cpus/goroutines=%d/%d", runtime.NumCPU(), runtime.NumGoroutine())
+	var stats []string
+	stats = append(stats, fmt.Sprintf("connected=%d/%d(%d%%)", connected, s.connectionsTotal, int(percConnected)))
+	stats = append(stats, fmt.Sprintf("new=%d", newConnections))
+	stats = append(stats, fmt.Sprintf("throttle=%d", throttle))
+	stats = append(stats, fmt.Sprintf("cpus/goroutines=%d/%d", runtime.NumCPU(), runtime.NumGoroutine()))
 
-	logger.Info("stats", connectedStr, newConnStr, throttleStr, cpusGoroutinesStr)
+	return strings.Join(stats, "|")
 }
 
 func (s *stats) numConnected() int {
