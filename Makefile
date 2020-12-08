@@ -6,16 +6,16 @@ build:
 	${GO} build -o dgrep ./cmd/dgrep/main.go
 	${GO} build -o dmap ./cmd/dmap/main.go
 	${GO} build -o dtail ./cmd/dtail/main.go
+install:
+	${GO} install ./cmd/dserver/main.go
+	${GO} install ./cmd/dcat/main.go
+	${GO} install ./cmd/dgrep/main.go
+	${GO} install ./cmd/dmap/main.go
+	${GO} install ./cmd/dtail/main.go
 clean:
 	ls ./cmd/ | while read cmd; do \
 	  test -f $$cmd && rm $$cmd; \
 	done
-install: build
-	cp -pv dserver ${GOPATH}/bin/dserver
-	cp -pv dcat ${GOPATH}/bin/dcat
-	cp -pv dgrep ${GOPATH}/bin/dgrep
-	cp -pv dmap ${GOPATH}/bin/dmap
-	cp -pv dtail ${GOPATH}/bin/dtail
 vet:
 	find . -type d | while read dir; do \
 	  echo ${GO} vet $$dir; \
