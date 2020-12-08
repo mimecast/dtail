@@ -72,10 +72,12 @@ func NewServerHandler(user *user.User, catLimiter, tailLimiter, globalServerWait
 	return &h
 }
 
+// Shutdown the handler.
 func (h *ServerHandler) Shutdown() {
 	h.done.Shutdown()
 }
 
+// Done channel of the handler.
 func (h *ServerHandler) Done() <-chan struct{} {
 	return h.done.Done()
 }

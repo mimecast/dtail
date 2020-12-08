@@ -10,7 +10,7 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 )
 
-// StatsCh returns a channel for "please print stats" signalling.
+// InterruptCh returns a channel for "please print stats" signalling.
 func InterruptCh(ctx context.Context) <-chan string {
 	sigIntCh := make(chan os.Signal)
 	gosignal.Notify(sigIntCh, os.Interrupt)

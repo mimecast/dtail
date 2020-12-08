@@ -41,10 +41,12 @@ func NewControlHandler(user *user.User) *ControlHandler {
 	return &h
 }
 
+// Shutdown the handler.
 func (h *ControlHandler) Shutdown() {
 	h.done.Shutdown()
 }
 
+// Done channel of the handler.
 func (h *ControlHandler) Done() <-chan struct{} {
 	return h.done.Done()
 }

@@ -80,6 +80,7 @@ func NewAggregate(queryStr string) (*Aggregate, error) {
 	return &a, nil
 }
 
+// Shutdown the aggregation engine.
 func (a *Aggregate) Shutdown() {
 	a.Flush()
 	a.done.Shutdown()

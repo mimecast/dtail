@@ -24,8 +24,8 @@ vet:
 lint:
 	${GO} get golang.org/x/lint/golint
 	find . -type d | while read dir; do \
-	  echo ${GOPATH}/bin/golint $$dir; \
-	  ${GOPATH}/bin/golint $$dir; \
+	  echo golint $$dir; \
+	  golint $$dir; \
 	done
 test:
 	${GO} test ./... -v
