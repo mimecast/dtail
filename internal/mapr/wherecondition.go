@@ -19,6 +19,10 @@ const (
 	StringNe            QueryOperation = iota
 	StringContains      QueryOperation = iota
 	StringNotContains   QueryOperation = iota
+	StringHasPrefix     QueryOperation = iota
+	StringNotHasPrefix  QueryOperation = iota
+	StringHasSuffix     QueryOperation = iota
+	StringNotHasSuffix  QueryOperation = iota
 	FloatOperation      QueryOperation = iota
 	FloatEq             QueryOperation = iota
 	FloatNe             QueryOperation = iota
@@ -78,7 +82,17 @@ func makeWhereConditions(tokens []token) (where []whereCondition, err error) {
 		case "contains":
 			wc.Operation = StringContains
 		case "lacks":
+			fallthrough
+		case "ncontains":
 			wc.Operation = StringNotContains
+		case "hasprefix":
+			wc.Operation = StringHasPrefix
+		case "nhasprefix":
+			wc.Operation = StringNotHasPrefix
+		case "hassuffix":
+			wc.Operation = StringHasSuffix
+		case "nhassuffix":
+			wc.Operation = StringNotHasSuffix
 		default:
 			return wc, nil, errors.New(invalidQuery + "Unknown operation in 'where' clause: " + whereOp)
 		}
@@ -169,6 +183,14 @@ func (wc *whereCondition) stringClause(lValue string, rValue string) bool {
 		return strings.Contains(lValue, rValue)
 	case StringNotContains:
 		return !strings.Contains(lValue, rValue)
+	case StringHasPrefix:
+		return strings.HasPrefix(lValue, rValue)
+	case StringNotHasPrefix:
+		return !strings.HasPrefix(lValue, rValue)
+	case StringHasSuffix:
+		return strings.HasSuffix(lValue, rValue)
+	case StringNotHasSuffix:
+		return !strings.HasSuffix(lValue, rValue)
 	default:
 		logger.Error("Unknown string operation", lValue, wc.Operation, rValue)
 	}
