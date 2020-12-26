@@ -42,8 +42,9 @@ func (c CatClient) makeHandler(server string) handlers.Handler {
 }
 
 func (c CatClient) makeCommands() (commands []string) {
+	options := fmt.Sprintf("spartan=%v", c.Args.Spartan)
 	for _, file := range strings.Split(c.What, ",") {
-		commands = append(commands, fmt.Sprintf("%s %s %s", c.Mode.String(), file, c.Regex.Serialize()))
+		commands = append(commands, fmt.Sprintf("%s:%s %s %s", c.Mode.String(), options, file, c.Regex.Serialize()))
 	}
 	return
 }

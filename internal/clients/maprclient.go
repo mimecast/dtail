@@ -112,6 +112,7 @@ func (c MaprClient) makeHandler(server string) handlers.Handler {
 
 func (c MaprClient) makeCommands() (commands []string) {
 	commands = append(commands, fmt.Sprintf("map %s", c.query.RawQuery))
+	options := fmt.Sprintf("spartan=%v", c.Args.Spartan)
 
 	modeStr := "cat"
 	if c.Mode == omode.TailClient {
@@ -123,7 +124,7 @@ func (c MaprClient) makeCommands() (commands []string) {
 			commands = append(commands, fmt.Sprintf("timeout %d %s %s %s", c.Timeout, modeStr, file, c.Regex.Serialize()))
 			continue
 		}
-		commands = append(commands, fmt.Sprintf("%s %s %s", modeStr, file, c.Regex.Serialize()))
+		commands = append(commands, fmt.Sprintf("%s:%s %s %s", modeStr, options, file, c.Regex.Serialize()))
 	}
 
 	return
