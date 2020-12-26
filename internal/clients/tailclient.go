@@ -29,6 +29,7 @@ func NewTailClient(args Args) (*TailClient, error) {
 
 	c.init()
 	c.makeConnections(c)
+
 	return &c, nil
 }
 

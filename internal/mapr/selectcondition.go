@@ -92,5 +92,6 @@ func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 		}
 		sel = append(sel, sc)
 	}
+
 	return sel, nil
 }

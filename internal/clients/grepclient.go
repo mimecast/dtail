@@ -44,5 +44,6 @@ func (c GrepClient) makeCommands() (commands []string) {
 	for _, file := range strings.Split(c.What, ",") {
 		commands = append(commands, fmt.Sprintf("%s %s %s", c.Mode.String(), file, c.Regex.Serialize()))
 	}
+
 	return
 }

@@ -2,10 +2,14 @@ package config
 
 // CommonConfig stores configuration keys shared by DTail server and client.
 type CommonConfig struct {
-	SSHPort                    int
+	// The SSH port number
+	SSHPort int
+	// Enable experimental features (mainly for dev purposes)
 	ExperimentalFeaturesEnable bool `json:",omitempty"`
-	DebugEnable                bool `json:",omitempty"`
-	TraceEnable                bool `json:",omitempty"`
+	// Enable debug logging. Don't enable in production.
+	DebugEnable bool `json:",omitempty"`
+	// Enable trace logging. Don't enable in production.
+	TraceEnable bool `json:",omitempty"`
 	// The log strategy to use, one of
 	//   stdout: only log to stdout (useful when used with systemd)
 	//   daily: create a log file for every day

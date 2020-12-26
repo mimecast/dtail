@@ -15,7 +15,11 @@ type Line struct {
 	// lines if that happens but it will signal to the client how
 	// many log lines in % could be transmitted to the client.
 	TransmittedPerc int
-	SourceID        string
+	// Contains the unique identifier of the source log file.
+	// It could be the name of the log or it could be one of the parent
+	// directories in case multiple log files with the same basename are
+	// followed.
+	SourceID string
 }
 
 // Return a human readable representation of the followed line.

@@ -45,7 +45,7 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 		case message := <-statsCh:
 			messages = append(messages, message)
 			force = true
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Second * 3):
 		case <-ctx.Done():
 			return
 		}
@@ -63,7 +63,7 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 		switch force {
 		case true:
 			messages = append(messages, fmt.Sprintf("Connection stats: %s", stats))
-			s.printStatsOnInterrupt(messages)
+			s.printStatsDueInterrupt(messages)
 		default:
 			logger.Info(stats)
 		}
@@ -75,7 +75,7 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 	}
 }
 
-func (s *stats) printStatsOnInterrupt(messages []string) {
+func (s *stats) printStatsDueInterrupt(messages []string) {
 	logger.Pause()
 	for _, message := range messages {
 		fmt.Println(fmt.Sprintf(" %s", message))
@@ -107,5 +107,6 @@ func percentOf(total float64, value float64) float64 {
 	if total == 0 || total == value {
 		return 100
 	}
+
 	return value / (total / 100.0)
 }

@@ -3,9 +3,10 @@ package prompt
 import (
 	"bufio"
 	"fmt"
-	"github.com/mimecast/dtail/internal/io/logger"
 	"os"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // Answer is a user input of a prompt question.
@@ -18,8 +19,7 @@ type Answer struct {
 	Callback func()
 	// Runs after Callback and after logging resumes
 	EndCallback func()
-
-	AskAgain bool
+	AskAgain    bool
 }
 
 // Prompt used for interactive user input.
