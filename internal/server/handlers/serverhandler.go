@@ -43,7 +43,7 @@ type ServerHandler struct {
 	ackCloseReceived   chan struct{}
 	activeCommands     int32
 	activeReaders      int32
-	spartan            bool
+	quiet            bool
 }
 
 // NewServerHandler returns the server handler.
@@ -246,10 +246,10 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		commandFinished()
 		return
 	}
-	if spartan, ok := options["spartan"]; ok {
-		if spartan == "true" {
-			logger.Debug(h.user, "Enabling spartan mode")
-			h.spartan = true
+	if quiet, ok := options["quiet"]; ok {
+		if quiet == "true" {
+			logger.Debug(h.user, "Enabling quiet mode")
+			h.quiet = true
 		}
 	}
 

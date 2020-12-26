@@ -34,7 +34,7 @@ func newTailStats(connectionsTotal int) *stats {
 
 // Start starts printing client connection stats every time a signal is recieved or
 // connection count has changed.
-func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <-chan string, spartan bool) {
+func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <-chan string, quiet bool) {
 	var connectedLast int
 
 	for {
@@ -55,7 +55,7 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 
 		newConnections := connected - connectedLast
 
-		if (connected == connectedLast || spartan) && !force {
+		if (connected == connectedLast || quiet) && !force {
 			continue
 		}
 

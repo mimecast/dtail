@@ -42,7 +42,7 @@ func main() {
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
-	flag.BoolVar(&args.Spartan, "spartan", false, "Spartan output mode")
+	flag.BoolVar(&args.Quiet, "quiet", false, "Quiet output mode")
 	flag.IntVar(&args.ConnectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
 	flag.IntVar(&args.Timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
