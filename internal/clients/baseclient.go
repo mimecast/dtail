@@ -39,7 +39,7 @@ type baseClient struct {
 }
 
 func (c *baseClient) init() {
-	logger.Info("Initiating base client")
+	logger.Debug("Initiating base client")
 
 	flag := regex.Default
 	if c.Args.RegexInvert {
@@ -127,7 +127,7 @@ func (c *baseClient) makeConnection(server string, sshAuthMethods []gossh.AuthMe
 }
 
 func (c *baseClient) waitUntilDone(ctx context.Context, active chan struct{}) {
-	defer logger.Info("Terminated connection")
+	defer logger.Debug("Terminated connection")
 
 	// We want to have at least one active connection
 	<-active

@@ -43,7 +43,7 @@ type ServerHandler struct {
 	ackCloseReceived   chan struct{}
 	activeCommands     int32
 	activeReaders      int32
-	quiet            bool
+	quiet              bool
 }
 
 // NewServerHandler returns the server handler.
@@ -299,7 +299,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 
 func (h *ServerHandler) handleAckCommand(argc int, args []string) {
 	if argc < 3 {
-		h.sendServerMessage(logger.Warn(h.user, commandParseWarning, args, argc))
+		h.sendServerWarnMessage(logger.Warn(h.user, commandParseWarning, args, argc))
 		return
 	}
 	if args[1] == "close" && args[2] == "connection" {
@@ -315,6 +315,13 @@ func (h *ServerHandler) send(ch chan<- string, message string) {
 }
 
 func (h *ServerHandler) sendServerMessage(message string) {
+	h.send(h.serverMessageC(), message)
+}
+
+func (h *ServerHandler) sendServerWarnMessage(message string) {
+	if h.quiet {
+		return
+	}
 	h.send(h.serverMessageC(), message)
 }
 

@@ -99,7 +99,7 @@ func (c *MaprClient) Start(ctx context.Context, statsCh <-chan string) (status i
 
 	status = c.baseClient.Start(ctx, statsCh)
 	if c.cumulative {
-		logger.Info("Received final mapreduce result")
+		logger.Debug("Received final mapreduce result")
 		c.reportResults()
 	}
 
@@ -134,7 +134,7 @@ func (c *MaprClient) periodicReportResults(ctx context.Context) {
 	for {
 		select {
 		case <-time.After(c.query.Interval):
-			logger.Info("Gathering interim mapreduce result")
+			logger.Debug("Gathering interim mapreduce result")
 			c.reportResults()
 		case <-ctx.Done():
 			return
@@ -166,7 +166,7 @@ func (c *MaprClient) printResults() {
 	}
 
 	if numLines == 0 {
-		logger.Info("Empty result set this time...")
+		logger.Warn("Empty result set this time...")
 		return
 	}
 
