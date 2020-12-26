@@ -248,7 +248,7 @@ func log(what string, severity string, args []interface{}) string {
 	message := strings.Join(messages, "|")
 	write(what, severity, message)
 
-	return message
+	return fmt.Sprintf("%s|%s", severity, message)
 }
 
 // Raw message logging.
