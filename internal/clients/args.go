@@ -22,4 +22,5 @@ type Args struct {
 	SSHAuthMethods     []gossh.AuthMethod
 	SSHHostKeyCallback gossh.HostKeyCallback
 	PrivateKeyPathFile string
+	Quiet            bool
 }

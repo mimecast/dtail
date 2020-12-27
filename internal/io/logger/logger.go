@@ -72,12 +72,15 @@ type buf struct {
 func Start(ctx context.Context, mode Modes) {
 	Mode = mode
 
-	if Mode.Nothing {
+	switch {
+	case Mode.Nothing:
 		return
-	}
-
-	if Mode.Trace {
+	case Mode.Quiet:
+		Mode.Trace = false
+		Mode.Debug = false
+	case Mode.Trace:
 		Mode.Debug = true
+	default:
 	}
 
 	strategy := logStrategy()
@@ -87,7 +90,7 @@ func Start(ctx context.Context, mode Modes) {
 	case DailyStrategy:
 		_, err := os.Stat(config.Common.LogDir)
 		Mode.logToFile = !os.IsNotExist(err)
-		Mode.logToStdout = !Mode.Server || Mode.Debug || Mode.Trace
+		Mode.logToStdout = !Mode.Server || Mode.Debug || Mode.Trace || Mode.Quiet
 	case StdoutStrategy:
 		fallthrough
 	default:
@@ -131,11 +134,14 @@ func Info(args ...interface{}) string {
 
 // Warn message logging.
 func Warn(args ...interface{}) string {
-	if Mode.Server {
-		return log(serverStr, warnStr, args)
+	if !Mode.Quiet {
+		if Mode.Server {
+			return log(serverStr, warnStr, args)
+		}
+		return log(clientStr, warnStr, args)
 	}
 
-	return log(clientStr, warnStr, args)
+	return ""
 }
 
 // Error message logging.
@@ -242,7 +248,7 @@ func log(what string, severity string, args []interface{}) string {
 	message := strings.Join(messages, "|")
 	write(what, severity, message)
 
-	return message
+	return fmt.Sprintf("%s|%s", severity, message)
 }
 
 // Raw message logging.

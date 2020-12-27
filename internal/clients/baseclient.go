@@ -39,7 +39,7 @@ type baseClient struct {
 }
 
 func (c *baseClient) init() {
-	logger.Info("Initiating base client")
+	logger.Debug("Initiating base client")
 
 	flag := regex.Default
 	if c.Args.RegexInvert {
@@ -70,7 +70,7 @@ func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status i
 	// Periodically check for unknown hosts, and ask the user whether to trust them or not.
 	go c.hostKeyCallback.PromptAddHosts(ctx)
 	// Print client stats every time something on statsCh is recieved.
-	go c.stats.Start(ctx, c.throttleCh, statsCh)
+	go c.stats.Start(ctx, c.throttleCh, statsCh, c.Args.Quiet)
 	// Keep count of active connections
 	active := make(chan struct{}, len(c.connections))
 
@@ -127,7 +127,7 @@ func (c *baseClient) makeConnection(server string, sshAuthMethods []gossh.AuthMe
 }
 
 func (c *baseClient) waitUntilDone(ctx context.Context, active chan struct{}) {
-	defer logger.Info("Terminated connection")
+	defer logger.Debug("Terminated connection")
 
 	// We want to have at least one active connection
 	<-active

@@ -170,6 +170,7 @@ func (wc *whereCondition) floatClause(lValue float64, rValue float64) bool {
 	default:
 		logger.Error("Unknown float operation", lValue, wc.Operation, rValue)
 	}
+
 	return false
 }
 
@@ -194,5 +195,6 @@ func (wc *whereCondition) stringClause(lValue string, rValue string) bool {
 	default:
 		logger.Error("Unknown string operation", lValue, wc.Operation, rValue)
 	}
+
 	return false
 }

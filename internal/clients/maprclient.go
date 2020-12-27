@@ -99,7 +99,7 @@ func (c *MaprClient) Start(ctx context.Context, statsCh <-chan string) (status i
 
 	status = c.baseClient.Start(ctx, statsCh)
 	if c.cumulative {
-		logger.Info("Received final mapreduce result")
+		logger.Debug("Received final mapreduce result")
 		c.reportResults()
 	}
 
@@ -112,6 +112,7 @@ func (c MaprClient) makeHandler(server string) handlers.Handler {
 
 func (c MaprClient) makeCommands() (commands []string) {
 	commands = append(commands, fmt.Sprintf("map %s", c.query.RawQuery))
+	options := fmt.Sprintf("quiet=%v", c.Args.Quiet)
 
 	modeStr := "cat"
 	if c.Mode == omode.TailClient {
@@ -123,7 +124,7 @@ func (c MaprClient) makeCommands() (commands []string) {
 			commands = append(commands, fmt.Sprintf("timeout %d %s %s %s", c.Timeout, modeStr, file, c.Regex.Serialize()))
 			continue
 		}
-		commands = append(commands, fmt.Sprintf("%s %s %s", modeStr, file, c.Regex.Serialize()))
+		commands = append(commands, fmt.Sprintf("%s:%s %s %s", modeStr, options, file, c.Regex.Serialize()))
 	}
 
 	return
@@ -133,7 +134,7 @@ func (c *MaprClient) periodicReportResults(ctx context.Context) {
 	for {
 		select {
 		case <-time.After(c.query.Interval):
-			logger.Info("Gathering interim mapreduce result")
+			logger.Debug("Gathering interim mapreduce result")
 			c.reportResults()
 		case <-ctx.Done():
 			return
@@ -165,7 +166,7 @@ func (c *MaprClient) printResults() {
 	}
 
 	if numLines == 0 {
-		logger.Info("Empty result set this time...")
+		logger.Warn("Empty result set this time...")
 		return
 	}
 

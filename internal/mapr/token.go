@@ -22,6 +22,7 @@ func (t token) isKeyword() bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -94,6 +95,7 @@ func tokensConsumeStr(tokens []token) ([]token, []string) {
 	for _, token := range found {
 		strings = append(strings, token.str)
 	}
+
 	return tokens, strings
 }
 
@@ -104,5 +106,6 @@ func tokensConsumeOptional(tokens []token, optional string) []token {
 	if strings.ToLower(tokens[0].str) == strings.ToLower(optional) {
 		return tokens[1:]
 	}
+
 	return tokens
 }

@@ -19,6 +19,7 @@ type HealthHandler struct {
 	receive chan<- string
 	// The remote server address
 	server string
+	// The return status.
 	status int
 }
 

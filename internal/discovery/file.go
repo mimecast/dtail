@@ -2,8 +2,9 @@ package discovery
 
 import (
 	"bufio"
-	"github.com/mimecast/dtail/internal/io/logger"
 	"os"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // ServerListFromFILE retrieves a list of servers from a file.

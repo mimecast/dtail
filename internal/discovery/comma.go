@@ -1,8 +1,9 @@
 package discovery
 
 import (
-	"github.com/mimecast/dtail/internal/io/logger"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // ServerListFromCOMMA retrieves a list of servers from comma separated input list.
