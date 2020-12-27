@@ -11,7 +11,7 @@ import (
 	"unsafe"
 )
 
-// To check whether user has Linux file system permissions to read a given file.
+// ToRead checks whether user has Linux file system permissions to read a given file.
 func ToRead(user, filePath string) (bool, error) {
 	cUser := C.CString(user)
 	cFilePath := C.CString(filePath)
