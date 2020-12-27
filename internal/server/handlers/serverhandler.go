@@ -258,7 +258,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		command := newReadCommand(h, omode.CatClient)
 		go func() {
 			h.incrementActiveReaders()
-			command.Start(ctx, argc, args)
+			command.Start(ctx, argc, args, 1)
 			readerFinished()
 			commandFinished()
 		}()
@@ -267,7 +267,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		command := newReadCommand(h, omode.TailClient)
 		go func() {
 			h.incrementActiveReaders()
-			command.Start(ctx, argc, args)
+			command.Start(ctx, argc, args, 10)
 			readerFinished()
 			commandFinished()
 		}()

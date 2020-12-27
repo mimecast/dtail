@@ -25,7 +25,7 @@ func newReadCommand(server *ServerHandler, mode omode.Mode) *readCommand {
 	}
 }
 
-func (r *readCommand) Start(ctx context.Context, argc int, args []string) {
+func (r *readCommand) Start(ctx context.Context, argc int, args []string, retries int) {
 	re := regex.NewNoop()
 
 	if argc >= 4 {
@@ -40,21 +40,14 @@ func (r *readCommand) Start(ctx context.Context, argc int, args []string) {
 		r.server.sendServerWarnMessage(logger.Warn(r.server.user, commandParseWarning, args, argc))
 		return
 	}
-	r.readGlob(ctx, args[1], re)
+	r.readGlob(ctx, args[1], re, retries)
 }
 
-func (r *readCommand) readGlob(ctx context.Context, glob string, re regex.Regex) {
+func (r *readCommand) readGlob(ctx context.Context, glob string, re regex.Regex, retries int) {
 	retryInterval := time.Second * 5
 	glob = filepath.Clean(glob)
 
-	maxRetries := 10
-	for {
-		maxRetries--
-		if maxRetries < 0 {
-			r.server.sendServerWarnMessage(logger.Warn(r.server.user, "Giving up to read file(s)"))
-			return
-		}
-
+	for retryCount := 0; retryCount < retries; retryCount++ {
 		paths, err := filepath.Glob(glob)
 		if err != nil {
 			logger.Warn(r.server.user, glob, err)
@@ -75,8 +68,11 @@ func (r *readCommand) readGlob(ctx context.Context, glob string, re regex.Regex)
 		}
 
 		r.readFiles(ctx, paths, glob, re, retryInterval)
-		break
+		return
 	}
+
+	r.server.sendServerWarnMessage(logger.Warn(r.server.user, "Giving up to read file(s)"))
+	return
 }
 
 func (r *readCommand) readFiles(ctx context.Context, paths []string, glob string, re regex.Regex, retryInterval time.Duration) {
