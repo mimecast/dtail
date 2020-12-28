@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"strings"
-	"time"
 
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
@@ -33,9 +32,6 @@ type Server struct {
 	sched *scheduler
 	// Mointor log files for pattern (if configured)
 	cont *continuous
-	// Wait counter, e.g. there might be still subprocesses (forked by drun) to be killed.
-	// TODO: Remove this counter.
-	shutdownWaitFor chan struct{}
 }
 
 // New returns a new server.
@@ -46,7 +42,6 @@ func New() *Server {
 		sshServerConfig: &gossh.ServerConfig{},
 		catLimiter:      make(chan struct{}, config.Server.MaxConcurrentCats),
 		tailLimiter:     make(chan struct{}, config.Server.MaxConcurrentTails),
-		shutdownWaitFor: make(chan struct{}, 1000),
 		sched:           newScheduler(),
 		cont:            newContinuous(),
 	}
@@ -82,23 +77,10 @@ func (s *Server) Start(ctx context.Context) int {
 
 	select {
 	case <-ctx.Done():
-		// Wait until all commands/jobs/children are no more!
-		s.wait()
 	}
 
 	// For future use.
 	return 0
-}
-
-func (s *Server) wait() {
-	for {
-		num := len(s.shutdownWaitFor)
-		logger.Debug("Waiting for stuff to finish", num)
-		if num <= 0 {
-			return
-		}
-		time.Sleep(time.Second)
-	}
 }
 
 func (s *Server) listenerLoop(ctx context.Context, listener net.Listener) {
@@ -180,7 +162,7 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 			case config.ControlUser:
 				handler = handlers.NewControlHandler(user)
 			default:
-				handler = handlers.NewServerHandler(user, s.catLimiter, s.tailLimiter, s.shutdownWaitFor)
+				handler = handlers.NewServerHandler(user, s.catLimiter, s.tailLimiter)
 			}
 
 			terminate := func() {

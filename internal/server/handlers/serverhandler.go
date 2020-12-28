@@ -29,36 +29,34 @@ const (
 // the Bi-directional communication between SSH client and server.
 // This handler implements the handler of the SSH server.
 type ServerHandler struct {
-	done                *internal.Done
-	lines               chan line.Line
-	regex               string
-	aggregate           *server.Aggregate
-	aggregatedMessages  chan string
-	serverMessages      chan string
-	payload             []byte
-	hostname            string
-	user                *user.User
-	catLimiter          chan struct{}
-	tailLimiter         chan struct{}
-	globalServerWaitFor chan struct{}
-	ackCloseReceived    chan struct{}
-	activeCommands      int32
-	activeReaders       int32
+	done               *internal.Done
+	lines              chan line.Line
+	regex              string
+	aggregate          *server.Aggregate
+	aggregatedMessages chan string
+	serverMessages     chan string
+	payload            []byte
+	hostname           string
+	user               *user.User
+	catLimiter         chan struct{}
+	tailLimiter        chan struct{}
+	ackCloseReceived   chan struct{}
+	activeCommands     int32
+	activeReaders      int32
 }
 
 // NewServerHandler returns the server handler.
-func NewServerHandler(user *user.User, catLimiter, tailLimiter, globalServerWaitFor chan struct{}) *ServerHandler {
+func NewServerHandler(user *user.User, catLimiter, tailLimiter chan struct{}) *ServerHandler {
 	h := ServerHandler{
-		done:                internal.NewDone(),
-		lines:               make(chan line.Line, 100),
-		serverMessages:      make(chan string, 10),
-		aggregatedMessages:  make(chan string, 10),
-		ackCloseReceived:    make(chan struct{}),
-		catLimiter:          catLimiter,
-		tailLimiter:         tailLimiter,
-		globalServerWaitFor: globalServerWaitFor,
-		regex:               ".",
-		user:                user,
+		done:               internal.NewDone(),
+		lines:              make(chan line.Line, 100),
+		serverMessages:     make(chan string, 10),
+		aggregatedMessages: make(chan string, 10),
+		ackCloseReceived:   make(chan struct{}),
+		catLimiter:         catLimiter,
+		tailLimiter:        tailLimiter,
+		regex:              ".",
+		user:               user,
 	}
 
 	fqdn, err := os.Hostname()
