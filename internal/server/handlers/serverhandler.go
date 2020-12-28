@@ -43,6 +43,7 @@ type ServerHandler struct {
 	ackCloseReceived   chan struct{}
 	activeCommands     int32
 	activeReaders      int32
+	quiet              bool
 }
 
 // NewServerHandler returns the server handler.
@@ -70,10 +71,12 @@ func NewServerHandler(user *user.User, catLimiter, tailLimiter chan struct{}) *S
 	return &h
 }
 
+// Shutdown the handler.
 func (h *ServerHandler) Shutdown() {
 	h.done.Shutdown()
 }
 
+// Done channel of the handler.
 func (h *ServerHandler) Done() <-chan struct{} {
 	return h.done.Done()
 }
@@ -243,13 +246,19 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		commandFinished()
 		return
 	}
+	if quiet, ok := options["quiet"]; ok {
+		if quiet == "true" {
+			logger.Debug(h.user, "Enabling quiet mode")
+			h.quiet = true
+		}
+	}
 
 	switch commandName {
 	case "grep", "cat":
 		command := newReadCommand(h, omode.CatClient)
 		go func() {
 			h.incrementActiveReaders()
-			command.Start(ctx, argc, args)
+			command.Start(ctx, argc, args, 1)
 			readerFinished()
 			commandFinished()
 		}()
@@ -258,7 +267,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		command := newReadCommand(h, omode.TailClient)
 		go func() {
 			h.incrementActiveReaders()
-			command.Start(ctx, argc, args)
+			command.Start(ctx, argc, args, 10)
 			readerFinished()
 			commandFinished()
 		}()
@@ -290,7 +299,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 
 func (h *ServerHandler) handleAckCommand(argc int, args []string) {
 	if argc < 3 {
-		h.sendServerMessage(logger.Warn(h.user, commandParseWarning, args, argc))
+		h.sendServerWarnMessage(logger.Warn(h.user, commandParseWarning, args, argc))
 		return
 	}
 	if args[1] == "close" && args[2] == "connection" {
@@ -306,6 +315,13 @@ func (h *ServerHandler) send(ch chan<- string, message string) {
 }
 
 func (h *ServerHandler) sendServerMessage(message string) {
+	h.send(h.serverMessageC(), message)
+}
+
+func (h *ServerHandler) sendServerWarnMessage(message string) {
+	if h.quiet {
+		return
+	}
 	h.send(h.serverMessageC(), message)
 }
 

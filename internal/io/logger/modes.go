@@ -6,6 +6,7 @@ type Modes struct {
 	Trace       bool
 	Debug       bool
 	Nothing     bool
+	Quiet       bool
 	logToStdout bool
 	logToFile   bool
 }

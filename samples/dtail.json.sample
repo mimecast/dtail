@@ -10,19 +10,16 @@
     "HostKeyBits" : 2048,
     "Permissions": {
       "Default": [
-        "readfiles:^/.*$",
-        "runcommands:^/.*$"
+        "readfiles:^/.*$"
       ],
       "Users": {
         "pbuetow": [
-          "readfiles:^/.*$",
-          "runcommands:^/.*$"
+          "readfiles:^/.*$"
         ],
         "jblake": [
           "readfiles:^/tmp/foo.log$",
           "readfiles:^/.*$",
-          "readfiles:!^/tmp/bar.log$",
-          "runcommands:!^/.*$"
+          "readfiles:!^/tmp/bar.log$"
         ]
       }
     }

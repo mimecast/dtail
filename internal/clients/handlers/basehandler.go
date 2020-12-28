@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +77,7 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 	case <-h.Done():
 		return 0, io.EOF
 	}
+
 	return
 }
 
@@ -110,22 +110,6 @@ func (h *baseHandler) handleHiddenMessage(message string) {
 			h.Shutdown()
 		case <-h.Done():
 			return
-		}
-
-	case strings.HasPrefix(message, ".run exitstatus"):
-		splitted := strings.Split(strings.TrimSuffix(message, "\n"), " ")
-		if len(splitted) != 3 {
-			logger.Error("Unable to retrieve exitstatus", message)
-			return
-		}
-		i, err := strconv.Atoi(splitted[2])
-		if err != nil {
-			logger.Error("Unable to retrieve exitstatus", message, err)
-			return
-		}
-		logger.Debug("Retrieved exitstatus", h.status)
-		if i > h.status {
-			h.status = i
 		}
 	}
 }

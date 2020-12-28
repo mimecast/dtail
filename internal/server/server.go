@@ -75,9 +75,7 @@ func (s *Server) Start(ctx context.Context) int {
 	go s.cont.start(ctx)
 	go s.listenerLoop(ctx, listener)
 
-	select {
-	case <-ctx.Done():
-	}
+	<-ctx.Done()
 
 	// For future use.
 	return 0

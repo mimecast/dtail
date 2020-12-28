@@ -19,6 +19,7 @@ type HealthHandler struct {
 	receive chan<- string
 	// The remote server address
 	server string
+	// The return status.
 	status int
 }
 
@@ -45,10 +46,12 @@ func (h *HealthHandler) Status() int {
 	return h.status
 }
 
+// Done returns done channel of the handler.
 func (h *HealthHandler) Done() <-chan struct{} {
 	return h.done.Done()
 }
 
+// Shutdown the handler.
 func (h *HealthHandler) Shutdown() {
 	h.done.Shutdown()
 }

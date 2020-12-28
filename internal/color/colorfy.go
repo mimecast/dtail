@@ -41,16 +41,14 @@ func paintClientStats(line string) string {
 
 // Colorfy a given line based on the line's content.
 func Colorfy(line string) string {
-	if strings.HasPrefix(line, "REMOTE") {
+	switch {
+	case strings.HasPrefix(line, "REMOTE"):
 		return paintRemote(line)
-	}
-	if strings.HasPrefix(line, "CLIENT") && strings.Contains(line, "|stats|") {
+	case strings.HasPrefix(line, "CLIENT") && strings.Contains(line, "|stats|"):
 		return paintClientStats(line)
-	}
-	if strings.Contains(line, "ERROR") {
+	case strings.Contains(line, "ERROR"):
 		return Paint(Magenta, line)
-	}
-	if strings.Contains(line, "WARN") {
+	case strings.Contains(line, "WARN"):
 		return Paint(Magenta, line)
 	}
 

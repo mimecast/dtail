@@ -40,6 +40,10 @@ func (u *User) String() string {
 // HasFilePermission is used to determine whether user is alowed to read a file.
 func (u *User) HasFilePermission(filePath, permissionType string) (hasPermission bool) {
 	logger.Debug(u, filePath, permissionType, "Checking config permissions")
+	if config.ServerRelaxedAuthEnable {
+		logger.Fatal(u, filePath, permissionType, "Server releaxed auth enabled")
+		return true
+	}
 
 	if u.Name == config.ScheduleUser || u.Name == config.ContinuousUser {
 		// Background user has same permissions as dtail process itself.

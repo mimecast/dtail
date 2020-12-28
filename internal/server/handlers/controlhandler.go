@@ -41,10 +41,12 @@ func NewControlHandler(user *user.User) *ControlHandler {
 	return &h
 }
 
+// Shutdown the handler.
 func (h *ControlHandler) Shutdown() {
 	h.done.Shutdown()
 }
 
+// Done channel of the handler.
 func (h *ControlHandler) Done() <-chan struct{} {
 	return h.done.Done()
 }
@@ -90,9 +92,7 @@ func (h *ControlHandler) handleCommand(command string) {
 	case "health":
 		h.serverMessages <- "OK: DTail SSH Server seems fine"
 		h.serverMessages <- "done;"
-	case "debug":
-		h.serverMessages <- logger.Debug(h.user, "Receiving debug command", command, s)
 	default:
-		h.serverMessages <- logger.Warn(h.user, "Received unknown control command", command, s)
+		h.serverMessages <- logger.Error(h.user, "Received unknown control command", command, s)
 	}
 }

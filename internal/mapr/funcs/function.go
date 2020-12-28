@@ -12,6 +12,7 @@ type CallbackFunc func(text string) string
 type Function struct {
 	// Name of the callback function
 	Name string
+	// The Go-callback function to call for this DTail function.
 	call CallbackFunc
 }
 

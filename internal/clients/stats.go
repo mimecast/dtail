@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
 )
 
@@ -33,16 +34,18 @@ func newTailStats(connectionsTotal int) *stats {
 
 // Start starts printing client connection stats every time a signal is recieved or
 // connection count has changed.
-func (s *stats) Start(ctx context.Context, throttleCh, statsCh <-chan struct{}) {
+func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <-chan string, quiet bool) {
 	var connectedLast int
 
 	for {
 		var force bool
+		var messages []string
 
 		select {
-		case <-statsCh:
+		case message := <-statsCh:
+			messages = append(messages, message)
 			force = true
-		case <-time.After(time.Second * 2):
+		case <-time.After(time.Second * 3):
 		case <-ctx.Done():
 			return
 		}
@@ -52,17 +55,33 @@ func (s *stats) Start(ctx context.Context, throttleCh, statsCh <-chan struct{}) 
 
 		newConnections := connected - connectedLast
 
-		if connected == connectedLast && !force {
+		if (connected == connectedLast || quiet) && !force {
 			continue
 		}
 
-		logger.Info(s.statsLine(connected, newConnections, throttle))
+		stats := s.statsLine(connected, newConnections, throttle)
+		switch force {
+		case true:
+			messages = append(messages, fmt.Sprintf("Connection stats: %s", stats))
+			s.printStatsDueInterrupt(messages)
+		default:
+			logger.Info(stats)
+		}
 
 		connectedLast = connected
 		s.mutex.Lock()
 		s.connected = connected
 		s.mutex.Unlock()
 	}
+}
+
+func (s *stats) printStatsDueInterrupt(messages []string) {
+	logger.Pause()
+	for _, message := range messages {
+		fmt.Println(fmt.Sprintf(" %s", message))
+	}
+	time.Sleep(time.Second * time.Duration(config.InterruptTimeoutS))
+	logger.Resume()
 }
 
 func (s *stats) statsLine(connected, newConnections int, throttle int) string {
@@ -88,5 +107,6 @@ func percentOf(total float64, value float64) float64 {
 	if total == 0 || total == value {
 		return 100
 	}
+
 	return value / (total / 100.0)
 }

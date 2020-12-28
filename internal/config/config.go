@@ -15,6 +15,9 @@ const ScheduleUser string = "DTAIL-SCHEDULE"
 // ContinuousUser is used for non-interactive continuous mapreduce queries.
 const ContinuousUser string = "DTAIL-CONTINUOUS"
 
+// InterruptTimeoutS is used to terminate DTail when Ctrl+C was pressed twice within a given interval.
+const InterruptTimeoutS int = 3
+
 // Client holds a DTail client configuration.
 var Client *ClientConfig
 

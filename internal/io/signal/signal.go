@@ -4,33 +4,38 @@ import (
 	"context"
 	"os"
 	gosignal "os/signal"
+	"syscall"
 	"time"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/config"
 )
 
-// StatsCh returns a channel for "please print stats" signalling.
-func InterruptCh(ctx context.Context) <-chan struct{} {
-	sigCh := make(chan os.Signal)
-	gosignal.Notify(sigCh, os.Interrupt)
+// InterruptCh returns a channel for "please print stats" signalling.
+func InterruptCh(ctx context.Context) <-chan string {
+	sigIntCh := make(chan os.Signal)
+	gosignal.Notify(sigIntCh, os.Interrupt)
 
-	statsCh := make(chan struct{})
+	sigOtherCh := make(chan os.Signal)
+	gosignal.Notify(sigOtherCh, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
+
+	statsCh := make(chan string)
 
 	go func() {
 		for {
 			select {
-			case <-sigCh:
+			case <-sigIntCh:
 				select {
-				case statsCh <- struct{}{}:
-					logger.Info("Hit Ctrl+C twice to exit")
+				case statsCh <- "Hint: Hit Ctrl+C again to exit":
 					select {
-					case <-sigCh:
+					case <-sigIntCh:
 						os.Exit(0)
-					case <-time.After(time.Second):
+					case <-time.After(time.Second * time.Duration(config.InterruptTimeoutS)):
 					}
 				default:
-					// Stats currently already printed.
+					// Stats already printed.
 				}
+			case <-sigOtherCh:
+				os.Exit(0)
 			case <-ctx.Done():
 				return
 			}
