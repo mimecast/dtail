@@ -6,3 +6,5 @@ run:
 	docker run -p 2222:2222 dserver:develop
 spinup:
 	./spinup.sh 10
+spindown:
+	./spindown.sh 10
