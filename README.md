@@ -25,7 +25,7 @@ More
 
 * [How to contribute](CONTRIBUTING.md)
 * [Code of conduct](CODE_OF_CONDUCT.md)
-* [License](LICENSE)
+* [Licenses](docs/licenses.md)
 
 Credits
 =======
