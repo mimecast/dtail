@@ -1,3 +1,14 @@
 *_proprietary.go
+<<<<<<< HEAD
 cache/
 log/
+tags
+=======
+/cache/
+/log/
+/dtail
+/dgrep
+/dcat
+/dmap
+/dserver
+>>>>>>> 7ee0121afed3e7cab6457142f70e411020ab2b21

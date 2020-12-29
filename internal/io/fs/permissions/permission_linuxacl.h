@@ -1,3 +1,5 @@
+// +build linuxacl
+
 #ifndef PERMISSION_LINUX_H
 #define PERMISSION_LINUX_H
 
