@@ -84,7 +84,10 @@ func main() {
 		os.Exit(healthClient.Start(ctx))
 	}
 
-	logger.Start(ctx, logger.Modes{Debug: debugEnable || config.Common.DebugEnable})
+	logger.Start(ctx, logger.Modes{
+		Debug: debugEnable || config.Common.DebugEnable,
+		Quiet: args.Quiet,
+	})
 
 	if pprof > -1 {
 		// For debugging purposes only

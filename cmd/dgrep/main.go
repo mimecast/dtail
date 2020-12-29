@@ -53,7 +53,10 @@ func main() {
 	}
 
 	ctx := context.TODO()
-	logger.Start(ctx, logger.Modes{Debug: debugEnable || config.Common.DebugEnable})
+	logger.Start(ctx, logger.Modes{
+		Debug: debugEnable || config.Common.DebugEnable,
+		Quiet: args.Quiet,
+	})
 
 	if grep != "" {
 		args.RegexStr = grep

@@ -160,7 +160,7 @@ func (d *Discovery) dedupList(servers []string) (deduped []string) {
 		}
 	}
 
-	logger.Info("Deduped server list", len(servers), len(deduped))
+	logger.Debug("Deduped server list", len(servers), len(deduped))
 	return
 }
 
