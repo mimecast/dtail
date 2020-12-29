@@ -7,6 +7,26 @@ The following installation guide has been tested successfully on CentOS 7. You m
 
 Please check the [Quick Starting Guide](quickstart.md) for instructions how to compile DTail. It is recommended to automate the build process via your build pipeline (e.g. produce a deployable RPM via Jenkins). You don't have to use ``go get...`` to compile and install the binaries. You can also clone the repository and use ``make`` instead.
 
+## Linux ACL support
+
+This is optional but it gives you better security. On Linux you have the option to compile `dserver` with File System Access Control List support. For that you need:
+
+### 1. Install the `libacl` development library. On RHEL, CentOS and Fedora it would be
+
+```console
+% sudo dnf install libacl-devel -y
+```
+
+### 2. Enable ACL via a Go build flag
+
+Set the `USE_ACL` environment variable before invoking the make command.
+
+```console
+% export USE_ACL=yes
+```
+
+Alternatively you could just add `-tags linuxacl` to the Go compiler. 
+
 # Install it
 
 It is recommended to automate all the installation process outlined here. You could use a configuration management system such as Puppet, Chef or Ansible. However, that relies heavily on how your infrastructure is managed and is out of scope of this documentation.

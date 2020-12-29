@@ -1,13 +1,21 @@
 GO ?= go
 all: test build
 build:
+ifndef USE_ACL
 	${GO} build -o dserver ./cmd/dserver/main.go
+else
+	${GO} build -tags linuxacl -o dserver ./cmd/dserver/main.go
+endif
 	${GO} build -o dcat ./cmd/dcat/main.go
 	${GO} build -o dgrep ./cmd/dgrep/main.go
 	${GO} build -o dmap ./cmd/dmap/main.go
 	${GO} build -o dtail ./cmd/dtail/main.go
 install:
+ifndef USE_ACL
 	${GO} install ./cmd/dserver/main.go
+else
+	${GO} install -tags linuxacl ./cmd/dserver/main.go
+endif
 	${GO} install ./cmd/dcat/main.go
 	${GO} install ./cmd/dgrep/main.go
 	${GO} install ./cmd/dmap/main.go
@@ -28,4 +36,8 @@ lint:
 	  golint $$dir; \
 	done
 test:
+ifndef USE_ACL
 	${GO} test ./... -v
+else
+	${GO} test -tags linuxacl ./... -v
+endif

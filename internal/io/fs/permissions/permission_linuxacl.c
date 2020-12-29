@@ -1,4 +1,6 @@
-#include "permission_linux.h"
+// +build linuxacl
+
+#include "permission_linuxacl.h"
 
 #ifdef DEBUG
 void debug_print_checker(struct permission_checker *pc) {

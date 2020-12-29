@@ -1,7 +1,9 @@
+// +build linuxacl
+
 package permissions
 
 /*
-#include "permission_linux.h"
+#include "permission_linuxacl.h"
 #cgo LDFLAGS: -L. -lacl
 */
 import "C"
