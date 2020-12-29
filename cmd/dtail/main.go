@@ -95,6 +95,7 @@ func main() {
 
 	var client clients.Client
 	var err error
+	args.Mode = omode.TailClient
 
 	switch queryStr {
 	case "":
