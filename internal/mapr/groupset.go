@@ -68,9 +68,13 @@ func (g *GroupSet) WriteResult(query *Query) error {
 	}
 
 	// -1: Don't limit the result, include all data sets
-	result, _, err := g.limitedResult(query, -1, "", ",", true)
+	result, count, err := g.limitedResult(query, -1, "", ",", true)
 	if err != nil {
 		return err
+	}
+
+	if count == 0 {
+		logger.Warn("Not writing outfile this time as empty result set", query.Outfile)
 	}
 
 	logger.Info("Writing outfile", query.Outfile)
