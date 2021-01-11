@@ -11,9 +11,9 @@ const (
 	// Name of DTail.
 	Name string = "DTail"
 	// Version of DTail.
-	Version string = "3.2.0"
+	Version string = "3.2.1"
 	// Additional information for DTail
-	Additional string = "develop-3"
+	Additional string = "develop"
 	// ProtocolCompat -ibility version.
 	ProtocolCompat string = "3"
 )
