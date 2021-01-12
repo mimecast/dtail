@@ -131,6 +131,10 @@ func (c MaprClient) makeCommands() (commands []string) {
 }
 
 func (c *MaprClient) periodicReportResults(ctx context.Context) {
+	rampUpSleep := c.query.Interval / 2
+	logger.Debug("Ramp up sleeping before processing mapreduce results", rampUpSleep)
+	time.Sleep(rampUpSleep)
+
 	for {
 		select {
 		case <-time.After(c.query.Interval):
