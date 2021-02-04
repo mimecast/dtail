@@ -68,7 +68,7 @@ func (g *GroupSet) WriteResult(query *Query) error {
 	}
 
 	// -1: Don't limit the result, include all data sets
-	result, _, err := g.limitedResult(query, -1, "", ",", true)
+	result, _, err := g.limitedResult(query, query.Limit, "", ",", true)
 	if err != nil {
 		return err
 	}
