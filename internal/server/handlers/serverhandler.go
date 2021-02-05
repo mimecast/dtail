@@ -390,6 +390,10 @@ func (h *ServerHandler) decrementActiveReaders() int32 {
 	return atomic.LoadInt32(&h.activeReaders)
 }
 
+// TODO: All options related code should be in its own package (client + server)
+// Maybe we could move internal.clients.Args to internal.options.Options and
+// Use struct tagging to determine which ones should be serialized over the wire
+// from the client to the server.
 func readOptions(opts []string) (map[string]string, error) {
 	options := make(map[string]string, len(opts))
 

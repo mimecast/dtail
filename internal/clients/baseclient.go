@@ -2,6 +2,8 @@ package clients
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -118,10 +120,44 @@ func (c *baseClient) start(ctx context.Context, active chan struct{}, i int, con
 	}
 }
 
+func (c *baseClient) makeCommandOptions() map[string]string {
+	options := make(map[string]string)
+
+	if c.Args.Quiet {
+		options["quiet"] = fmt.Sprintf("%v", c.Args.Quiet)
+	}
+	if c.Args.LineContext.MaxCount != 0 {
+		options["max"] = fmt.Sprintf("%d", c.Args.LineContext.MaxCount)
+	}
+	if c.Args.LineContext.BeforeContext != 0 {
+		options["before"] = fmt.Sprintf("%d", c.Args.LineContext.BeforeContext)
+	}
+	if c.Args.LineContext.AfterContext != 0 {
+		options["after"] = fmt.Sprintf("%d", c.Args.LineContext.AfterContext)
+	}
+
+	return options
+}
+
+func (c *baseClient) commandOptionsToString(options map[string]string) string {
+	var sb strings.Builder
+
+	count := 0
+	for k, v := range options {
+		if count > 0 {
+			sb.WriteString(":")
+		}
+		sb.WriteString(fmt.Sprintf("%s=%s", k, v))
+		count++
+	}
+
+	return sb.String()
+}
+
 func (c *baseClient) makeConnection(server string, sshAuthMethods []gossh.AuthMethod, hostKeyCallback client.HostKeyCallback) *remote.Connection {
 	conn := remote.NewConnection(server, c.UserName, sshAuthMethods, hostKeyCallback)
 	conn.Handler = c.maker.makeHandler(server)
-	conn.Commands = c.maker.makeCommands()
+	conn.Commands = c.maker.makeCommands(c.makeCommandOptions())
 
 	return conn
 }
