@@ -56,12 +56,12 @@ func main() {
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
 	flag.StringVar(&queryStr, "query", "", "Map reduce query")
 
-	// Context awareness.
-	flag.StringVar(&args.LineContext.RegexStr, "regex", ".", "Regular expression")
+	// Line context awareness.
+	flag.StringVar(&args.RegexStr, "regex", ".", "Regular expression")
 	flag.StringVar(&grep, "grep", "", "Alias for -regex")
-	flag.IntVar(&args.LineContext.BeforeContext, "before", 0, "Print lines of leading context before matching lines")
-	flag.IntVar(&args.LineContext.AfterContext, "after", 0, "Print lines of trailing context after matching lines")
-	flag.IntVar(&args.LineContext.MaxCount, "max", 0, "Stop reading file after NUM matching lines")
+	flag.IntVar(&args.LContext.BeforeContext, "before", 0, "Print lines of leading context before matching lines")
+	flag.IntVar(&args.LContext.AfterContext, "after", 0, "Print lines of trailing context after matching lines")
+	flag.IntVar(&args.LContext.MaxCount, "max", 0, "Stop reading file after NUM matching lines")
 
 	flag.Parse()
 

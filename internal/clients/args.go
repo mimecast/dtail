@@ -1,22 +1,16 @@
 package clients
 
 import (
+	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/omode"
 
 	gossh "golang.org/x/crypto/ssh"
 )
 
-// LineContext is here to help filtering out only specific lines.
-type LineContext struct {
-	RegexStr      string
-	AfterContext  int
-	BeforeContext int
-	MaxCount      int
-}
-
 // Args is a helper struct to summarize common client arguments.
 type Args struct {
-	LineContext
+	lcontext.LContext
+	RegexStr           string
 	Mode               omode.Mode
 	ServersStr         string
 	UserName           string

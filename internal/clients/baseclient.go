@@ -126,14 +126,14 @@ func (c *baseClient) makeCommandOptions() map[string]string {
 	if c.Args.Quiet {
 		options["quiet"] = fmt.Sprintf("%v", c.Args.Quiet)
 	}
-	if c.Args.LineContext.MaxCount != 0 {
-		options["max"] = fmt.Sprintf("%d", c.Args.LineContext.MaxCount)
+	if c.Args.LContext.MaxCount != 0 {
+		options["max"] = fmt.Sprintf("%d", c.Args.LContext.MaxCount)
 	}
-	if c.Args.LineContext.BeforeContext != 0 {
-		options["before"] = fmt.Sprintf("%d", c.Args.LineContext.BeforeContext)
+	if c.Args.LContext.BeforeContext != 0 {
+		options["before"] = fmt.Sprintf("%d", c.Args.LContext.BeforeContext)
 	}
-	if c.Args.LineContext.AfterContext != 0 {
-		options["after"] = fmt.Sprintf("%d", c.Args.LineContext.AfterContext)
+	if c.Args.LContext.AfterContext != 0 {
+		options["after"] = fmt.Sprintf("%d", c.Args.LContext.AfterContext)
 	}
 
 	return options
