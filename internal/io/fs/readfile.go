@@ -14,6 +14,7 @@ import (
 
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/regex"
 
 	"github.com/DataDog/zstd"
@@ -59,7 +60,7 @@ func (f readFile) Retry() bool {
 }
 
 // Start tailing a log file.
-func (f readFile) Start(ctx context.Context, lines chan<- line.Line, re regex.Regex) error {
+func (f readFile) Start(ctx context.Context, lContext lcontext.LContext, lines chan<- line.Line, re regex.Regex) error {
 	logger.Debug("readFile", f)
 	defer func() {
 		select {
@@ -96,7 +97,7 @@ func (f readFile) Start(ctx context.Context, lines chan<- line.Line, re regex.Re
 	wg.Add(1)
 
 	go f.periodicTruncateCheck(ctx, truncate)
-	go f.filter(ctx, &wg, rawLines, lines, re)
+	go f.filter(ctx, lContext, &wg, rawLines, lines, re)
 
 	err = f.read(ctx, fd, rawLines, truncate)
 	close(rawLines)
@@ -227,8 +228,13 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan []byte, t
 }
 
 // Filter log lines matching a given regular expression.
-func (f readFile) filter(ctx context.Context, wg *sync.WaitGroup, rawLines <-chan []byte, lines chan<- line.Line, re regex.Regex) {
+func (f readFile) filter(ctx context.Context, lContext lcontext.LContext, wg *sync.WaitGroup, rawLines <-chan []byte, lines chan<- line.Line, re regex.Regex) {
 	defer wg.Done()
+
+	/*
+		beforeContext := make([]string, lContext.BeforeContext)
+		afterContext := make([]string, lContext.AfterContext)
+	*/
 
 	for {
 		select {
