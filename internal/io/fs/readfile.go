@@ -231,21 +231,19 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan []byte, t
 func (f readFile) filter(ctx context.Context, lContext lcontext.LContext, wg *sync.WaitGroup, rawLines <-chan []byte, lines chan<- line.Line, re regex.Regex) {
 	defer wg.Done()
 
-	/*
-		beforeContext := make([]string, lContext.BeforeContext)
-		afterContext := make([]string, lContext.AfterContext)
-	*/
-
 	for {
 		select {
-		case line, ok := <-rawLines:
+		case rawLine, ok := <-rawLines:
 			f.updatePosition()
 			if !ok {
 				return
 			}
-			if filteredLine, ok := f.transmittable(line, len(lines), cap(lines), re); ok {
+
+			line, _, transmittable := f.lineTransmittable(rawLine, len(lines), cap(lines), re)
+			if transmittable {
 				select {
-				case lines <- filteredLine:
+				case lines <- line:
+					continue
 				case <-ctx.Done():
 					return
 				}
@@ -254,31 +252,75 @@ func (f readFile) filter(ctx context.Context, lContext lcontext.LContext, wg *sy
 	}
 }
 
-func (f readFile) transmittable(lineBytes []byte, length, capacity int, re regex.Regex) (line.Line, bool) {
+// Filter log lines matching a given regular expression.
+func (f readFile) filterWithLContext(ctx context.Context, lContext lcontext.LContext, wg *sync.WaitGroup, rawLines <-chan []byte, lines chan<- line.Line, re regex.Regex) {
+	defer wg.Done()
+
+	var bPos, bCount int
+	before := make([]*[]byte, lContext.BeforeContext)
+
+	for {
+		select {
+		case rawLine, ok := <-rawLines:
+			f.updatePosition()
+			if !ok {
+				return
+			}
+
+			if lContext.BeforeContext > 0 {
+				before[bPos] = &rawLine
+				bPos = (bPos + 1) % lContext.BeforeContext
+				if bCount < lContext.BeforeContext {
+					bCount++
+				}
+			}
+
+			line, _, transmittable := f.lineTransmittable(rawLine, len(lines), cap(lines), re)
+			if transmittable {
+				if lContext.BeforeContext > 0 {
+					for bCount > 0 {
+						bCount--
+					}
+				}
+				select {
+				case lines <- line:
+					continue
+				case <-ctx.Done():
+					return
+				}
+			}
+			// before[bPos] = line
+			// bPos = (bPos+1) % lContext.BeforeContext
+			// bCount = (bCount+1) % lContext.BeforeContext
+		}
+	}
+}
+
+func (f readFile) lineTransmittable(rawLine []byte, length, capacity int, re regex.Regex) (line.Line, bool, bool) {
 	var read line.Line
 
-	if !re.Match(lineBytes) {
+	if !re.Match(rawLine) {
 		f.updateLineNotMatched()
 		f.updateLineNotTransmitted()
-		return read, false
+		return read, false, false
 	}
 	f.updateLineMatched()
 
 	// Can we actually send more messages, channel capacity reached?
 	if f.canSkipLines && length >= capacity {
 		f.updateLineNotTransmitted()
-		return read, false
+		return read, true, false
 	}
 	f.updateLineTransmitted()
 
 	read = line.Line{
-		Content:         lineBytes,
+		Content:         rawLine,
 		SourceID:        f.globID,
 		Count:           f.totalLineCount(),
 		TransmittedPerc: f.transmittedPerc(),
 	}
 
-	return read, true
+	return read, true, true
 }
 
 // Check wether log file is truncated. Returns nil if not.
