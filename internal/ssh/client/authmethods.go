@@ -77,6 +77,15 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{}, pri
 	}
 	logger.Debug("initKnownHostsAuthMethods", "Unable to use private key", privateKeyPath, err)
 
+	privateKeyPath = os.Getenv("HOME") + "/.ssh/id_ecdsa"
+	authMethod, err = ssh.PrivateKey(privateKeyPath)
+	if err == nil {
+		sshAuthMethods = append(sshAuthMethods, authMethod)
+		logger.Debug("initKnownHostsAuthmethods", "Added path to list of auth methods, not adding further methods", privateKeyPath)
+		return sshAuthMethods, knownHostsCallback
+	}
+	logger.Debug("initKnownHostsAuthMethods", "Unable to use private key", privateKeyPath, err)
+
 	logger.FatalExit("Unable to find private SSH key information")
 
 	// Never reach this point.
