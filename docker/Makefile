@@ -3,7 +3,8 @@ all:
 	docker build . -t dserver:develop
 	rm ./dserver
 run:
-	docker run -p 2222:2222 dserver:develop
+	# http://localhost:8080/debug/pprof/goroutines?debug=1
+	docker run -p 2222:2222 -p 8080:8080 dserver:develop
 spinup:
 	./spinup.sh 10
 spindown:

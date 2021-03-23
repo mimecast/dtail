@@ -14,5 +14,6 @@ USER dserver
 
 WORKDIR /var/run/dserver
 EXPOSE 2222/tcp
+EXPOSE 8080/tcp
 
-CMD ["/usr/local/bin/dserver", "-relaxedAuth", "-cfg", "/etc/dserver/dtail.json"]
+CMD ["/usr/local/bin/dserver", "-relaxedAuth", "-cfg", "/etc/dserver/dtail.json", "-pprof", "8080"]

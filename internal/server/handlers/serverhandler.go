@@ -401,7 +401,7 @@ func readOptions(opts []string) (map[string]string, lcontext.LContext, error) {
 	for _, o := range opts {
 		kv := strings.SplitN(o, "=", 2)
 		if len(kv) != 2 {
-			return options, lContext, fmt.Errorf("Unable to parse options: %v", kv)
+			continue
 		}
 		key := kv[0]
 		val := kv[1]
