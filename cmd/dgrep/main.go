@@ -36,14 +36,23 @@ func main() {
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
-	flag.StringVar(&args.RegexStr, "regex", ".", "Regular expression")
 	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&args.UserName, "user", userName, "Your system user name")
 	flag.StringVar(&args.What, "files", "", "File(s) to read")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
+
+	// Line context awareness.
+	flag.StringVar(&args.RegexStr, "regex", ".", "Regular expression")
 	flag.StringVar(&grep, "grep", "", "Alias for -regex")
+	flag.IntVar(&args.LContext.BeforeContext, "before", 0, "Print lines of leading context before matching lines")
+	flag.IntVar(&args.LContext.AfterContext, "after", 0, "Print lines of trailing context after matching lines")
+	flag.IntVar(&args.LContext.MaxCount, "max", 0, "Stop reading file after NUM matching lines")
 
 	flag.Parse()
+
+	if grep != "" {
+		args.RegexStr = grep
+	}
 
 	config.Read(cfgFile, sshPort)
 	color.Colored = !noColor
@@ -57,10 +66,6 @@ func main() {
 		Debug: debugEnable || config.Common.DebugEnable,
 		Quiet: args.Quiet,
 	})
-
-	if grep != "" {
-		args.RegexStr = grep
-	}
 
 	client, err := clients.NewGrepClient(args)
 	if err != nil {

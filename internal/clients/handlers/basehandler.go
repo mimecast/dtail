@@ -101,15 +101,7 @@ func (h *baseHandler) handleMessageType(message string) {
 // Handle messages received from server which are not meant to be displayed
 // to the end user.
 func (h *baseHandler) handleHiddenMessage(message string) {
-	switch {
-	case strings.HasPrefix(message, ".syn close connection"):
+	if strings.HasPrefix(message, ".syn close connection") {
 		h.SendMessage(".ack close connection")
-		select {
-		case <-time.After(time.Second * 5):
-			logger.Debug("Shutting down client after timeout and sending ack to server")
-			h.Shutdown()
-		case <-h.Done():
-			return
-		}
 	}
 }

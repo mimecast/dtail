@@ -141,7 +141,7 @@ func (s *Server) handleChannel(ctx context.Context, sshConn gossh.Conn, newChann
 	}
 
 	if err := s.handleRequests(ctx, sshConn, requests, channel, user); err != nil {
-		logger.Error(user, err)
+		logger.Error(user, "While handling request", err)
 		sshConn.Close()
 	}
 }
@@ -190,7 +190,8 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 
 			go func() {
 				if err := sshConn.Wait(); err != nil && err != io.EOF {
-					logger.Error(user, err)
+					// Use of closed network connection.
+					logger.Debug(user, "While waiting for ssh connection", err)
 				}
 				s.stats.decrementConnections()
 				logger.Info(user, "Good bye Mister!")

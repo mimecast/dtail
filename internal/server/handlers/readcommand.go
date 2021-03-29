@@ -9,6 +9,7 @@ import (
 
 	"github.com/mimecast/dtail/internal/io/fs"
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/regex"
 )
@@ -25,7 +26,7 @@ func newReadCommand(server *ServerHandler, mode omode.Mode) *readCommand {
 	}
 }
 
-func (r *readCommand) Start(ctx context.Context, argc int, args []string, retries int) {
+func (r *readCommand) Start(ctx context.Context, lContext lcontext.LContext, argc int, args []string, retries int) {
 	re := regex.NewNoop()
 
 	if argc >= 4 {
@@ -40,10 +41,10 @@ func (r *readCommand) Start(ctx context.Context, argc int, args []string, retrie
 		r.server.sendServerWarnMessage(logger.Warn(r.server.user, commandParseWarning, args, argc))
 		return
 	}
-	r.readGlob(ctx, args[1], re, retries)
+	r.readGlob(ctx, lContext, args[1], re, retries)
 }
 
-func (r *readCommand) readGlob(ctx context.Context, glob string, re regex.Regex, retries int) {
+func (r *readCommand) readGlob(ctx context.Context, lContext lcontext.LContext, glob string, re regex.Regex, retries int) {
 	retryInterval := time.Second * 5
 	glob = filepath.Clean(glob)
 
@@ -67,7 +68,7 @@ func (r *readCommand) readGlob(ctx context.Context, glob string, re regex.Regex,
 			continue
 		}
 
-		r.readFiles(ctx, paths, glob, re, retryInterval)
+		r.readFiles(ctx, lContext, paths, glob, re, retryInterval)
 		return
 	}
 
@@ -75,18 +76,18 @@ func (r *readCommand) readGlob(ctx context.Context, glob string, re regex.Regex,
 	return
 }
 
-func (r *readCommand) readFiles(ctx context.Context, paths []string, glob string, re regex.Regex, retryInterval time.Duration) {
+func (r *readCommand) readFiles(ctx context.Context, lContext lcontext.LContext, paths []string, glob string, re regex.Regex, retryInterval time.Duration) {
 	var wg sync.WaitGroup
 	wg.Add(len(paths))
 
 	for _, path := range paths {
-		go r.readFileIfPermissions(ctx, &wg, path, glob, re)
+		go r.readFileIfPermissions(ctx, lContext, &wg, path, glob, re)
 	}
 
 	wg.Wait()
 }
 
-func (r *readCommand) readFileIfPermissions(ctx context.Context, wg *sync.WaitGroup, path, glob string, re regex.Regex) {
+func (r *readCommand) readFileIfPermissions(ctx context.Context, lContext lcontext.LContext, wg *sync.WaitGroup, path, glob string, re regex.Regex) {
 	defer wg.Done()
 	globID := r.makeGlobID(path, glob)
 
@@ -96,10 +97,10 @@ func (r *readCommand) readFileIfPermissions(ctx context.Context, wg *sync.WaitGr
 		return
 	}
 
-	r.readFile(ctx, path, globID, re)
+	r.readFile(ctx, lContext, path, globID, re)
 }
 
-func (r *readCommand) readFile(ctx context.Context, path, globID string, re regex.Regex) {
+func (r *readCommand) readFile(ctx context.Context, lContext lcontext.LContext, path, globID string, re regex.Regex) {
 	logger.Info(r.server.user, "Start reading file", path, globID)
 
 	var reader fs.FileReader
@@ -120,7 +121,7 @@ func (r *readCommand) readFile(ctx context.Context, path, globID string, re rege
 	}
 
 	for {
-		if err := reader.Start(ctx, lines, re); err != nil {
+		if err := reader.Start(ctx, lContext, lines, re); err != nil {
 			logger.Error(r.server.user, path, globID, err)
 		}
 

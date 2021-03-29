@@ -110,27 +110,31 @@ func (c MaprClient) makeHandler(server string) handlers.Handler {
 	return handlers.NewMaprHandler(server, c.query, c.globalGroup)
 }
 
-func (c MaprClient) makeCommands() (commands []string) {
+func (c MaprClient) makeCommands(options map[string]string) (commands []string) {
 	commands = append(commands, fmt.Sprintf("map %s", c.query.RawQuery))
-	options := fmt.Sprintf("quiet=%v", c.Args.Quiet)
 
 	modeStr := "cat"
 	if c.Mode == omode.TailClient {
 		modeStr = "tail"
 	}
+	optionsStr := c.commandOptionsToString(options)
 
 	for _, file := range strings.Split(c.What, ",") {
 		if c.Timeout > 0 {
 			commands = append(commands, fmt.Sprintf("timeout %d %s %s %s", c.Timeout, modeStr, file, c.Regex.Serialize()))
 			continue
 		}
-		commands = append(commands, fmt.Sprintf("%s:%s %s %s", modeStr, options, file, c.Regex.Serialize()))
+		commands = append(commands, fmt.Sprintf("%s:%s %s %s", modeStr, optionsStr, file, c.Regex.Serialize()))
 	}
 
 	return
 }
 
 func (c *MaprClient) periodicReportResults(ctx context.Context) {
+	rampUpSleep := c.query.Interval / 2
+	logger.Debug("Ramp up sleeping before processing mapreduce results", rampUpSleep)
+	time.Sleep(rampUpSleep)
+
 	for {
 		select {
 		case <-time.After(c.query.Interval):

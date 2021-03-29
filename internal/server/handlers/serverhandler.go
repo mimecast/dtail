@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/mapr/server"
 	"github.com/mimecast/dtail/internal/omode"
 	user "github.com/mimecast/dtail/internal/user/server"
@@ -240,7 +242,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 	splitted := strings.Split(args[0], ":")
 	commandName := splitted[0]
 
-	options, err := readOptions(splitted[1:])
+	options, lContext, err := readOptions(splitted[1:])
 	if err != nil {
 		h.sendServerMessage(logger.Error(h.user, err))
 		commandFinished()
@@ -258,7 +260,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		command := newReadCommand(h, omode.CatClient)
 		go func() {
 			h.incrementActiveReaders()
-			command.Start(ctx, argc, args, 1)
+			command.Start(ctx, lContext, argc, args, 1)
 			readerFinished()
 			commandFinished()
 		}()
@@ -267,7 +269,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		command := newReadCommand(h, omode.TailClient)
 		go func() {
 			h.incrementActiveReaders()
-			command.Start(ctx, argc, args, 10)
+			command.Start(ctx, lContext, argc, args, 10)
 			readerFinished()
 			commandFinished()
 		}()
@@ -390,13 +392,16 @@ func (h *ServerHandler) decrementActiveReaders() int32 {
 	return atomic.LoadInt32(&h.activeReaders)
 }
 
-func readOptions(opts []string) (map[string]string, error) {
+// TODO: All options related code should be in its own package (client + server)
+func readOptions(opts []string) (map[string]string, lcontext.LContext, error) {
 	options := make(map[string]string, len(opts))
+	// Local search context
+	var lContext lcontext.LContext
 
 	for _, o := range opts {
 		kv := strings.SplitN(o, "=", 2)
 		if len(kv) != 2 {
-			return options, fmt.Errorf("Unable to parse options: %v", kv)
+			continue
 		}
 		key := kv[0]
 		val := kv[1]
@@ -405,13 +410,37 @@ func readOptions(opts []string) (map[string]string, error) {
 			s := strings.SplitN(val, "%", 2)
 			decoded, err := base64.StdEncoding.DecodeString(s[1])
 			if err != nil {
-				return options, err
+				return options, lContext, err
 			}
 			val = string(decoded)
 		}
 
-		options[key] = val
+		switch key {
+		case "before":
+			iVal, err := strconv.Atoi(val)
+			if err != nil {
+				logger.Error(err)
+				continue
+			}
+			lContext.BeforeContext = iVal
+		case "after":
+			iVal, err := strconv.Atoi(val)
+			if err != nil {
+				logger.Error(err)
+				continue
+			}
+			lContext.AfterContext = iVal
+		case "max":
+			iVal, err := strconv.Atoi(val)
+			if err != nil {
+				logger.Error(err)
+				continue
+			}
+			lContext.MaxCount = iVal
+		default:
+			options[key] = val
+		}
 	}
 
-	return options, nil
+	return options, lContext, nil
 }
