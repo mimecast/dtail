@@ -1,7 +1,7 @@
 DTail
 =====
 
-![DTail](doc/logo.png "DTail")
+![DTail](doc/title.png "DTail")
 
 DTail (a distributed tail program) is a DevOps tool for engineers programmed in Google Go for following (tailing), catting and grepping (including gzip and zstd decompression support) log files on many machines concurrently. An advanced feature of DTail is to execute distributed mapreduce aggregations across many machines.
 
