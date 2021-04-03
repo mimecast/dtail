@@ -37,7 +37,7 @@ func (u *User) String() string {
 	return fmt.Sprintf("%s@%s", u.Name, u.remoteAddress)
 }
 
-// HasFilePermission is used to determine whether user is alowed to read a file.
+// HasFilePermission is used to determine whether user is allowwed to read a file.
 func (u *User) HasFilePermission(filePath, permissionType string) (hasPermission bool) {
 	logger.Debug(u, filePath, permissionType, "Checking config permissions")
 	if config.ServerRelaxedAuthEnable {

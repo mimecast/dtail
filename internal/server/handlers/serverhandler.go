@@ -89,7 +89,7 @@ func (h *ServerHandler) Read(p []byte) (n int, err error) {
 		select {
 		case message := <-h.serverMessages:
 			if len(message) == 0 {
-				logger.Warn(h.user, "Empty message recieved")
+				logger.Warn(h.user, "Empty message received")
 				return
 			}
 			if message[0] == '.' {
