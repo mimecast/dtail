@@ -28,7 +28,7 @@ func TestDefaultLogFormat(t *testing.T) {
 		t.Errorf("Expected 'bay' stored in field 'baz', but got '%s'\n", bay)
 	}
 
-	fields, err = parser.MakeFields("foo=bar|bazbay")
+	_, err = parser.MakeFields("foo=bar|bazbay")
 	if err == nil {
 		t.Errorf("Expected error but didn't: %s", err.Error())
 	}
