@@ -204,7 +204,7 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 		default:
 			req.Reply(false, nil)
 
-			return fmt.Errorf("Closing SSH connection as unknown request recieved|%s|%v",
+			return fmt.Errorf("Closing SSH connection as unknown request received|%s|%v",
 				req.Type, payload.Value)
 		}
 	}
