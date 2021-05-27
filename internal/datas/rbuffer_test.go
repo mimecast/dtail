@@ -29,7 +29,7 @@ func TestRBuffer(t *testing.T) {
 
 	fiveValues := []string{
 		"42 is the answer!",
-		"Scroption: Get over here!",
+		"Scorpion: Get over here!",
 		"Have you swiped your nectar card?",
 		"Please mind the gap between the train and the platform!",
 		"Visit DTail at https://dtail.dev",
