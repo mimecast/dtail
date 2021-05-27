@@ -17,7 +17,7 @@ The following example demonstrates how to follow logs of multiple servers at onc
 
 ## Aggregating logs
 
-To run ad-hoc MapReduce aggregations on newly written log lines, you also must add a query. According to the logs, this example follows all remote log lines and prints out every 5 seconds the top 10 servers with the most average free memory. To run a MapReduce query across log lines written in the past, please use the ``dmap`` command instead.
+To run ad-hoc MapReduce aggregations on newly written log lines, you also must add a query. The following example follows all remote log lines and prints out every 5 seconds the top 10 servers with the most average free memory. To run a MapReduce query across log lines written in the past, please use the ``dmap`` command instead.
 
 ```shell
 % dtail --servers serverlist.txt  \

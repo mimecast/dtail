@@ -5,7 +5,7 @@ The following installation guide has been tested successfully on CentOS 7. You m
 
 # Compile it
 
-Please check the [Quick Starting Guide](quickstart.md) for instructions on compiling DTail. It is recommended to automate the build process via your build pipeline (e.g. produce a deployable RPM via Jenkins). You don't have to use ``go get...`` to compile and install the binaries. You can also clone the repository and use ``make`` instead.
+Please check the [Quick Starting Guide](quickstart.md) for instructions on compiling DTail. It is recommended to automate the build process via your build pipeline (e.g. produce a deployable (.rpm, .deb, ...) via Jenkins). You don't have to use ``go get...`` to compile and install the binaries. You can also clone the repository and use ``make`` instead.
 
 ## Linux ACL support
 
@@ -29,7 +29,7 @@ Alternatively, you could add `-tags linuxacl` to the Go compiler.
 
 # Install it
 
-It is recommended to automate all the installation process outlined here. You could use a configuration management system such as Puppet, Chef or Ansible. However, that relies heavily on how your infrastructure is managed and is out of the scope of this documentation.
+It is recommended to automate all the installation process outlined here. You could use a configuration management system such as Puppet, Chef or Ansible. However, that relies heavily on how your infrastructure is managed and is out of scope of this documentation.
 
 1. The ``dserver`` binary has to be installed on all machines (server boxes) involved. A good location for the binary would be ``/usr/local/bin/dserver`` with permissions set as follows:
 
@@ -119,7 +119,7 @@ Now you should be able to use DTail client like outlined in the [Quick Starting 
 
 # Monitor it
 
-To verify that DTail server is up and running and functioning as expected, you should configure the Nagios check [check_dserver.sh](../samples/check_dserver.sh.sample) in your monitoring system. The check has to be executed locally on the server (e.g. via NRPE). How to configure the monitoring system in detail is out of the scope of this guide.
+To verify that DTail server is up and running and functioning as expected, you should configure the Nagios check [check_dserver.sh](../samples/check_dserver.sh.sample) in your monitoring system. The check has to be executed locally on the server (e.g. via NRPE). How to configure the monitoring system in detail is out of scope of this guide.
 
 ```console
 % ./check_dserver.sh
