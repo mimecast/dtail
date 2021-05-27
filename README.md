@@ -14,6 +14,7 @@ The DTail binary operates in either client or server mode. The DTail server must
 ![DTail](doc/dtail.gif "Example")
 
 If you like what you see [look here for more examples](doc/examples.md)! You can also read through the [DTail Mimecast Engineering Blog Post](https://medium.com/mimecast-engineering/dtail-the-distributed-log-tail-program-79b8087904bb).
+
 Installation and Usage
 ======================
 
