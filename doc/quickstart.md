@@ -1,9 +1,9 @@
 Quick Starting Guide
 ====================
 
-This is the quick starting guide. For a more sustainable setup, involving how to create a background service via ``systemd``, recommendations about automation via Jenkins and/or Puppet and health monitoring via Nagios please also follow the [Installation Guide](installation.md).
+This is the quick starting guide. For a more sustainable setup involving creating a background service via ``systemd``, recommendations about automation via Jenkins and Puppet and health monitoring via Nagios, please follow the [Installation Guide](installation.md).
 
-This guide assumes that you know how to generate and configure a public/private SSH key pair for secure authorization and shell access. For more information please have a look at the OpenSSH documentation of your distribution.
+This guide assumes that you know how to generate and configure a public/private SSH key pair for secure authorization and shell access. For more information, please have a look at the OpenSSH documentation of your distribution.
 
 # Install it
 
@@ -18,8 +18,8 @@ To compile and install all DTail binaries directly from GitHub run:
 It produces the following executables in ``$GOPATH/bin``:
 
 * ``dcat``: Client for displaying whole files remotely (distributed cat)
-* ``dgrep``: Client for searching whole files files remotely using a regex (distributed grep)
-* ``dmap``: Client for executing distributed mapreduce queries (may will consume a lot of RAM and CPU)
+* ``dgrep``: Client for searching whole files remotely using a regex (distributed grep)
+* ``dmap``: Client for executing distributed MapReduce queries (may consume a lot of RAM and CPU)
 * ``dtail``: Client for tailing/following log files remotely (distributed tail)
 * ``dserver``: The DTail server
 
@@ -42,13 +42,13 @@ SERVER|serv-001|INFO|Binding server|0.0.0.0:2222
 
 ## Setup SSH
 
-Make sure that your public SSH key is listed in ``~/.ssh/authorized_keys`` on all server machines involved. The private SSH key counterpart should preferably stay on your Laptop or workstation in ``~/.ssh/id_rsa`` or ``~/.ssh/id_dsa``.
+Ensure that your public SSH key is listed in ``~/.ssh/authorized_keys`` on all server machines involved. The private SSH key counterpart should preferably stay on your Laptop or workstation in ``~/.ssh/id_rsa`` or ``~/.ssh/id_dsa``.
 
-DTail relies on SSH for secure authentication and communication. You can either use a SSH Agent or a private SSH key file directly. 
+DTail relies on SSH for secure authentication and communication. You can either use an SSH Agent or a private SSH key file directly. 
 
 ### SSH Agent
 
-The clients (all client binaries such as ``dtail``, ``dgrep`` and so on...) communicate with an auth backend via the SSH auth socket. The SSH auth socket is configured via the environment variable ``SSH_AUTH_SOCK`` which usually points to ``~/.ssh/ssh_auth_socket`` or similar (depending on your configuration it may also point to other auth backends such as GPG Agent, in which case ``SSH_AUTH_SOCK`` would point to ``~/.gnupg/S.gpg-agent.ssh`` or similar).
+The clients (all client binaries such as ``dtail``, ``dgrep`` and so on...) communicate with an auth backend via the SSH auth socket. The SSH auth socket is configured via the environment variable ``SSH_AUTH_SOCK`` which usually points to ``~/.ssh/ssh_auth_socket`` or similar (depending on your configuration, it may also point to other auth backends such as GPG Agent, in which case ``SSH_AUTH_SOCK`` would point to ``~/.gnupg/S.gpg-agent.ssh`` or similar).
 
 Usually you would use the SSH Auth Agent. For this the private SSH key has to be registered at the SSH Agent:
 
@@ -58,7 +58,7 @@ Enter passphrase for ~/.ssh/id_rsa: **********
 Identity added: ~/.ssh/id_rsa (~/.ssh/id_rsa)
 ```
 
-To test whether SSH is setup correctly you should be able to SSH into the servers with the OpenSSH client and your private SSH key through the SSH Agent without entering the private keys passphrase. The following assumes to have an OpenSSH server running on ``serv-001.lan.example.org`` and an OpenSSH client installed on your laptop or workstation. Please notice that DTail does not require to have an OpenSSH infrastructure set up but DTail uses by default the same public/private key file paths as OpenSSH. OpenSSH can be of a great help to verify that the SSH keys are configured correctly:
+To test whether SSH is set up correctly, you should be able to SSH into the servers with the OpenSSH client and your private SSH key through the SSH Agent without entering the private key's passphrase. The following assumes to have an OpenSSH server running on ``serv-001.lan.example.org`` and an OpenSSH client installed on your laptop or workstation. Please notice that DTail does not require to have an OpenSSH infrastructure set up, but DTail uses by default the same public/private key file paths as OpenSSH. OpenSSH can be of great help to verify that the SSH keys are configured correctly:
 
 ```console
 workstation01 ~ % ssh serv-001.lan.example.org
@@ -71,7 +71,7 @@ Please consult the OpenSSH documentation of your distribution if the test above 
 
 ### SSH Private Key file
 
-As an alternative to using a SSH Agent a SSH private key file can be used directly. Just add the argument ``--key ~/.ssh/id_rsa`` (pointing to your private key) to the DTail client. This currently does not work with password protected keys. Use the SSH Agent method instead in case your key comes with a password (recommended).
+As an alternative to using an SSH Agent, an SSH private key file can be used directly. Just add the argument ``--key ~/.ssh/id_rsa`` (pointing to your private key) to the DTail client. This currently does not work with password-protected keys. Use the SSH Agent method instead, in case your key comes with a password (recommended).
 
 ## Run DTail client
 
