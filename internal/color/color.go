@@ -26,8 +26,7 @@ const (
 	Yellow    Color = escape + "[36m"
 	LightGray Color = escape + "[37m"
 
-	BgGray      Color = escape + "[40m"
-	BgRed       Color = escape + "[41m"
+	BgGray      Color = escape + "[40m" BgRed       Color = escape + "[41m"
 	BgGreen     Color = escape + "[42m"
 	BgOrange    Color = escape + "[43m"
 	BgBlue      Color = escape + "[44m"
