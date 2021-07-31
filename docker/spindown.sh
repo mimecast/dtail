@@ -5,5 +5,9 @@ declare -i BASE_PORT=2222
 
 for (( i=0; i < $NUM_INSTANCES; i++ )); do
     port=$[ BASE_PORT + i + 1 ]
-	docker stop dserver-serv$i 
+    name=dserver-serv$i
+    echo Stopping $name
+    docker stop $name
+    echo Removing $name
+    docker rm $name
 done

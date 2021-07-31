@@ -2,7 +2,7 @@
 # The container can be used for developing and testing
 # Purposes
 
-FROM fedora:33
+FROM fedora:34
 RUN mkdir -p /etc/dserver /var/run/dserver/ /var/log/dserver
 
 ADD ./dtail.json /etc/dserver/dtail.json
