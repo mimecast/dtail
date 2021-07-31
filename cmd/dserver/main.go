@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/server"
@@ -25,7 +24,7 @@ func main() {
 	var cfgFile string
 	var debugEnable bool
 	var displayVersion bool
-	var noColor bool
+	var color bool
 	var pprof int
 	var shutdownAfter int
 	var sshPort int
@@ -35,16 +34,15 @@ func main() {
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&config.ServerRelaxedAuthEnable, "relaxedAuth", false, "Enable relaxced SSH auth mode (don't use in production!)")
-	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
+	flag.BoolVar(&color, "color", false, "Enable ANSII terminal colors")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Automatically shutdown after so many seconds")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
 
 	flag.Parse()
-
 	config.Read(cfgFile, sshPort)
-	color.Colored = !noColor
+	config.Client.TermColorsEnabled = color
 
 	if displayVersion {
 		version.PrintAndExit()

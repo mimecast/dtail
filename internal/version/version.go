@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/mimecast/dtail/internal/color"
+	"github.com/mimecast/dtail/internal/config"
 )
 
 const (
@@ -25,7 +26,7 @@ func String() string {
 
 // PaintedString is a prettier string representation of the DTail version.
 func PaintedString() string {
-	if !color.Colored {
+	if !config.Client.TermColorsEnabled {
 		return String()
 	}
 	name := color.Paint(color.Yellow, Name)

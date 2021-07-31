@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/mimecast/dtail/internal/clients"
-	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/io/signal"
@@ -46,7 +45,9 @@ func main() {
 	flag.Parse()
 
 	config.Read(cfgFile, sshPort)
-	color.Colored = !noColor
+	if noColor {
+		config.Client.TermColorsEnabled = false
+	}
 
 	if displayVersion {
 		version.PrintAndExit()

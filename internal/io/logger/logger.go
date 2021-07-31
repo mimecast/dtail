@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mimecast/dtail/internal/color"
+	"github.com/mimecast/dtail/internal/color/brush"
 	"github.com/mimecast/dtail/internal/config"
 )
 
@@ -207,8 +207,8 @@ func write(what, severity, message string) {
 	if Mode.logToStdout {
 		line := fmt.Sprintf("%s|%s|%s|%s\n", what, hostname, severity, message)
 
-		if color.Colored {
-			line = color.Colorfy(line)
+		if config.Client.TermColorsEnabled {
+			line = brush.Colorfy(line)
 		}
 
 		stdoutBufCh <- line
@@ -262,8 +262,8 @@ func Raw(message string) {
 	}
 
 	if Mode.logToStdout {
-		if color.Colored {
-			message = color.Colorfy(message)
+		if config.Client.TermColorsEnabled {
+			message = brush.Colorfy(message)
 		}
 		stdoutBufCh <- message
 	}
