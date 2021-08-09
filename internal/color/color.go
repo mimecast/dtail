@@ -61,27 +61,27 @@ const (
 var Colored bool
 
 // Paint paints a given text in a given foreground/background color combination.
-func Paint(fg FgColor, bg FgColor, text string) string {
+func Paint(text string, fg FgColor, bg FgColor) string {
 	return fmt.Sprintf(seq, fg, bg, text, BgDefault, FgDefault)
 }
 
 // PaintWithAttr paints a given text in a given foreground/background/attribute combination
-func PaintWithAtt(fg FgColor, bg FgColor, att Attribute, text string) string {
+func PaintWithAtt(text string, fg FgColor, bg FgColor, att Attribute) string {
 	return fmt.Sprintf(seq, fg, bg, att, text, AttReset, BgDefault, FgDefault)
 }
 
 // PaintFg paints a given text in a given foreground color.
-func PaintFg(fg FgColor, text string) string {
+func PaintFg(text string, fg FgColor) string {
 	return fmt.Sprintf(seq, fg, text, FgDefault)
 }
 
 // PaintBg paints a given text in a given background color.
-func PaintBg(bg BgColor, text string) string {
+func PaintBg(text string, bg BgColor) string {
 	return fmt.Sprintf(seq, bg, text, BgDefault)
 }
 
 // PaintAtt adds a given attribute to a given text, such as "bold" or "italic".
-func PaintAtt(att Attribute, text string) string {
+func PaintAtt(text string, att Attribute) string {
 	return fmt.Sprintf(seq, att, text, AttReset)
 }
 
