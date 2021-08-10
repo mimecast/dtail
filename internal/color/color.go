@@ -17,8 +17,7 @@ type Attribute string
 
 // The possible color variations.
 const (
-	escape        = "\x1b"
-	seq    string = "%s%s%s"
+	escape = "\x1b"
 
 	FgBlack   FgColor = escape + "[30m"
 	FgRed     FgColor = escape + "[31m"
@@ -40,49 +39,44 @@ const (
 	BgWhite   BgColor = escape + "[47m"
 	BgDefault BgColor = escape + "[49m"
 
-	AttReset      Attribute = escape + "[0m"
-	AttBold       Attribute = escape + "[1m"
-	AttDim        Attribute = escape + "[2m"
-	AttItalic     Attribute = escape + "[3m"
-	AttUnderline  Attribute = escape + "[4m"
-	AttBlink      Attribute = escape + "[5m"
-	AttSlowBlink  Attribute = escape + "[5m"
-	AttRapidBlink Attribute = escape + "[6m"
-	AttReverse    Attribute = escape + "[7m"
-	AttHidden     Attribute = escape + "[8m"
-
-	// Internal (manual) testing.
-	FgTest  FgColor   = FgBlue
-	BgTest  BgColor   = BgYellow
-	AttTest Attribute = AttBold
+	AttrReset      Attribute = escape + "[0m"
+	AttrBold       Attribute = escape + "[1m"
+	AttrDim        Attribute = escape + "[2m"
+	AttrItalic     Attribute = escape + "[3m"
+	AttrUnderline  Attribute = escape + "[4m"
+	AttrBlink      Attribute = escape + "[5m"
+	AttrSlowBlink  Attribute = escape + "[5m"
+	AttrRapidBlink Attribute = escape + "[6m"
+	AttrReverse    Attribute = escape + "[7m"
+	AttrHidden     Attribute = escape + "[8m"
 )
 
 // Colored DTail client output enabled.
 var Colored bool
 
 // Paint paints a given text in a given foreground/background color combination.
-func Paint(text string, fg FgColor, bg FgColor) string {
-	return fmt.Sprintf(seq, fg, bg, text, BgDefault, FgDefault)
+func Paint(text string, fg FgColor, bg BgColor) string {
+	return fmt.Sprintf("%s%s%s%s%s", fg, bg, text, BgDefault, FgDefault)
 }
 
 // PaintWithAttr paints a given text in a given foreground/background/attribute combination
-func PaintWithAtt(text string, fg FgColor, bg FgColor, att Attribute) string {
-	return fmt.Sprintf(seq, fg, bg, att, text, AttReset, BgDefault, FgDefault)
+func PaintWithAttr(text string, fg FgColor, bg BgColor, attr Attribute) string {
+	return fmt.Sprintf("%s%s%s%s%s%s%s", fg, bg, attr, text, AttrReset, BgDefault, FgDefault)
 }
 
 // PaintFg paints a given text in a given foreground color.
 func PaintFg(text string, fg FgColor) string {
-	return fmt.Sprintf(seq, fg, text, FgDefault)
+	return fmt.Sprintf("%s%s%s", fg, text, FgDefault)
 }
 
 // PaintBg paints a given text in a given background color.
 func PaintBg(text string, bg BgColor) string {
-	return fmt.Sprintf(seq, bg, text, BgDefault)
+	return fmt.Sprintf("%s%s%s", bg, text, BgDefault)
 }
 
-// PaintAtt adds a given attribute to a given text, such as "bold" or "italic".
-func PaintAtt(text string, att Attribute) string {
-	return fmt.Sprintf(seq, att, text, AttReset)
+// PaintAttr adds a given attribute to a given text, such as "bold" or "italic".
+func PaintAttr(text string, attr Attribute) string {
+	return fmt.Sprintf("%s%s%s", attr, text, AttrReset)
 }
 
 // ToFgColor converts a given string (e.g. from a config file) into a foreground color code.
@@ -138,27 +132,27 @@ func ToBgColor(s string) (BgColor, error) {
 }
 
 // ToAttribute converts a given string (e.g. from a config file) into a text attribute.
-func ToAttColor(s string) (Attribute, error) {
+func ToAttribute(s string) (Attribute, error) {
 	switch strings.ToLower(s) {
 	case "bold":
-		return AttBold, nil
+		return AttrBold, nil
 	case "dim":
-		return AttDim, nil
+		return AttrDim, nil
 	case "italic":
-		return AttItalic, nil
+		return AttrItalic, nil
 	case "underline":
-		return AttUnderline, nil
+		return AttrUnderline, nil
 	case "blink":
-		return AttBlink, nil
+		return AttrBlink, nil
 	case "slowblink":
-		return AttSlowBlink, nil
+		return AttrSlowBlink, nil
 	case "rapidblink":
-		return AttRapidBlink, nil
+		return AttrRapidBlink, nil
 	case "reverse":
-		return AttReverse, nil
+		return AttrReverse, nil
 	case "hidden":
-		return AttHidden, nil
+		return AttrHidden, nil
 	default:
-		return AttReset, fmt.Errorf("unknown text attribute '" + s + "'")
+		return AttrReset, fmt.Errorf("unknown text attribute '" + s + "'")
 	}
 }
