@@ -13,10 +13,10 @@ const (
 	Name string = "DTail"
 	// Version of DTail.
 	Version string = "3.2.0"
-	// Additional information for DTail
-	Additional string = ""
 	// ProtocolCompat -ibility version.
 	ProtocolCompat string = "3"
+	// Additional information for DTail
+	Additional string = "Have a lot of fun!"
 )
 
 // String representation of the DTail version.
@@ -29,11 +29,20 @@ func PaintedString() string {
 	if !config.Client.TermColorsEnabled {
 		return String()
 	}
-	name := color.Paint(color.Yellow, Name)
-	version := color.Paint(color.Blue, Version)
-	descr := color.Paint(color.Green, Additional)
 
-	return fmt.Sprintf("%s %v Protocol %s %s", name, version, ProtocolCompat, descr)
+	name := color.PaintWithAttr(Name,
+		color.FgYellow, color.BgBlue, color.AttrBold)
+
+	version := color.PaintWithAttr(fmt.Sprintf(" %s ", Version),
+		color.FgBlue, color.BgYellow, color.AttrBold)
+
+	protocol := color.Paint(fmt.Sprintf(" Protocol %s ", ProtocolCompat),
+		color.FgBlack, color.BgGreen)
+
+	additional := color.PaintWithAttr(fmt.Sprintf(" %s ", Additional),
+		color.FgWhite, color.BgMagenta, color.AttrBlink)
+
+	return fmt.Sprintf("%s%v%s%s", name, version, protocol, additional)
 }
 
 // PrintAndExit prints the program version and exists.

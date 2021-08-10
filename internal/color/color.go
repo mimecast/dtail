@@ -39,6 +39,7 @@ const (
 	BgWhite   BgColor = escape + "[47m"
 	BgDefault BgColor = escape + "[49m"
 
+	AttrNone       Attribute = ""
 	AttrReset      Attribute = escape + "[0m"
 	AttrBold       Attribute = escape + "[1m"
 	AttrDim        Attribute = escape + "[2m"
@@ -61,6 +62,9 @@ func Paint(text string, fg FgColor, bg BgColor) string {
 
 // PaintWithAttr paints a given text in a given foreground/background/attribute combination
 func PaintWithAttr(text string, fg FgColor, bg BgColor, attr Attribute) string {
+	if attr == AttrNone {
+		return Paint(text, fg, bg)
+	}
 	return fmt.Sprintf("%s%s%s%s%s%s%s", fg, bg, attr, text, AttrReset, BgDefault, FgDefault)
 }
 
