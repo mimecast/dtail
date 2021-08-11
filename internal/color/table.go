@@ -5,14 +5,6 @@ import (
 	"os"
 )
 
-var ColorNames = []string{
-	"Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White", "Default",
-}
-
-var AttributeNames = []string{
-	"Bold", "Dim", "Italic", "Underline", "Blink", "SlowBlink", "RapidBlink", "Reverse", "Hidden", "None",
-}
-
 func TablePrintAndExit() {
 	for _, attr := range AttributeNames {
 		if attr == "Hidden" || attr == "SlowBlink" {
