@@ -30,7 +30,7 @@ func PaintedString() string {
 		return String()
 	}
 
-	name := color.PaintWithAttr(Name,
+	name := color.PaintWithAttr(fmt.Sprintf(" %s ", Name),
 		color.FgYellow, color.BgBlue, color.AttrBold)
 
 	version := color.PaintWithAttr(fmt.Sprintf(" %s ", Version),

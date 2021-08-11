@@ -6,14 +6,10 @@ import (
 )
 
 func TestColors(t *testing.T) {
-	colors := []string{
-		"Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White", "Default",
-	}
-
 	text := " Mimecast "
 	builder := strings.Builder{}
 
-	for _, color := range colors {
+	for _, color := range ColorNames {
 		fgColor, err := ToFgColor(color)
 		if err != nil {
 			t.Errorf("unable to paint foreground : %s\n%v", text, err)
@@ -27,10 +23,13 @@ func TestColors(t *testing.T) {
 		builder.WriteString(PaintBg(text, bgColor))
 	}
 
-	for _, color := range colors {
-		fgColor, _ := ToFgColor(color)
-		for _, color := range colors {
-			bgColor, _ := ToBgColor(color)
+	for _, fg := range ColorNames {
+		fgColor, _ := ToFgColor(fg)
+		for _, bg := range ColorNames {
+			if fg == bg {
+				continue
+			}
+			bgColor, _ := ToBgColor(bg)
 			builder.WriteString(Paint(text, fgColor, bgColor))
 		}
 	}
@@ -38,14 +37,10 @@ func TestColors(t *testing.T) {
 	t.Log(builder.String())
 }
 func TestAttributes(t *testing.T) {
-	attributes := []string{
-		"Bold", "Dim", "Italic", "Underline", "Blink", "SlowBlink", "RapidBlink", "Reverse", "hidden",
-	}
-
 	text := " Mimecast "
 	builder := strings.Builder{}
 
-	for _, attribute := range attributes {
+	for _, attribute := range AttributeNames {
 		att, err := ToAttribute(attribute)
 		if err != nil {
 			t.Errorf("unable to paint attribute: %s\n%v", text, err)

@@ -156,6 +156,10 @@ func ToAttribute(s string) (Attribute, error) {
 		return AttrReverse, nil
 	case "hidden":
 		return AttrHidden, nil
+	case "none":
+		fallthrough
+	case "":
+		return AttrNone, nil
 	default:
 		return AttrReset, fmt.Errorf("unknown text attribute '" + s + "'")
 	}

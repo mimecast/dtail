@@ -75,7 +75,7 @@ func newDefaultClientConfig() *ClientConfig {
 
 			RemoteDebugAttr: color.AttrNone,
 			RemoteDebugBg:   color.BgGreen,
-			RemoteDebugFg:   color.FgWhite,
+			RemoteDebugFg:   color.FgBlack,
 
 			RemoteErrorAttr: color.AttrBold,
 			RemoteErrorBg:   color.BgRed,
@@ -83,11 +83,11 @@ func newDefaultClientConfig() *ClientConfig {
 
 			RemoteFatalAttr: color.AttrBlink,
 			RemoteFatalBg:   color.BgRed,
-			RemoteFatalFg:   color.FgBlue,
+			RemoteFatalFg:   color.FgWhite,
 
 			RemoteStatsOkAttr: color.AttrNone,
 			RemoteStatsOkBg:   color.BgGreen,
-			RemoteStatsOkFg:   color.FgWhite,
+			RemoteStatsOkFg:   color.FgBlack,
 
 			RemoteStatsWarnAttr: color.AttrNone,
 			RemoteStatsWarnBg:   color.BgRed,

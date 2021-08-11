@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients"
+	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/io/signal"
@@ -25,6 +26,7 @@ func main() {
 	var cfgFile string
 	var checkHealth bool
 	var debugEnable bool
+	var displayColorTable bool
 	var displayVersion bool
 	var grep string
 	var noColor bool
@@ -35,13 +37,14 @@ func main() {
 
 	userName := user.Name()
 
+	flag.BoolVar(&args.Quiet, "quiet", false, "Quiet output mode")
 	flag.BoolVar(&args.RegexInvert, "invert", false, "Invert regex")
 	flag.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.BoolVar(&checkHealth, "checkHealth", false, "Only check for server health")
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
+	flag.BoolVar(&displayColorTable, "colorTable", false, "Show color table")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
-	flag.BoolVar(&args.Quiet, "quiet", false, "Quiet output mode")
 	flag.IntVar(&args.ConnectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
 	flag.IntVar(&args.Timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
@@ -70,6 +73,9 @@ func main() {
 
 	if displayVersion {
 		version.PrintAndExit()
+	}
+	if displayColorTable {
+		color.TablePrintAndExit()
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
