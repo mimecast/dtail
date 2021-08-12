@@ -207,7 +207,7 @@ func write(what, severity, message string) {
 	if Mode.logToStdout {
 		line := fmt.Sprintf("%s|%s|%s|%s\n", what, hostname, severity, message)
 
-		if config.Client.TermColorsEnabled {
+		if config.Client.TermColorsEnable {
 			line = brush.Colorfy(line)
 		}
 
@@ -262,7 +262,7 @@ func Raw(message string) {
 	}
 
 	if Mode.logToStdout {
-		if config.Client.TermColorsEnabled {
+		if config.Client.TermColorsEnable {
 			message = brush.Colorfy(message)
 		}
 		stdoutBufCh <- message

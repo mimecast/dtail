@@ -42,11 +42,12 @@ func main() {
 
 	flag.Parse()
 	config.Read(cfgFile, sshPort)
-	config.Client.TermColorsEnabled = color
+	config.Client.TermColorsEnable = color
 
 	if displayVersion {
 		version.PrintAndExit()
 	}
+	version.Print()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if shutdownAfter > 0 {

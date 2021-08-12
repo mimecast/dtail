@@ -138,6 +138,6 @@ func ToAttribute(s string) (Attribute, error) {
 	case "":
 		return AttrNone, nil
 	default:
-		return AttrReset, fmt.Errorf("unknown text attribute '" + s + "'")
+		return AttrNone, fmt.Errorf("unknown text attribute '" + s + "'")
 	}
 }

@@ -49,12 +49,13 @@ func main() {
 
 	config.Read(cfgFile, sshPort)
 	if noColor {
-		config.Client.TermColorsEnabled = false
+		config.Client.TermColorsEnable = false
 	}
 
 	if displayVersion {
 		version.PrintAndExit()
 	}
+	version.Print()
 
 	ctx := context.TODO()
 	logger.Start(ctx, logger.Modes{

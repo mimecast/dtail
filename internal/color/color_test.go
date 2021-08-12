@@ -36,6 +36,7 @@ func TestColors(t *testing.T) {
 
 	t.Log(builder.String())
 }
+
 func TestAttributes(t *testing.T) {
 	text := " Mimecast "
 	builder := strings.Builder{}

@@ -26,7 +26,7 @@ func String() string {
 
 // PaintedString is a prettier string representation of the DTail version.
 func PaintedString() string {
-	if !config.Client.TermColorsEnabled {
+	if !config.Client.TermColorsEnable {
 		return String()
 	}
 
@@ -45,8 +45,13 @@ func PaintedString() string {
 	return fmt.Sprintf("%s%v%s%s", name, version, protocol, additional)
 }
 
+// Print the version.
+func Print() {
+	fmt.Println(PaintedString())
+}
+
 // PrintAndExit prints the program version and exists.
 func PrintAndExit() {
-	fmt.Println(PaintedString())
+	Print()
 	os.Exit(0)
 }

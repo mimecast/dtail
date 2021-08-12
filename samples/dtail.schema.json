@@ -4,7 +4,116 @@
   "type": "object",
   "properties": {
     "Client": {
-      "properties": {},
+      "properties": {
+        "TermColorsEnable": {
+          "type": "boolean"
+        },
+        "TermColors": {
+          "type": "object",
+          "properties": {
+            "ClientErrorAttr": {
+              "type": "string"
+            },
+            "ClientErrorBg": {
+              "type": "string"
+            },
+            "ClientErrorFg": {
+              "type": "string"
+            },
+            "ClientStatsAttr": {
+              "type": "string"
+            },
+            "ClientStatsBg": {
+              "type": "string"
+            },
+            "ClientStatsFg": {
+              "type": "string"
+            },
+            "ClientWarnAttr": {
+              "type": "string"
+            },
+            "ClientWarnBg": {
+              "type": "string"
+            },
+            "ClientWarnFg": {
+              "type": "string"
+            },
+            "RemoteDebugAttr": {
+              "type": "string"
+            },
+            "RemoteDebugBg": {
+              "type": "string"
+            },
+            "RemoteDebugFg": {
+              "type": "string"
+            },
+            "RemoteErrorAttr": {
+              "type": "string"
+            },
+            "RemoteErrorBg": {
+              "type": "string"
+            },
+            "RemoteErrorFg": {
+              "type": "string"
+            },
+            "RemoteFatalAttr": {
+              "type": "string"
+            },
+            "RemoteFatalBg": {
+              "type": "string"
+            },
+            "RemoteFatalFg": {
+              "type": "string"
+            },
+            "RemoteStatsOkAttr": {
+              "type": "string"
+            },
+            "RemoteStatsOkBg": {
+              "type": "string"
+            },
+            "RemoteStatsOkFg": {
+              "type": "string"
+            },
+            "RemoteStatsWarnAttr": {
+              "type": "string"
+            },
+            "RemoteStatsWarnBg": {
+              "type": "string"
+            },
+            "RemoteStatsWarnFg": {
+              "type": "string"
+            },
+            "RemoteTextAttr": {
+              "type": "string"
+            },
+            "RemoteTextBg": {
+              "type": "string"
+            },
+            "RemoteTextFg": {
+              "type": "string"
+            },
+            "RemoteTraceAttr": {
+              "type": "string"
+            },
+            "RemoteTraceBg": {
+              "type": "string"
+            },
+            "RemoteTraceFg": {
+              "type": "string"
+            },
+            "RemoteWarnAttr": {
+              "type": "string"
+            },
+            "RemoteWarnBg": {
+              "type": "string"
+            },
+            "RemoteWarnFg": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
       "additionalProperties": false
     },
     "Server": {

@@ -1,22 +1,62 @@
 {
-  "Client": {},
+  "Client": {
+    "TermColorsEnable": true,
+    "TermColors": {
+      "ClientErrorAttr": "Bold",
+      "ClientErrorBg": "Black",
+      "ClientErrorFg": "Red",
+      "ClientStatsAttr": "Dim",
+      "ClientStatsBg": "Blue",
+      "ClientStatsFg": "White",
+      "ClientWarnAttr": "None",
+      "ClientWarnBg": "Black",
+      "ClientWarnFg": "Magenta",
+      "RemoteDebugAttr": "None",
+      "RemoteDebugBg": "Green",
+      "RemoteDebugFg": "Black",
+      "RemoteErrorAttr": "Bold",
+      "RemoteErrorBg": "Red",
+      "RemoteErrorFg": "White",
+      "RemoteFatalAttr": "Blink",
+      "RemoteFatalBg": "Red",
+      "RemoteFatalFg": "White",
+      "RemoteStatsOkAttr": "None",
+      "RemoteStatsOkBg": "Green",
+      "RemoteStatsOkFg": "Black",
+      "RemoteStatsWarnAttr": "None",
+      "RemoteStatsWarnBg": "Red",
+      "RemoteStatsWarnFg": "White",
+      "RemoteTextAttr": "None",
+      "RemoteTextBg": "Black",
+      "RemoteTextFg": "White",
+      "RemoteTraceAttr": "Bold",
+      "RemoteTraceBg": "Green",
+      "RemoteTraceFg": "White",
+      "RemoteWarnAttr": "Bold",
+      "RemoteWarnBg": "Yellow",
+      "RemoteWarnFg": "White"
+    }
+  },
   "Server": {
     "SSHBindAddress": "0.0.0.0",
     "MaxConcurrentCats": 2,
     "MaxConcurrentTails": 50,
     "MaxConnections": 50,
-    "MapreduceLogFormat" : "default",
-    "HostKeyFile" : "cache/ssh_host_key",
-    "HostKeyBits" : 2048,
+    "MapreduceLogFormat": "default",
+    "HostKeyFile": "cache/ssh_host_key",
+    "HostKeyBits": 2048,
     "Permissions": {
       "Default": [
         "readfiles:^/.*$"
       ],
       "Users": {
+        "paul": [
+          "readfiles:^/.*$"
+        ],
         "pbuetow": [
           "readfiles:^/.*$"
         ],
-        "jblake": [
+        "jamesblake": [
           "readfiles:^/tmp/foo.log$",
           "readfiles:^/.*$",
           "readfiles:!^/tmp/bar.log$"
@@ -25,9 +65,9 @@
     }
   },
   "Common": {
-    "LogDir" : "log",
-    "CacheDir" : "cache",
-    "TmpDir" : "tmp",
+    "LogDir": "log",
+    "CacheDir": "cache",
+    "TmpDir": "tmp",
     "LogStrategy": "stdout",
     "SSHPort": 2222,
     "DebugEnable": false,
