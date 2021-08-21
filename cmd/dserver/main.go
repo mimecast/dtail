@@ -22,27 +22,32 @@ import (
 // The evil begins here.
 func main() {
 	var cfgFile string
+	var color bool
 	var debugEnable bool
 	var displayVersion bool
-	var color bool
+	var logDir string
 	var pprof int
 	var shutdownAfter int
 	var sshPort int
 
 	user.NoRootCheck()
 
+	flag.BoolVar(&color, "color", false, "Enable ANSII terminal colors")
+	flag.BoolVar(&config.ServerRelaxedAuthEnable, "relaxedAuth", false, "Enable relaxced SSH auth mode (don't use in production!)")
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
-	flag.BoolVar(&config.ServerRelaxedAuthEnable, "relaxedAuth", false, "Enable relaxced SSH auth mode (don't use in production!)")
-	flag.BoolVar(&color, "color", false, "Enable ANSII terminal colors")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Automatically shutdown after so many seconds")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
+	flag.StringVar(&logDir, "logDir", "", "Log dir path")
 
 	flag.Parse()
 	config.Read(cfgFile, sshPort)
 	config.Client.TermColorsEnable = color
+	if logDir != "" {
+		config.Common.LogDir = logDir
+	}
 
 	if displayVersion {
 		version.PrintAndExit()
