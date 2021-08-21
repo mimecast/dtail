@@ -47,6 +47,9 @@ func main() {
 	config.Client.TermColorsEnable = color
 	if logDir != "" {
 		config.Common.LogDir = logDir
+		if config.Common.LogStrategy == "" {
+			config.Common.LogStrategy = "daily"
+		}
 	}
 
 	if displayVersion {
