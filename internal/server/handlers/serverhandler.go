@@ -17,8 +17,8 @@ import (
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/mapr/server"
 	"github.com/mimecast/dtail/internal/omode"
+	"github.com/mimecast/dtail/internal/protocol"
 	user "github.com/mimecast/dtail/internal/user/server"
-	"github.com/mimecast/dtail/internal/version"
 )
 
 const (
@@ -92,24 +92,27 @@ func (h *ServerHandler) Read(p []byte) (n int, err error) {
 			}
 			if message[0] == '.' {
 				// Handle hidden message (don't display to the user, interpreted by dtail client)
-				wholePayload := []byte(fmt.Sprintf("%s\n", message))
+				wholePayload := []byte(fmt.Sprintf("%s%b", message, protocol.MessageDelimiter))
 				n = copy(p, wholePayload)
 				return
 			}
 
 			// Handle normal server message (display to the user)
-			wholePayload := []byte(fmt.Sprintf("SERVER|%s|%s\n", h.hostname, message))
+			wholePayload := []byte(fmt.Sprintf("SERVER|%s|%s%b", h.hostname, message, protocol.MessageDelimiter))
 			n = copy(p, wholePayload)
 			return
 
 		case message := <-h.aggregatedMessages:
 			// Send mapreduce-aggregated data as a message.
-			data := fmt.Sprintf("AGGREGATE➔%s➔%s\n", h.hostname, message)
+			data := fmt.Sprintf("AGGREGATE%s%s%s%s%b",
+				protocol.AggregateDelimiter, h.hostname,
+				protocol.AggregateDelimiter, message, protocol.MessageDelimiter)
 			wholePayload := []byte(data)
 			n = copy(p, wholePayload)
 			return
 
 		case line := <-h.lines:
+			//fmt.Printf("<<<%d,%s>>>\n", len(line.Content), line.Content)
 			// Send normal file content data as a message.
 			serverInfo := []byte(fmt.Sprintf("REMOTE|%s|%3d|%v|%s|",
 				h.hostname, line.TransmittedPerc, line.Count, line.SourceID))
@@ -182,8 +185,8 @@ func (h *ServerHandler) handleProtocolVersion(args []string) ([]string, int, err
 		return args, argc, errors.New("unable to determine protocol version")
 	}
 
-	if args[1] != version.ProtocolCompat {
-		err := fmt.Errorf("server with protocol version '%s' but client with '%s', please update DTail", version.ProtocolCompat, args[1])
+	if args[1] != protocol.ProtocolCompat {
+		err := fmt.Errorf("server with protocol version '%s' but client with '%s', please update DTail", protocol.ProtocolCompat, args[1])
 		return args, argc, err
 	}
 

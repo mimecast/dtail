@@ -7,6 +7,7 @@ import (
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/mapr/client"
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 // MaprHandler is the handler used on the client side for running mapreduce aggregations.
@@ -58,7 +59,7 @@ func (h *MaprHandler) Write(p []byte) (n int, err error) {
 // related data.
 func (h *MaprHandler) handleAggregateMessage(message string) {
 	h.count++
-	parts := strings.Split(message, "➔")
+	parts := strings.Split(message, protocol.AggregateDelimiter)
 
 	// Index 0 contains 'AGGREGATE', 1 contains server host.
 	// Aggregation data begins from index 2.

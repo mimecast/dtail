@@ -9,7 +9,7 @@ import (
 
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/io/logger"
-	"github.com/mimecast/dtail/internal/version"
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 type baseHandler struct {
@@ -43,7 +43,7 @@ func (h *baseHandler) SendMessage(command string) error {
 	logger.Debug("Sending command", h.server, command, encoded)
 
 	select {
-	case h.commands <- fmt.Sprintf("protocol %s base64 %v;", version.ProtocolCompat, encoded):
+	case h.commands <- fmt.Sprintf("protocol %s base64 %v;", protocol.ProtocolCompat, encoded):
 	case <-time.After(time.Second * 5):
 		return fmt.Errorf("Timed out sending command '%s' (base64: '%s')", command, encoded)
 	case <-h.Done():
@@ -57,7 +57,7 @@ func (h *baseHandler) SendMessage(command string) error {
 func (h *baseHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
 		h.receiveBuf = append(h.receiveBuf, b)
-		if b == '\n' {
+		if b == protocol.MessageDelimiter {
 			if len(h.receiveBuf) == 0 {
 				continue
 			}

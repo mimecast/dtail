@@ -205,7 +205,7 @@ func Trace(args ...interface{}) string {
 // Write log line to buffer and/or log file.
 func write(what, severity, message string) {
 	if Mode.logToStdout {
-		line := fmt.Sprintf("%s|%s|%s|%s\n", what, hostname, severity, message)
+		line := fmt.Sprintf("%s|%s|%s|%s", what, hostname, severity, message)
 
 		if config.Client.TermColorsEnable {
 			line = brush.Colorfy(line)
@@ -219,7 +219,7 @@ func write(what, severity, message string) {
 		timeStr := t.Format("20060102-150405")
 		fileLogBufCh <- buf{
 			time:    t,
-			message: fmt.Sprintf("%s|%s|%s|%s\n", severity, timeStr, what, message),
+			message: fmt.Sprintf("%s|%s|%s|%s", severity, timeStr, what, message),
 		}
 	}
 }
@@ -326,6 +326,7 @@ func Flush() {
 		select {
 		case message := <-stdoutBufCh:
 			stdoutWriter.WriteString(message)
+			stdoutWriter.WriteString("\n")
 		default:
 			stdoutWriter.Flush()
 			return
@@ -338,6 +339,7 @@ func writeToStdout(ctx context.Context) {
 		select {
 		case message := <-stdoutBufCh:
 			stdoutWriter.WriteString(message)
+			stdoutWriter.WriteString("\n")
 		case <-time.After(time.Millisecond * 100):
 			stdoutWriter.Flush()
 		case <-pauseCh:
@@ -365,6 +367,7 @@ func writeToFile(ctx context.Context) {
 			dateStr := buf.time.Format("20060102")
 			w := fileWriter(dateStr)
 			w.WriteString(buf.message)
+			w.WriteString("\n")
 		case <-pauseCh:
 		PAUSE:
 			for {

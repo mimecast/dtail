@@ -14,6 +14,7 @@ import (
 
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/protocol"
 	"github.com/mimecast/dtail/internal/regex"
 
 	"github.com/DataDog/zstd"
@@ -148,80 +149,64 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan []byte, t
 	if err != nil {
 		return err
 	}
-	rawLine := make([]byte, 0, 512)
 
 	lineLengthThreshold := 1024 * 1024 // 1mb
-	longLineWarning := false
+	warnedAboutLongLine := false
+	message := make([]byte, 0, 512)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		default:
-		}
-
-		select {
 		case <-truncate:
 			if isTruncated, err := f.truncated(fd); isTruncated {
 				return err
 			}
-			logger.Info(f.filePath, "Current offset", offset)
 		default:
 		}
 
-		// Read some bytes (max 4k at once as of go 1.12). isPrefix will
-		// be set if line does not fit into 4k buffer.
-		bytes, isPrefix, err := reader.ReadLine()
+		b, err := reader.ReadByte()
 
 		if err != nil {
-			// If EOF, sleep a couple of ms and return with nil error.
-			// If other error, return with non-nil error.
 			if err != io.EOF {
 				return err
 			}
 			if !f.seekEOF {
-				logger.Debug(f.FilePath(), "End of file reached")
+				logger.Info(f.FilePath(), "End of file reached")
 				return nil
 			}
 			time.Sleep(time.Millisecond * 100)
 			continue
 		}
+		offset++
 
-		rawLine = append(rawLine, bytes...)
-		offset += uint64(len(bytes))
-
-		if !isPrefix {
-			// last LineRead call returned contend until end of line.
-			rawLine = append(rawLine, '\n')
+		switch b {
+		case '\n':
+			if len(message) == 0 {
+				time.Sleep(time.Millisecond * 100)
+				continue
+			}
 			select {
-			case rawLines <- rawLine:
+			case rawLines <- append(message, protocol.MessageDelimiter):
+				message = make([]byte, 0, 512)
+				warnedAboutLongLine = false
 			case <-ctx.Done():
 				return nil
 			}
-			rawLine = make([]byte, 0, 512)
-			if longLineWarning {
-				longLineWarning = false
+		default:
+			if len(message) >= lineLengthThreshold {
+				if !warnedAboutLongLine {
+					f.serverMessages <- logger.Warn(f.filePath, "Long log line, splitting into multiple lines")
+					warnedAboutLongLine = true
+				}
+				select {
+				case <-ctx.Done():
+					return nil
+				case rawLines <- append(message, protocol.MessageDelimiter):
+					message = make([]byte, 0, 512)
+				}
 			}
-			continue
-		}
-
-		// Last LineRead call could not read content until end of line, buffer
-		// was too small. Determine whether we exceed the max line length we
-		// want dtail to send to the client at once. Possibly split up log line
-		// into multiple log lines.
-		if len(rawLine) >= lineLengthThreshold {
-			if !longLineWarning {
-				f.serverMessages <- logger.Warn(f.filePath, "Long log line, splitting into multiple lines")
-				// Only print out one warning per long log line.
-				longLineWarning = true
-			}
-			rawLine = append(rawLine, '\n')
-			select {
-			case rawLines <- rawLine:
-			case <-ctx.Done():
-				return nil
-			}
-			rawLine = make([]byte, 0, 512)
+			message = append(message, b)
 		}
 	}
 }

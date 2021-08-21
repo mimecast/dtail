@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 // AggregateSet represents aggregated key/value pairs from the
@@ -70,20 +72,20 @@ func (s *AggregateSet) Serialize(ctx context.Context, groupKey string, ch chan<-
 	var sb strings.Builder
 
 	sb.WriteString(groupKey)
-	sb.WriteString("➔")
-	sb.WriteString(fmt.Sprintf("%d➔", s.Samples))
+	sb.WriteString(protocol.AggregateDelimiter)
+	sb.WriteString(fmt.Sprintf("%d%s", s.Samples, protocol.AggregateDelimiter))
 
 	for k, v := range s.FValues {
 		sb.WriteString(k)
 		sb.WriteString("=")
-		sb.WriteString(fmt.Sprintf("%v➔", v))
+		sb.WriteString(fmt.Sprintf("%v%s", v, protocol.AggregateDelimiter))
 	}
 
 	for k, v := range s.SValues {
 		sb.WriteString(k)
 		sb.WriteString("=")
 		sb.WriteString(v)
-		sb.WriteString("➔")
+		sb.WriteString(protocol.AggregateDelimiter)
 	}
 
 	select {
