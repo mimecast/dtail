@@ -8,6 +8,8 @@ spinup:
 	./spinup.sh 10
 spindown:
 	./spindown.sh 10
+dtail:
+	../dtail --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts
 dcat:
 	../dcat --servers serverlist.txt --files '/etc/passwd' --trustAllHosts
 spinup1:

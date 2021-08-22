@@ -56,13 +56,14 @@ func (h *baseHandler) SendMessage(command string) error {
 // Read data from the dtail server via Writer interface.
 func (h *baseHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
-		h.receiveBuf = append(h.receiveBuf, b)
 		if b == protocol.MessageDelimiter {
 			if len(h.receiveBuf) == 0 {
 				continue
 			}
 			message := string(h.receiveBuf)
 			h.handleMessageType(message)
+		} else {
+			h.receiveBuf = append(h.receiveBuf, b)
 		}
 	}
 

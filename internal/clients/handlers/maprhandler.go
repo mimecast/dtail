@@ -37,7 +37,7 @@ func NewMaprHandler(server string, query *mapr.Query, globalGroup *mapr.GlobalGr
 func (h *MaprHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
 		h.baseHandler.receiveBuf = append(h.baseHandler.receiveBuf, b)
-		if b == '\n' {
+		if b == protocol.MessageDelimiter { // '\n' {
 			if len(h.baseHandler.receiveBuf) == 0 {
 				continue
 			}

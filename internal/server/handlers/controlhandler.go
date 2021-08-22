@@ -8,6 +8,7 @@ import (
 
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/protocol"
 	user "github.com/mimecast/dtail/internal/user/server"
 )
 
@@ -56,7 +57,7 @@ func (h *ControlHandler) Read(p []byte) (n int, err error) {
 	for {
 		select {
 		case message := <-h.serverMessages:
-			wholePayload := []byte(fmt.Sprintf("SERVER|%s|%s\n", h.hostname, message))
+			wholePayload := []byte(fmt.Sprintf("SERVER|%s|%s%b", h.hostname, message, protocol.MessageDelimiter))
 			n = copy(p, wholePayload)
 			return
 		case <-h.done.Done():

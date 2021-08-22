@@ -170,7 +170,8 @@ func (c *MaprClient) printResults() {
 		return
 	}
 
-	logger.Raw(fmt.Sprintf("%s\n", c.query.RawQuery))
+	//logger.Raw(fmt.Sprintf("%s\n", c.query.RawQuery))
+	logger.Raw(c.query.RawQuery)
 	logger.Raw(result)
 }
 

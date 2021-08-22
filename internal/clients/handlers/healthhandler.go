@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal"
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 // HealthHandler implements the handler required for health checks.
@@ -72,7 +73,7 @@ func (h *HealthHandler) SendMessage(command string) error {
 func (h *HealthHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
 		h.receiveBuf = append(h.receiveBuf, b)
-		if b == '\n' {
+		if b == protocol.MessageDelimiter { // '\n' {
 			h.receive <- string(h.receiveBuf)
 			h.receiveBuf = h.receiveBuf[:0]
 		}

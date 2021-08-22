@@ -6,11 +6,12 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"github.com/mimecast/dtail/internal/io/logger"
 	"io/ioutil"
 	"net"
 	"os"
 	"syscall"
+
+	"github.com/mimecast/dtail/internal/io/logger"
 
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"

@@ -92,13 +92,13 @@ func (h *ServerHandler) Read(p []byte) (n int, err error) {
 			}
 			if message[0] == '.' {
 				// Handle hidden message (don't display to the user, interpreted by dtail client)
-				wholePayload := []byte(fmt.Sprintf("%s%b", message, protocol.MessageDelimiter))
+				wholePayload := []byte(fmt.Sprintf("%s%s", message, string(protocol.MessageDelimiter)))
 				n = copy(p, wholePayload)
 				return
 			}
 
 			// Handle normal server message (display to the user)
-			wholePayload := []byte(fmt.Sprintf("SERVER|%s|%s%b", h.hostname, message, protocol.MessageDelimiter))
+			wholePayload := []byte(fmt.Sprintf("SERVER|%s|%s%s", h.hostname, message, string(protocol.MessageDelimiter)))
 			n = copy(p, wholePayload)
 			return
 
@@ -112,7 +112,7 @@ func (h *ServerHandler) Read(p []byte) (n int, err error) {
 			return
 
 		case line := <-h.lines:
-			//fmt.Printf("<<<%d,%s>>>\n", len(line.Content), line.Content)
+			//fmt.Printf("\t<<<%d,%s>>>\n", len(line.Content), line.Content)
 			// Send normal file content data as a message.
 			serverInfo := []byte(fmt.Sprintf("REMOTE|%s|%3d|%v|%s|",
 				h.hostname, line.TransmittedPerc, line.Count, line.SourceID))

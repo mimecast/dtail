@@ -101,8 +101,8 @@ func main() {
 	if pprof > -1 {
 		// For debugging purposes only
 		pprofArgs := fmt.Sprintf("0.0.0.0:%d", pprof)
-		logger.Info("Starting PProf", pprofArgs)
 		go http.ListenAndServe(pprofArgs, nil)
+		logger.Info("Started PProf", pprofArgs)
 	}
 
 	var client clients.Client

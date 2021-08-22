@@ -73,6 +73,10 @@ func main() {
 		}
 	}()
 
+	if debugEnable {
+		config.Common.DebugEnable = true
+	}
+
 	logger.Start(ctx, logger.Modes{Server: true, Debug: debugEnable || config.Common.DebugEnable})
 
 	if config.ServerRelaxedAuthEnable {
