@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -93,31 +94,44 @@ func (h *ServerHandler) Read(p []byte) (n int, err error) {
 			}
 			if message[0] == '.' {
 				// Handle hidden message (don't display to the user, interpreted by dtail client)
-				wholePayload := []byte(fmt.Sprintf("%s%s", message, string(protocol.MessageDelimiter)))
-				n = copy(p, wholePayload)
+				payload := []byte(fmt.Sprintf("%s%s", message, string(protocol.MessageDelimiter)))
+				n = copy(p, payload)
 				return
 			}
 
 			// Handle normal server message (display to the user)
-			wholePayload := []byte(fmt.Sprintf("SERVER|%s|%s%s", h.hostname, message, string(protocol.MessageDelimiter)))
-			n = copy(p, wholePayload)
+			payload := []byte(fmt.Sprintf("SERVER|%s|%s%s", h.hostname, message, string(protocol.MessageDelimiter)))
+			n = copy(p, payload)
 			return
 
 		case message := <-h.aggregatedMessages:
 			// Send mapreduce-aggregated data as a message.
-			data := fmt.Sprintf("AGGREGATE%s%s%s%s%b",
-				protocol.AggregateDelimiter, h.hostname,
-				protocol.AggregateDelimiter, message, protocol.MessageDelimiter)
-			wholePayload := []byte(data)
-			n = copy(p, wholePayload)
+			buf := pool.BytesBuffer.Get().(*bytes.Buffer)
+			buf.WriteString("AGGREGATE")
+			buf.WriteString(protocol.AggregateDelimiter)
+			buf.WriteString(h.hostname)
+			buf.WriteString(protocol.AggregateDelimiter)
+			buf.WriteString(message)
+			buf.WriteByte(protocol.MessageDelimiter)
+			n = copy(p, buf.Bytes())
+			pool.RecycleBytesBuffer(buf)
 			return
 
 		case line := <-h.lines:
-			//fmt.Printf("\t<<<%d,%s>>>\n", len(line.Content), line.Content)
-			// Send normal file content data as a message.
-			payload := []byte(fmt.Sprintf("REMOTE|%s|%3d|%v|%s|%s",
-				h.hostname, line.TransmittedPerc, line.Count, line.SourceID, line.Content.String()))
+			buf := pool.BytesBuffer.Get().(*bytes.Buffer)
+			buf.WriteString("REMOTE")
+			buf.WriteByte(protocol.FieldDelimiter)
+			buf.WriteString(h.hostname)
+			buf.WriteByte(protocol.FieldDelimiter)
+			buf.WriteString(fmt.Sprintf("%3d", line.TransmittedPerc))
+			buf.WriteByte(protocol.FieldDelimiter)
+			buf.WriteString(fmt.Sprintf("%v", line.Count))
+			buf.WriteByte(protocol.FieldDelimiter)
+			buf.WriteString(line.SourceID)
+			buf.WriteByte(protocol.FieldDelimiter)
+			payload := append(buf.Bytes(), line.Content.Bytes()...)
 			n = copy(p, payload)
+			pool.RecycleBytesBuffer(buf)
 			pool.RecycleBytesBuffer(line.Content)
 			return
 
