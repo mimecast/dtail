@@ -10,6 +10,7 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/mapr/logformat"
 )
@@ -136,7 +137,8 @@ func (a *Aggregate) makeFields(ctx context.Context) <-chan map[string]string {
 					return
 				}
 
-				maprLine := strings.TrimSpace(string(line.Content))
+				maprLine := strings.TrimSpace(line.Content.String())
+				pool.RecycleBytesBuffer(line.Content)
 				fields, err := a.parser.MakeFields(maprLine)
 				logger.Debug(fields, err)
 

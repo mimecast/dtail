@@ -15,6 +15,7 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/mapr/server"
 	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/protocol"
@@ -114,10 +115,10 @@ func (h *ServerHandler) Read(p []byte) (n int, err error) {
 		case line := <-h.lines:
 			//fmt.Printf("\t<<<%d,%s>>>\n", len(line.Content), line.Content)
 			// Send normal file content data as a message.
-			serverInfo := []byte(fmt.Sprintf("REMOTE|%s|%3d|%v|%s|",
-				h.hostname, line.TransmittedPerc, line.Count, line.SourceID))
-			wholePayload := append(serverInfo, line.Content[:]...)
-			n = copy(p, wholePayload)
+			payload := []byte(fmt.Sprintf("REMOTE|%s|%3d|%v|%s|%s",
+				h.hostname, line.TransmittedPerc, line.Count, line.SourceID, line.Content.String()))
+			n = copy(p, payload)
+			pool.RecycleBytesBuffer(line.Content)
 			return
 
 		case <-time.After(time.Second):
