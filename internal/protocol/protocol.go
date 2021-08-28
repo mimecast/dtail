@@ -6,7 +6,7 @@ const (
 	// MessageDelimiter delimits separate messages.
 	MessageDelimiter byte = '¬'
 	// FieldDelimiter delimits aggregation fields.
-	FieldDelimiter byte = '|'
+	FieldDelimiter string = "|"
 	// AggregateDelimiter delimits parts of an aggregation message.
 	AggregateDelimiter string = "➔"
 )

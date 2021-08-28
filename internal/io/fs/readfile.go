@@ -157,21 +157,20 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Bu
 	message := pool.BytesBuffer.Get().(*bytes.Buffer)
 
 	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-truncate:
-			if isTruncated, err := f.truncated(fd); isTruncated {
-				return err
-			}
-		default:
-		}
-
 		b, err := reader.ReadByte()
 
 		if err != nil {
 			if err != io.EOF {
 				return err
+			}
+			select {
+			case <-truncate:
+				if isTruncated, err := f.truncated(fd); isTruncated {
+					return err
+				}
+			case <-ctx.Done():
+				return nil
+			default:
 			}
 			if !f.seekEOF {
 				logger.Info(f.FilePath(), "End of file reached")
@@ -207,7 +206,6 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Bu
 				select {
 				case rawLines <- message:
 					message = pool.BytesBuffer.Get().(*bytes.Buffer)
-					//fmt.Printf("%d %d %p\n", message.Len(), message.Cap(), message)
 				case <-ctx.Done():
 					return nil
 				}

@@ -11,6 +11,7 @@ import (
 	"github.com/mimecast/dtail/internal/clients/remote"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/omode"
+	"github.com/mimecast/dtail/internal/protocol"
 
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -57,7 +58,7 @@ func (c *HealthClient) Start(ctx context.Context) (status int) {
 		select {
 		case data := <-receive:
 			// Parse recieved data.
-			s := strings.Split(data, "|")
+			s := strings.Split(data, protocol.FieldDelimiter)
 			message := s[len(s)-1]
 			if strings.HasPrefix(message, "done;") {
 				return

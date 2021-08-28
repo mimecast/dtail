@@ -3,12 +3,14 @@ package logformat
 import (
 	"errors"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 // MakeFieldsDEFAULT is the default log file mapreduce parser.
 func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 	fields := make(map[string]string, 20)
-	splitted := strings.Split(maprLine, "|")
+	splitted := strings.Split(maprLine, protocol.FieldDelimiter)
 
 	fields["*"] = "*"
 	fields["$line"] = maprLine
