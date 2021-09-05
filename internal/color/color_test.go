@@ -14,13 +14,13 @@ func TestColors(t *testing.T) {
 		if err != nil {
 			t.Errorf("unable to paint foreground : %s\n%v", text, err)
 		}
-		builder.WriteString(PaintFg(text, fgColor))
+		builder.WriteString(PaintStrFg(text, fgColor))
 
 		bgColor, err := ToBgColor(color)
 		if err != nil {
 			t.Errorf("unable to paint background: %s\n%v", text, err)
 		}
-		builder.WriteString(PaintBg(text, bgColor))
+		builder.WriteString(PaintStrBg(text, bgColor))
 	}
 
 	for _, fg := range ColorNames {
@@ -30,7 +30,7 @@ func TestColors(t *testing.T) {
 				continue
 			}
 			bgColor, _ := ToBgColor(bg)
-			builder.WriteString(Paint(text, fgColor, bgColor))
+			builder.WriteString(PaintStr(text, fgColor, bgColor))
 		}
 	}
 
@@ -46,7 +46,7 @@ func TestAttributes(t *testing.T) {
 		if err != nil {
 			t.Errorf("unable to paint attribute: %s\n%v", text, err)
 		}
-		builder.WriteString(PaintWithAttr(text, FgWhite, BgBlue, att))
+		builder.WriteString(PaintStrWithAttr(text, FgWhite, BgBlue, att))
 	}
 
 	t.Log(builder.String())
