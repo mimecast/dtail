@@ -26,7 +26,7 @@ func printColorTable(attr string) {
 			attribute, _ := ToAttribute(attr)
 
 			text := fmt.Sprintf(" Foreground:%10s  |  Background:%10s  |  Attribute:%10s ", fg, bg, attr)
-			fmt.Print(PaintWithAttr(text, fgColor, bgColor, attribute))
+			fmt.Print(PaintStrWithAttr(text, fgColor, bgColor, attribute))
 			fmt.Print("\n")
 		}
 	}

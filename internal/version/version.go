@@ -29,16 +29,16 @@ func PaintedString() string {
 		return String()
 	}
 
-	name := color.PaintWithAttr(fmt.Sprintf(" %s ", Name),
+	name := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Name),
 		color.FgYellow, color.BgBlue, color.AttrBold)
 
-	version := color.PaintWithAttr(fmt.Sprintf(" %s ", Version),
+	version := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Version),
 		color.FgBlue, color.BgYellow, color.AttrBold)
 
-	protocol := color.Paint(fmt.Sprintf(" Protocol %s ", protocol.ProtocolCompat),
+	protocol := color.PaintStr(fmt.Sprintf(" Protocol %s ", protocol.ProtocolCompat),
 		color.FgBlack, color.BgGreen)
 
-	additional := color.PaintWithAttr(fmt.Sprintf(" %s ", Additional),
+	additional := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Additional),
 		color.FgWhite, color.BgMagenta, color.AttrBlink)
 
 	return fmt.Sprintf("%s%v%s%s", name, version, protocol, additional)

@@ -20,15 +20,6 @@
             "ClientErrorFg": {
               "type": "string"
             },
-            "ClientStatsAttr": {
-              "type": "string"
-            },
-            "ClientStatsBg": {
-              "type": "string"
-            },
-            "ClientStatsFg": {
-              "type": "string"
-            },
             "ClientWarnAttr": {
               "type": "string"
             },
