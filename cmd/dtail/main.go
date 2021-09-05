@@ -77,7 +77,7 @@ func main() {
 	version.Print()
 
 	if displayColorTable {
-		color.TablePrintAndExit()
+		color.TablePrintAndExit(debugEnable)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
