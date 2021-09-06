@@ -2,53 +2,80 @@ package config
 
 import "github.com/mimecast/dtail/internal/color"
 
-// ClientColorConfig allows to override the default terminal color color.
+type remoteTermColors struct {
+	DelimiterAttr color.Attribute
+	DelimiterBg   color.BgColor
+	DelimiterFg   color.FgColor
+	RemoteAttr    color.Attribute
+	RemoteBg      color.BgColor
+	RemoteFg      color.FgColor
+	CountAttr     color.Attribute
+	CountBg       color.BgColor
+	CountFg       color.FgColor
+	HostnameAttr  color.Attribute
+	HostnameBg    color.BgColor
+	HostnameFg    color.FgColor
+	IdAttr        color.Attribute
+	IdBg          color.BgColor
+	IdFg          color.FgColor
+	StatsOkAttr   color.Attribute
+	StatsOkBg     color.BgColor
+	StatsOkFg     color.FgColor
+	StatsWarnAttr color.Attribute
+	StatsWarnBg   color.BgColor
+	StatsWarnFg   color.FgColor
+	TextAttr      color.Attribute
+	TextBg        color.BgColor
+	TextFg        color.FgColor
+}
+
+type clientTermColors struct {
+	DelimiterAttr color.Attribute
+	DelimiterBg   color.BgColor
+	DelimiterFg   color.FgColor
+	ClientAttr    color.Attribute
+	ClientBg      color.BgColor
+	ClientFg      color.FgColor
+	HostnameAttr  color.Attribute
+	HostnameBg    color.BgColor
+	HostnameFg    color.FgColor
+	TextAttr      color.Attribute
+	TextBg        color.BgColor
+	TextFg        color.FgColor
+}
+
+type serverTermColors struct {
+	DelimiterAttr color.Attribute
+	DelimiterBg   color.BgColor
+	DelimiterFg   color.FgColor
+	ServerAttr    color.Attribute
+	ServerBg      color.BgColor
+	ServerFg      color.FgColor
+	HostnameAttr  color.Attribute
+	HostnameBg    color.BgColor
+	HostnameFg    color.FgColor
+	TextAttr      color.Attribute
+	TextBg        color.BgColor
+	TextFg        color.FgColor
+}
+
+type commonTermColors struct {
+	SeverityErrorAttr color.Attribute
+	SeverityErrorBg   color.BgColor
+	SeverityErrorFg   color.FgColor
+	SeverityFatalAttr color.Attribute
+	SeverityFatalBg   color.BgColor
+	SeverityFatalFg   color.FgColor
+	SeverityWarnAttr  color.Attribute
+	SeverityWarnBg    color.BgColor
+	SeverityWarnFg    color.FgColor
+}
+
 type termColors struct {
-	ClientErrorAttr     color.Attribute
-	ClientErrorBg       color.BgColor
-	ClientErrorFg       color.FgColor
-	ClientWarnAttr      color.Attribute
-	ClientWarnBg        color.BgColor
-	ClientWarnFg        color.FgColor
-	DelimiterAttr       color.Attribute
-	DelimiterBg         color.BgColor
-	DelimiterFg         color.FgColor
-	RemoteCountAttr     color.Attribute
-	RemoteCountBg       color.BgColor
-	RemoteCountFg       color.FgColor
-	RemoteDebugAttr     color.Attribute
-	RemoteDebugBg       color.BgColor
-	RemoteDebugFg       color.FgColor
-	RemoteErrorAttr     color.Attribute
-	RemoteErrorBg       color.BgColor
-	RemoteErrorFg       color.FgColor
-	RemoteFatalAttr     color.Attribute
-	RemoteFatalBg       color.BgColor
-	RemoteFatalFg       color.FgColor
-	RemoteIdAttr        color.Attribute
-	RemoteIdBg          color.BgColor
-	RemoteIdFg          color.FgColor
-	RemoteServerAttr    color.Attribute
-	RemoteServerBg      color.BgColor
-	RemoteServerFg      color.FgColor
-	RemoteStatsOkAttr   color.Attribute
-	RemoteStatsOkBg     color.BgColor
-	RemoteStatsOkFg     color.FgColor
-	RemoteStatsWarnAttr color.Attribute
-	RemoteStatsWarnBg   color.BgColor
-	RemoteStatsWarnFg   color.FgColor
-	RemoteStrAttr       color.Attribute
-	RemoteStrBg         color.BgColor
-	RemoteStrFg         color.FgColor
-	RemoteTextAttr      color.Attribute
-	RemoteTextBg        color.BgColor
-	RemoteTextFg        color.FgColor
-	RemoteTraceAttr     color.Attribute
-	RemoteTraceBg       color.BgColor
-	RemoteTraceFg       color.FgColor
-	RemoteWarnAttr      color.Attribute
-	RemoteWarnBg        color.BgColor
-	RemoteWarnFg        color.FgColor
+	Remote remoteTermColors
+	Client clientTermColors
+	Server serverTermColors
+	Common commonTermColors
 }
 
 // ClientConfig represents a DTail client configuration (empty as of now as there
@@ -63,51 +90,71 @@ func newDefaultClientConfig() *ClientConfig {
 	return &ClientConfig{
 		TermColorsEnable: true,
 		TermColors: termColors{
-			ClientErrorAttr:     color.AttrBold,
-			ClientErrorBg:       color.BgBlack,
-			ClientErrorFg:       color.FgRed,
-			ClientWarnAttr:      color.AttrNone,
-			ClientWarnBg:        color.BgBlack,
-			ClientWarnFg:        color.FgMagenta,
-			DelimiterAttr:       color.AttrDim,
-			DelimiterBg:         color.BgBlue,
-			DelimiterFg:         color.FgCyan,
-			RemoteCountAttr:     color.AttrDim,
-			RemoteCountBg:       color.BgBlue,
-			RemoteCountFg:       color.FgGreen,
-			RemoteDebugAttr:     color.AttrBold,
-			RemoteDebugBg:       color.BgBlack,
-			RemoteDebugFg:       color.FgGreen,
-			RemoteErrorAttr:     color.AttrBold,
-			RemoteErrorBg:       color.BgRed,
-			RemoteErrorFg:       color.FgWhite,
-			RemoteFatalAttr:     color.AttrBlink,
-			RemoteFatalBg:       color.BgRed,
-			RemoteFatalFg:       color.FgWhite,
-			RemoteIdAttr:        color.AttrDim,
-			RemoteIdBg:          color.BgBlue,
-			RemoteIdFg:          color.FgWhite,
-			RemoteServerAttr:    color.AttrBold,
-			RemoteServerBg:      color.BgBlue,
-			RemoteServerFg:      color.FgWhite,
-			RemoteStatsOkAttr:   color.AttrNone,
-			RemoteStatsOkBg:     color.BgGreen,
-			RemoteStatsOkFg:     color.FgBlue,
-			RemoteStatsWarnAttr: color.AttrNone,
-			RemoteStatsWarnBg:   color.BgRed,
-			RemoteStatsWarnFg:   color.FgWhite,
-			RemoteStrAttr:       color.AttrDim,
-			RemoteStrBg:         color.BgBlue,
-			RemoteStrFg:         color.FgWhite,
-			RemoteTextAttr:      color.AttrNone,
-			RemoteTextBg:        color.BgBlack,
-			RemoteTextFg:        color.FgWhite,
-			RemoteTraceAttr:     color.AttrBold,
-			RemoteTraceBg:       color.BgGreen,
-			RemoteTraceFg:       color.FgWhite,
-			RemoteWarnAttr:      color.AttrBold,
-			RemoteWarnBg:        color.BgYellow,
-			RemoteWarnFg:        color.FgWhite,
+			Remote: remoteTermColors{
+				DelimiterAttr: color.AttrDim,
+				DelimiterBg:   color.BgBlue,
+				DelimiterFg:   color.FgCyan,
+				RemoteAttr:    color.AttrDim,
+				RemoteBg:      color.BgBlue,
+				RemoteFg:      color.FgWhite,
+				CountAttr:     color.AttrDim,
+				CountBg:       color.BgBlue,
+				CountFg:       color.FgGreen,
+				HostnameAttr:  color.AttrBold,
+				HostnameBg:    color.BgBlue,
+				HostnameFg:    color.FgWhite,
+				IdAttr:        color.AttrDim,
+				IdBg:          color.BgBlue,
+				IdFg:          color.FgWhite,
+				StatsOkAttr:   color.AttrNone,
+				StatsOkBg:     color.BgGreen,
+				StatsOkFg:     color.FgBlue,
+				StatsWarnAttr: color.AttrNone,
+				StatsWarnBg:   color.BgRed,
+				StatsWarnFg:   color.FgWhite,
+				TextAttr:      color.AttrNone,
+				TextBg:        color.BgBlack,
+				TextFg:        color.FgWhite,
+			},
+			Client: clientTermColors{
+				DelimiterAttr: color.AttrDim,
+				DelimiterBg:   color.BgYellow,
+				DelimiterFg:   color.FgBlack,
+				ClientAttr:    color.AttrDim,
+				ClientBg:      color.BgYellow,
+				ClientFg:      color.FgBlack,
+				HostnameAttr:  color.AttrDim,
+				HostnameBg:    color.BgYellow,
+				HostnameFg:    color.FgBlack,
+				TextAttr:      color.AttrNone,
+				TextBg:        color.BgYellow,
+				TextFg:        color.FgBlack,
+			},
+			Server: serverTermColors{
+				DelimiterAttr: color.AttrDim,
+				DelimiterBg:   color.BgCyan,
+				DelimiterFg:   color.FgBlack,
+				ServerAttr:    color.AttrDim,
+				ServerBg:      color.BgCyan,
+				ServerFg:      color.FgBlack,
+				HostnameAttr:  color.AttrBold,
+				HostnameBg:    color.BgCyan,
+				HostnameFg:    color.FgBlack,
+				TextAttr:      color.AttrNone,
+				TextBg:        color.BgCyan,
+				TextFg:        color.FgBlack,
+			},
+			Common: commonTermColors{
+				SeverityErrorAttr: color.AttrBold,
+				SeverityErrorBg:   color.BgRed,
+				SeverityErrorFg:   color.FgWhite,
+				SeverityFatalAttr: color.AttrBlink,
+				SeverityFatalBg:   color.BgRed,
+				SeverityFatalFg:   color.FgWhite,
+				SeverityWarnAttr:  color.AttrNone,
+				SeverityWarnBg:    color.BgBlack,
+				SeverityWarnFg:    color.FgRed,
+			},
 		},
 	}
 }

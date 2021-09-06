@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
 )
@@ -54,7 +55,6 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 		throttle := len(throttleCh)
 
 		newConnections := connected - connectedLast
-
 		if (connected == connectedLast || quiet) && !force {
 			continue
 		}
@@ -77,7 +77,15 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 
 func (s *stats) printStatsDueInterrupt(messages []string) {
 	logger.Pause()
-	for _, message := range messages {
+	for i, message := range messages {
+		if i > 0 && config.Client.TermColorsEnable {
+			fmt.Println(color.PaintStrWithAttr(message,
+				config.Client.TermColors.Client.TextFg,
+				config.Client.TermColors.Client.TextBg,
+				config.Client.TermColors.Client.TextAttr,
+			))
+			continue
+		}
 		fmt.Println(fmt.Sprintf(" %s", message))
 	}
 	time.Sleep(time.Second * time.Duration(config.InterruptTimeoutS))
@@ -99,7 +107,6 @@ func (s *stats) statsLine(connected, newConnections int, throttle int) string {
 func (s *stats) numConnected() int {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-
 	return s.connected
 }
 
@@ -107,6 +114,5 @@ func percentOf(total float64, value float64) float64 {
 	if total == 0 || total == value {
 		return 100
 	}
-
 	return value / (total / 100.0)
 }

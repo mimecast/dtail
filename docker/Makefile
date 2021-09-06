@@ -9,8 +9,8 @@ spinup:
 spindown:
 	./spindown.sh 10
 dtail:
-	../dtail --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts
+	../dtail --servers serverlist.txt --files '/var/log/dserver/*,/does/not/exist' --trustAllHosts --debug
 dcat:
-	../dcat --servers serverlist.txt --files '/etc/passwd' --trustAllHosts
+	../dcat --servers serverlist.txt --files '/etc/passwd' --trustAllHosts --debug
 spinup1:
 	docker run -p 2222:2222 dserver:develop
