@@ -127,8 +127,8 @@ func newDefaultClientConfig() *ClientConfig {
 				HostnameBg:    color.BgYellow,
 				HostnameFg:    color.FgBlack,
 				TextAttr:      color.AttrNone,
-				TextBg:        color.BgYellow,
-				TextFg:        color.FgBlack,
+				TextBg:        color.BgBlack,
+				TextFg:        color.FgWhite,
 			},
 			Server: serverTermColors{
 				DelimiterAttr: color.AttrDim,
@@ -151,9 +151,9 @@ func newDefaultClientConfig() *ClientConfig {
 				SeverityFatalAttr: color.AttrBlink,
 				SeverityFatalBg:   color.BgRed,
 				SeverityFatalFg:   color.FgWhite,
-				SeverityWarnAttr:  color.AttrNone,
+				SeverityWarnAttr:  color.AttrBold,
 				SeverityWarnBg:    color.BgBlack,
-				SeverityWarnFg:    color.FgRed,
+				SeverityWarnFg:    color.FgWhite,
 			},
 		},
 	}

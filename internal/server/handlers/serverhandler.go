@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -167,9 +168,9 @@ func (h *ServerHandler) handleCommand(commandStr string) {
 	logger.Debug(h.user, commandStr)
 	ctx := context.Background()
 
-	args, argc, err := h.handleProtocolVersion(strings.Split(commandStr, " "))
+	args, argc, add, err := h.handleProtocolVersion(strings.Split(commandStr, " "))
 	if err != nil {
-		h.send(h.serverMessages, logger.Error(h.user, err))
+		h.send(h.serverMessages, logger.Error(h.user, err)+add)
 		return
 	}
 
@@ -193,19 +194,34 @@ func (h *ServerHandler) handleCommand(commandStr string) {
 	h.handleUserCommand(ctx, argc, args)
 }
 
-func (h *ServerHandler) handleProtocolVersion(args []string) ([]string, int, error) {
+func (h *ServerHandler) handleProtocolVersion(args []string) ([]string, int, string, error) {
 	argc := len(args)
+	var add string
 
 	if argc <= 2 || args[0] != "protocol" {
-		return args, argc, errors.New("unable to determine protocol version")
+		return args, argc, add, errors.New("unable to determine protocol version")
 	}
 
 	if args[1] != protocol.ProtocolCompat {
-		err := fmt.Errorf("server with protocol version '%s' but client with '%s', please update DTail", protocol.ProtocolCompat, args[1])
-		return args, argc, err
+		clientCompat, _ := strconv.Atoi(args[1])
+		serverCompat, _ := strconv.Atoi(protocol.ProtocolCompat)
+		if clientCompat <= 3 {
+			// Protocol version 3 or lower expect a newline as message separator
+			// One day (after 2 major versions) this exception may be removed!
+			add = "\n"
+		}
+
+		toUpdate := "client"
+		if clientCompat > serverCompat {
+			toUpdate = "server"
+		}
+
+		err := fmt.Errorf("DTail server protocol version '%s' does not match client protocol version '%s', please update DTail %s!",
+			protocol.ProtocolCompat, args[1], toUpdate)
+		return args, argc, add, err
 	}
 
-	return args[2:], argc - 2, nil
+	return args[2:], argc - 2, add, nil
 }
 
 func (h *ServerHandler) handleBase64(args []string, argc int) ([]string, int, error) {
