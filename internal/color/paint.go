@@ -38,6 +38,8 @@ func Paint(sb *strings.Builder, text string, fg FgColor, bg BgColor) {
 	sb.WriteString(string(fg))
 	sb.WriteString(string(bg))
 	sb.WriteString(text)
+	sb.WriteString(string(BgDefault))
+	sb.WriteString(string(FgDefault))
 }
 
 // Reset background and foreground colors.
@@ -56,6 +58,9 @@ func PaintWithAttr(sb *strings.Builder, text string, fg FgColor, bg BgColor, att
 	sb.WriteString(string(bg))
 	sb.WriteString(string(attr))
 	sb.WriteString(text)
+	sb.WriteString(string(AttrReset))
+	sb.WriteString(string(BgDefault))
+	sb.WriteString(string(FgDefault))
 }
 
 // ResetWithAttr resets background, foreground and attributes.

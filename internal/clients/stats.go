@@ -80,9 +80,9 @@ func (s *stats) printStatsDueInterrupt(messages []string) {
 	for i, message := range messages {
 		if i > 0 && config.Client.TermColorsEnable {
 			fmt.Println(color.PaintStrWithAttr(message,
-				config.Client.TermColors.Client.TextFg,
-				config.Client.TermColors.Client.TextBg,
-				config.Client.TermColors.Client.TextAttr,
+				config.Client.TermColors.Client.ClientFg,
+				config.Client.TermColors.Client.ClientBg,
+				config.Client.TermColors.Client.ClientAttr,
 			))
 			continue
 		}

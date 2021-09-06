@@ -183,19 +183,6 @@ func Colorfy(line string) string {
 	case strings.HasPrefix(line, "SERVER"):
 		paintServer(&sb, line)
 
-		/*
-			case strings.Contains(line, "ERROR"):
-				color.PaintWithAttr(&sb, line,
-					config.Client.TermColors.ClientErrorFg,
-					config.Client.TermColors.ClientErrorBg,
-					config.Client.TermColors.ClientErrorAttr)
-
-			case strings.Contains(line, "WARN"):
-				color.PaintWithAttr(&sb, line,
-					config.Client.TermColors.ClientWarnFg,
-					config.Client.TermColors.ClientWarnBg,
-					config.Client.TermColors.ClientWarnAttr)
-		*/
 	default:
 		color.PaintWithAttr(&sb, line,
 			color.FgDefault,
@@ -203,6 +190,5 @@ func Colorfy(line string) string {
 			color.AttrNone)
 	}
 
-	color.ResetWithAttr(&sb)
 	return sb.String()
 }

@@ -14,3 +14,4 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [ ] Implement Benchmark cat-ing a file and compare to prev version.
 [x] Client 4.x should print a warning when trying to connect to a 3.x server.
 [ ] Update docs for color configuration
+[ ] Update animated gifs
