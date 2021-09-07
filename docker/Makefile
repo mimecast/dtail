@@ -1,5 +1,6 @@
 all: build
 testrun: build spinup dcat spindown
+serverfarm: spindown build spinup
 build:
 	cp ../dserver .
 	docker build . -t dserver:develop

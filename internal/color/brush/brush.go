@@ -5,6 +5,7 @@ import (
 
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -171,20 +172,21 @@ func paintServer(sb *strings.Builder, line string) {
 
 // Colorfy a given line based on the line's content.
 func Colorfy(line string) string {
-	sb := strings.Builder{}
+	sb := pool.BuilderBuffer.Get().(*strings.Builder)
+	defer pool.RecycleBuilderBuffer(sb)
 
 	switch {
 	case strings.HasPrefix(line, "REMOTE"):
-		paintRemote(&sb, line)
+		paintRemote(sb, line)
 
 	case strings.HasPrefix(line, "CLIENT"):
-		paintClient(&sb, line)
+		paintClient(sb, line)
 
 	case strings.HasPrefix(line, "SERVER"):
-		paintServer(&sb, line)
+		paintServer(sb, line)
 
 	default:
-		color.PaintWithAttr(&sb, line,
+		color.PaintWithAttr(sb, line,
 			color.FgDefault,
 			color.BgDefault,
 			color.AttrNone)

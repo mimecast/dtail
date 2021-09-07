@@ -50,10 +50,14 @@ func (s *stats) logServerStats() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	currentConnections := fmt.Sprintf("currentConnections=%d", s.currentConnections)
-	lifetimeConnections := fmt.Sprintf("lifetimeConnections=%d", s.lifetimeConnections)
-	goroutines := fmt.Sprintf("goroutines=%d", runtime.NumGoroutine())
-	logger.Info("stats", currentConnections, lifetimeConnections, goroutines)
+	data := make(map[string]interface{})
+	data["currentConnections"] = s.currentConnections
+	data["lifetimeConnections"] = s.lifetimeConnections
+	data["goroutines"] = runtime.NumGoroutine()
+	data["cgocalls"] = runtime.NumCgoCall()
+	data["cpu"] = runtime.NumCPU()
+
+	logger.Mapreduce("STATS", data)
 }
 
 func (s *stats) serverLimitExceeded() error {

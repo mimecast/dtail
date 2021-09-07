@@ -11,12 +11,13 @@ import (
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 // Used to collect and display various client stats.
 type stats struct {
 	// Total amount servers to connect to.
-	connectionsTotal int
+	servers int
 	// To keep track of what connected and disconnected
 	connectionsEstCh chan struct{}
 	// Amount of servers connections are established.
@@ -25,10 +26,10 @@ type stats struct {
 	mutex sync.Mutex
 }
 
-func newTailStats(connectionsTotal int) *stats {
+func newTailStats(servers int) *stats {
 	return &stats{
-		connectionsTotal: connectionsTotal,
-		connectionsEstCh: make(chan struct{}, connectionsTotal),
+		servers:          servers,
+		connectionsEstCh: make(chan struct{}, servers),
 		connected:        0,
 	}
 }
@@ -59,13 +60,14 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 			continue
 		}
 
-		stats := s.statsLine(connected, newConnections, throttle)
 		switch force {
 		case true:
+			stats := s.statsLine(connected, newConnections, throttle)
 			messages = append(messages, fmt.Sprintf("Connection stats: %s", stats))
 			s.printStatsDueInterrupt(messages)
 		default:
-			logger.Info(stats)
+			data := s.statsData(connected, newConnections, throttle)
+			logger.Mapreduce("STATS", data)
 		}
 
 		connectedLast = connected
@@ -92,16 +94,37 @@ func (s *stats) printStatsDueInterrupt(messages []string) {
 	logger.Resume()
 }
 
+func (s *stats) statsData(connected, newConnections int, throttle int) map[string]interface{} {
+	percConnected := percentOf(float64(s.servers), float64(connected))
+
+	data := make(map[string]interface{})
+	data["connected"] = connected
+	data["servers"] = s.servers
+	data["connected%"] = int(percConnected)
+	data["new"] = newConnections
+	data["throttle"] = throttle
+	data["goroutines"] = runtime.NumGoroutine()
+	data["cgocalls"] = runtime.NumCgoCall()
+	data["cpu"] = runtime.NumCPU()
+
+	return data
+}
+
 func (s *stats) statsLine(connected, newConnections int, throttle int) string {
-	percConnected := percentOf(float64(s.connectionsTotal), float64(connected))
+	sb := strings.Builder{}
 
-	var stats []string
-	stats = append(stats, fmt.Sprintf("connected=%d/%d(%d%%)", connected, s.connectionsTotal, int(percConnected)))
-	stats = append(stats, fmt.Sprintf("new=%d", newConnections))
-	stats = append(stats, fmt.Sprintf("throttle=%d", throttle))
-	stats = append(stats, fmt.Sprintf("cpus/goroutines=%d/%d", runtime.NumCPU(), runtime.NumGoroutine()))
+	i := 0
+	for k, v := range s.statsData(connected, newConnections, throttle) {
+		if i > 0 {
+			sb.WriteString(protocol.FieldDelimiter)
+		}
+		sb.WriteString(k)
+		sb.WriteByte('=')
+		sb.WriteString(fmt.Sprintf("%v", v))
+		i++
+	}
 
-	return strings.Join(stats, "|")
+	return sb.String()
 }
 
 func (s *stats) numConnected() int {

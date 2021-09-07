@@ -14,6 +14,8 @@ import (
 
 	"github.com/mimecast/dtail/internal/color/brush"
 	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/io/pool"
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 const (
@@ -132,6 +134,24 @@ func Info(args ...interface{}) string {
 	return log(clientStr, infoStr, args)
 }
 
+// Mapreduce message logging.
+func Mapreduce(table string, data map[string]interface{}) string {
+	args := make([]interface{}, len(data)+1)
+
+	args[0] = fmt.Sprintf("MAPREDUCE:%s", strings.ToUpper(table))
+	i := 1
+	for k, v := range data {
+		args[i] = fmt.Sprintf("%s=%v", k, v)
+		i++
+	}
+
+	if Mode.Server {
+		return log(serverStr, infoStr, args)
+	}
+
+	return log(clientStr, infoStr, args)
+}
+
 // Warn message logging.
 func Warn(args ...interface{}) string {
 	if !Mode.Quiet {
@@ -230,24 +250,28 @@ func log(what string, severity string, args []interface{}) string {
 		return ""
 	}
 
-	messages := []string{}
+	sb := pool.BuilderBuffer.Get().(*strings.Builder)
 
-	for _, arg := range args {
+	for i, arg := range args {
+		if i > 0 {
+			sb.WriteString(protocol.FieldDelimiter)
+		}
+
 		switch v := arg.(type) {
 		case string:
-			messages = append(messages, v)
+			sb.WriteString(v)
 		case int:
-			messages = append(messages, fmt.Sprintf("%d", v))
+			sb.WriteString(fmt.Sprintf("%d", v))
 		case error:
-			messages = append(messages, v.Error())
+			sb.WriteString(v.Error())
 		default:
-			messages = append(messages, fmt.Sprintf("%v", v))
+			sb.WriteString(fmt.Sprintf("%v", v))
 		}
 	}
 
-	message := strings.Join(messages, "|")
+	message := sb.String()
+	pool.RecycleBuilderBuffer(sb)
 	write(what, severity, message)
-
 	return fmt.Sprintf("%s|%s", severity, message)
 }
 
