@@ -1,5 +1,5 @@
 GO ?= go
-all: clean test build
+all: test build
 build: dserver dcat dgrep dmap dtail
 dserver:
 ifndef USE_ACL

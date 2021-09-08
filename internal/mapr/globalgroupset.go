@@ -48,6 +48,7 @@ func (g *GlobalGroupSet) MergeNoblock(query *Query, group *GroupSet) (bool, erro
 
 // Merge a group set into the global group set.
 func (g *GlobalGroupSet) merge(query *Query, group *GroupSet) error {
+
 	for groupKey, set := range group.sets {
 		s := g.GetSet(groupKey)
 		if err := s.Merge(query, set); err != nil {

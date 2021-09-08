@@ -5,8 +5,15 @@ const (
 	ProtocolCompat string = "4"
 	// MessageDelimiter delimits separate messages.
 	MessageDelimiter byte = '¬'
-	// FieldDelimiter delimits aggregation fields.
+	// FieldDelimiter delimits messagefields.
 	FieldDelimiter string = "|"
+	// CSVDelimiter delimits CSV file fields.kj:w
+	CSVDelimiter string = ","
+	// AggregateKVDelimiter delimits key-values of an aggregation message.
+	AggregateKVDelimiter string = "≔"
 	// AggregateDelimiter delimits parts of an aggregation message.
-	AggregateDelimiter string = "➔"
+	AggregateDelimiter string = "∥"
+	// AggregateDelimiter string = "⦀"
+	// AggregateGroupKeyCombinator combines the group set keys.
+	AggregateGroupKeyCombinator string = ","
 )

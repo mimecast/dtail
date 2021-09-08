@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -17,7 +18,7 @@ type baseHandler struct {
 	server       string
 	shellStarted bool
 	commands     chan string
-	receiveBuf   []byte
+	receiveBuf   bytes.Buffer
 	status       int
 }
 
@@ -56,14 +57,23 @@ func (h *baseHandler) SendMessage(command string) error {
 // Read data from the dtail server via Writer interface.
 func (h *baseHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
-		if b == protocol.MessageDelimiter || b == '\n' {
-			if len(h.receiveBuf) == 0 {
+		switch b {
+		/*
+			// TODO: Next DTail version make it so that '\n' gets ignored. For now
+			// leave it for compatibility with older DTail server + ability to display
+			// the protocol mismatch warn message.
+			case '\n' {
+				continue
+		*/
+		case '\n', protocol.MessageDelimiter:
+			message := h.receiveBuf.String()
+			if len(message) == 0 {
 				continue
 			}
-			message := string(h.receiveBuf)
 			h.handleMessageType(message)
-		} else {
-			h.receiveBuf = append(h.receiveBuf, b)
+			h.receiveBuf.Reset()
+		default:
+			h.receiveBuf.WriteByte(b)
 		}
 	}
 
@@ -78,25 +88,22 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 	case <-h.Done():
 		return 0, io.EOF
 	}
-
 	return
 }
 
 // Handle various message types.
 func (h *baseHandler) handleMessageType(message string) {
-	if len(h.receiveBuf) == 0 {
+	if len(message) == 0 {
 		return
 	}
 
 	// Hidden server commands starti with a dot "."
-	if h.receiveBuf[0] == '.' {
+	if message[0] == '.' {
 		h.handleHiddenMessage(message)
-		h.receiveBuf = h.receiveBuf[:0]
 		return
 	}
 
 	logger.Raw(message)
-	h.receiveBuf = h.receiveBuf[:0]
 }
 
 // Handle messages received from server which are not meant to be displayed

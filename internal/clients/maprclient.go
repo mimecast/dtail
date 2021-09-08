@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients/handlers"
+	"github.com/mimecast/dtail/internal/color"
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/omode"
@@ -37,6 +39,8 @@ type MaprClient struct {
 	query *mapr.Query
 	// Additative result or new result every interval run?
 	cumulative bool
+	// The last result string received
+	lastResult string
 }
 
 // NewMaprClient returns a new mapreduce client.
@@ -154,24 +158,37 @@ func (c *MaprClient) reportResults() {
 func (c *MaprClient) printResults() {
 	var result string
 	var err error
-	var numLines int
+	var numRows int
 
 	if c.cumulative {
-		result, numLines, err = c.globalGroup.Result(c.query)
+		result, numRows, err = c.globalGroup.Result(c.query)
 	} else {
-		result, numLines, err = c.globalGroup.SwapOut().Result(c.query)
+		result, numRows, err = c.globalGroup.SwapOut().Result(c.query)
 	}
+
 	if err != nil {
 		logger.FatalExit(err)
 	}
 
-	if numLines == 0 {
-		logger.Warn("Empty result set this time...")
+	if result == c.lastResult {
+		logger.Debug("Result hasn't changed compared to last time...")
+		return
+	}
+	c.lastResult = result
+
+	if numRows == 0 {
+		logger.Debug("Empty result set this time...")
 		return
 	}
 
-	//logger.Raw(fmt.Sprintf("%s\n", c.query.RawQuery))
-	logger.Raw(c.query.RawQuery)
+	rawQuery := c.query.RawQuery
+	if config.Client.TermColorsEnable {
+		rawQuery = color.PaintStrWithAttr(rawQuery,
+			config.Client.TermColors.MaprTable.RawQueryFg,
+			config.Client.TermColors.MaprTable.RawQueryBg,
+			config.Client.TermColors.MaprTable.RawQueryAttr)
+	}
+	logger.Raw(rawQuery)
 	logger.Raw(result)
 }
 

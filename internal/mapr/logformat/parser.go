@@ -12,6 +12,8 @@ import (
 	"github.com/mimecast/dtail/internal/mapr"
 )
 
+var IgnoreFieldsErr error = errors.New("Ignore this field set")
+
 // Parser is used to parse the mapreduce information from the server log files.
 type Parser struct {
 	hostname           string

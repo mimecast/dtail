@@ -1,16 +1,22 @@
 package logformat
 
 import (
+	"fmt"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
-// MakeFieldsDEFAULT is the default log file mapreduce parser.
+// MakeFieldsDEFAULT is the default DTail log file key-value parser.
 func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 	splitted := strings.Split(maprLine, protocol.FieldDelimiter)
-	fields := make(map[string]string, len(splitted))
+
+	if len(splitted) < 3 || !strings.HasPrefix(splitted[3], "MAPREDUCE:") || !strings.HasPrefix(splitted[0], "INFO") {
+		// Not a DTail mapreduce log line.
+		return nil, IgnoreFieldsErr
+	}
+
+	fields := make(map[string]string, len(splitted)+8)
 
 	fields["*"] = "*"
 	fields["$line"] = maprLine
@@ -19,20 +25,14 @@ func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 	fields["$timezone"] = p.timeZoneName
 	fields["$timeoffset"] = p.timeZoneOffset
 
-	kvStart := 0
-	// DTail mapreduce format
-	if len(splitted) > 3 && strings.HasPrefix(splitted[3], "MAPREDUCE:") {
-		fields["$severity"] = splitted[0]
-		// TODO: Parse time like we do at Mimecast
-		fields["$time"] = splitted[1]
-		kvStart = 4
-	}
+	fields["$severity"] = splitted[0]
+	// TODO: Parse time like we do at Mimecast
+	fields["$time"] = splitted[1]
 
-	for _, kv := range splitted[kvStart:] {
+	for _, kv := range splitted[4:] {
 		keyAndValue := strings.SplitN(kv, "=", 2)
 		if len(keyAndValue) != 2 {
-			logger.Debug("Unable to parse key-value token, ignoring it", kv)
-			continue
+			return fields, fmt.Errorf("Unable to parse key-value token '%s'", kv)
 		}
 		fields[strings.ToLower(keyAndValue[0])] = keyAndValue[1]
 	}

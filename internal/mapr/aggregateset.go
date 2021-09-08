@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -68,22 +70,25 @@ func (s *AggregateSet) Merge(query *Query, set *AggregateSet) error {
 
 // Serialize the aggregate set so it can be sent over the wire.
 func (s *AggregateSet) Serialize(ctx context.Context, groupKey string, ch chan<- string) {
-	//logger.Trace("Serialising mapr.AggregateSet", s)
-	var sb strings.Builder
+	logger.Trace("Serialising mapr.AggregateSet", s)
+	sb := pool.BuilderBuffer.Get().(*strings.Builder)
+	defer pool.RecycleBuilderBuffer(sb)
 
 	sb.WriteString(groupKey)
 	sb.WriteString(protocol.AggregateDelimiter)
-	sb.WriteString(fmt.Sprintf("%d%s", s.Samples, protocol.AggregateDelimiter))
+	sb.WriteString(fmt.Sprintf("%d", s.Samples))
+	sb.WriteString(protocol.AggregateDelimiter)
 
 	for k, v := range s.FValues {
 		sb.WriteString(k)
-		sb.WriteString("=")
-		sb.WriteString(fmt.Sprintf("%v%s", v, protocol.AggregateDelimiter))
+		sb.WriteString(protocol.AggregateKVDelimiter)
+		sb.WriteString(fmt.Sprintf("%v", v))
+		sb.WriteString(protocol.AggregateDelimiter)
 	}
 
 	for k, v := range s.SValues {
 		sb.WriteString(k)
-		sb.WriteString("=")
+		sb.WriteString(protocol.AggregateKVDelimiter)
 		sb.WriteString(v)
 		sb.WriteString(protocol.AggregateDelimiter)
 	}

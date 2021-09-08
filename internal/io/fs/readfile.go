@@ -16,7 +16,6 @@ import (
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/io/pool"
-	"github.com/mimecast/dtail/internal/protocol"
 	"github.com/mimecast/dtail/internal/regex"
 
 	"github.com/DataDog/zstd"
@@ -187,7 +186,7 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Bu
 				time.Sleep(time.Millisecond * 100)
 				continue
 			}
-			message.WriteByte(protocol.MessageDelimiter)
+			message.WriteString("\n")
 			select {
 			case rawLines <- message:
 				message = pool.BytesBuffer.Get().(*bytes.Buffer)
@@ -202,7 +201,7 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Bu
 					f.serverMessages <- logger.Warn(f.filePath, "Long log line, splitting into multiple lines")
 					warnedAboutLongLine = true
 				}
-				message.WriteByte(protocol.MessageDelimiter)
+				message.WriteString("\n")
 				select {
 				case rawLines <- message:
 					message = pool.BytesBuffer.Get().(*bytes.Buffer)

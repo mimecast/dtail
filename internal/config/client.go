@@ -71,11 +71,32 @@ type commonTermColors struct {
 	SeverityWarnFg    color.FgColor
 }
 
+type maprTableTermColors struct {
+	DataAttr            color.Attribute
+	DataBg              color.BgColor
+	DataFg              color.FgColor
+	DelimiterAttr       color.Attribute
+	DelimiterBg         color.BgColor
+	DelimiterFg         color.FgColor
+	HeaderAttr          color.Attribute
+	HeaderBg            color.BgColor
+	HeaderDelimiterAttr color.Attribute
+	HeaderDelimiterBg   color.BgColor
+	HeaderDelimiterFg   color.FgColor
+	HeaderFg            color.FgColor
+	HeaderGroupKeyAttr  color.Attribute
+	HeaderSortKeyAttr   color.Attribute
+	RawQueryAttr        color.Attribute
+	RawQueryBg          color.BgColor
+	RawQueryFg          color.FgColor
+}
+
 type termColors struct {
-	Remote remoteTermColors
-	Client clientTermColors
-	Server serverTermColors
-	Common commonTermColors
+	Remote    remoteTermColors
+	Client    clientTermColors
+	Server    serverTermColors
+	Common    commonTermColors
+	MaprTable maprTableTermColors
 }
 
 // ClientConfig represents a DTail client configuration (empty as of now as there
@@ -154,6 +175,25 @@ func newDefaultClientConfig() *ClientConfig {
 				SeverityWarnAttr:  color.AttrBold,
 				SeverityWarnBg:    color.BgBlack,
 				SeverityWarnFg:    color.FgWhite,
+			},
+			MaprTable: maprTableTermColors{
+				DataAttr:            color.AttrNone,
+				DataBg:              color.BgBlue,
+				DataFg:              color.FgWhite,
+				DelimiterAttr:       color.AttrDim,
+				DelimiterBg:         color.BgBlue,
+				DelimiterFg:         color.FgWhite,
+				HeaderAttr:          color.AttrBold,
+				HeaderBg:            color.BgBlue,
+				HeaderFg:            color.FgWhite,
+				HeaderDelimiterAttr: color.AttrDim,
+				HeaderDelimiterBg:   color.BgBlue,
+				HeaderDelimiterFg:   color.FgWhite,
+				HeaderSortKeyAttr:   color.AttrUnderline,
+				HeaderGroupKeyAttr:  color.AttrReverse,
+				RawQueryAttr:        color.AttrDim,
+				RawQueryBg:          color.BgBlack,
+				RawQueryFg:          color.FgCyan,
 			},
 		},
 	}

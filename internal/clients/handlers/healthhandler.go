@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"time"
@@ -13,7 +14,7 @@ import (
 type HealthHandler struct {
 	done *internal.Done
 	// Buffer of incoming data from server.
-	receiveBuf []byte
+	receiveBuf bytes.Buffer
 	// To send commands to the server.
 	commands chan string
 	// To receive messages from the server.
@@ -72,10 +73,10 @@ func (h *HealthHandler) SendMessage(command string) error {
 // Server writes byte stream to client.
 func (h *HealthHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
-		h.receiveBuf = append(h.receiveBuf, b)
-		if b == protocol.MessageDelimiter { // '\n' {
-			h.receive <- string(h.receiveBuf)
-			h.receiveBuf = h.receiveBuf[:0]
+		h.receiveBuf.WriteByte(b)
+		if b == protocol.MessageDelimiter {
+			h.receive <- h.receiveBuf.String()
+			h.receiveBuf.Reset()
 		}
 	}
 

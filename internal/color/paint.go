@@ -63,6 +63,19 @@ func PaintWithAttr(sb *strings.Builder, text string, fg FgColor, bg BgColor, att
 	sb.WriteString(string(FgDefault))
 }
 
+// PaintWithAttrs is similar to PaintWithAttr, but it takes multiple text attributes.
+func PaintWithAttrs(sb *strings.Builder, text string, fg FgColor, bg BgColor, attrs []Attribute) {
+	sb.WriteString(string(fg))
+	sb.WriteString(string(bg))
+	for _, attr := range attrs {
+		sb.WriteString(string(attr))
+	}
+	sb.WriteString(text)
+	sb.WriteString(string(AttrReset))
+	sb.WriteString(string(BgDefault))
+	sb.WriteString(string(FgDefault))
+}
+
 // ResetWithAttr resets background, foreground and attributes.
 func ResetWithAttr(sb *strings.Builder) {
 	sb.WriteString(string(AttrReset))
