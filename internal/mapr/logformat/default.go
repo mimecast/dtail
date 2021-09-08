@@ -1,9 +1,9 @@
 package logformat
 
 import (
-	"errors"
 	"strings"
 
+	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -31,7 +31,8 @@ func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 	for _, kv := range splitted[kvStart:] {
 		keyAndValue := strings.SplitN(kv, "=", 2)
 		if len(keyAndValue) != 2 {
-			return fields, errors.New("Error parsing mapreduce token: " + kv)
+			logger.Debug("Unable to parse key-value token, ignoring it", kv)
+			continue
 		}
 		fields[strings.ToLower(keyAndValue[0])] = keyAndValue[1]
 	}
