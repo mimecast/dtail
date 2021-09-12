@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal/io/fs"
+	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/regex"
@@ -113,15 +114,19 @@ func (r *readCommand) readFile(ctx context.Context, path, globID string, re rege
 	}
 
 	lines := r.server.lines
-
-	// Plug in mappreduce engine
-	if r.server.aggregate != nil {
-		lines = r.server.aggregate.Lines
-	}
+	aggregate := r.server.aggregate
 
 	for {
+		if aggregate != nil {
+			lines = make(chan line.Line, 100)
+			aggregate.NextLinesCh <- lines
+		}
 		if err := reader.Start(ctx, lines, re); err != nil {
 			logger.Error(r.server.user, path, globID, err)
+		}
+		if aggregate != nil {
+			// Also makes aggregate to Flush
+			close(lines)
 		}
 
 		select {

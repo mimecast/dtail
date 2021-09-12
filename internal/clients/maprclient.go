@@ -158,7 +158,8 @@ func (c *MaprClient) reportResults() {
 func (c *MaprClient) printResults() {
 	var result string
 	var err error
-	var numRows, rowsLimit int
+	var numRows int
+	rowsLimit := -1
 
 	if c.query.Limit == -1 {
 		// Limit output to 10 rows when the result is printed to stdout.

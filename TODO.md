@@ -17,4 +17,4 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [ ] Update docs for color configuration
 [ ] Update animated gifs
 [ ] Canary/RC deployment
-[ ] Fix dmap so that it always reads to the end of file
+[x] Fix dmap so that it always reads to the end of file
