@@ -10,6 +10,7 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [x] Paint ^CLIENT messages (e.g. use yellow backgrounds here)
 [x] Paint ^SERVER messages (e.g. use cyan backgrounds here)
 [x] Adjust dmap with color schemas
+[x] Auto limit stdout map output to 10 results.
 [ ] Fix JSONSchema for the colors
 [ ] Implement Benchmark cat-ing a file and compare to prev version.
 [?] Client 4.x should print a warning when trying to connect to a 3.x server.

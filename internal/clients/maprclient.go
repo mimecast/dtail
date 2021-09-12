@@ -158,12 +158,18 @@ func (c *MaprClient) reportResults() {
 func (c *MaprClient) printResults() {
 	var result string
 	var err error
-	var numRows int
+	var numRows, rowsLimit int
+
+	if c.query.Limit == -1 {
+		// Limit output to 10 rows when the result is printed to stdout.
+		// This can be overriden with the limit clause though.
+		rowsLimit = 10
+	}
 
 	if c.cumulative {
-		result, numRows, err = c.globalGroup.Result(c.query)
+		result, numRows, err = c.globalGroup.Result(c.query, rowsLimit)
 	} else {
-		result, numRows, err = c.globalGroup.SwapOut().Result(c.query)
+		result, numRows, err = c.globalGroup.SwapOut().Result(c.query, rowsLimit)
 	}
 
 	if err != nil {
@@ -189,6 +195,11 @@ func (c *MaprClient) printResults() {
 			config.Client.TermColors.MaprTable.RawQueryAttr)
 	}
 	logger.Raw(rawQuery)
+
+	if rowsLimit > 0 && numRows > rowsLimit {
+		logger.Warn(fmt.Sprintf("Got %d results but limited output to %d rows! Use 'limit' clause to override!",
+			numRows, rowsLimit))
+	}
 	logger.Raw(result)
 }
 

@@ -68,10 +68,14 @@ func (g *GroupSet) Serialize(ctx context.Context, ch chan<- string) {
 }
 
 // Result returns a nicely formated result of the query from the group set.
-func (g *GroupSet) Result(query *Query) (string, int, error) {
+func (g *GroupSet) Result(query *Query, rowsLimit int) (string, int, error) {
 	rows, widths, err := g.result(query, true)
 	if err != nil {
 		return "", 0, err
+	}
+
+	if query.Limit != -1 {
+		rowsLimit = query.Limit
 	}
 
 	sb := pool.BuilderBuffer.Get().(*strings.Builder)
@@ -141,7 +145,7 @@ func (g *GroupSet) Result(query *Query) (string, int, error) {
 
 	// And now write the data
 	for i, r := range rows {
-		if i == query.Limit {
+		if i == rowsLimit {
 			break
 		}
 		for j, value := range r.values {
