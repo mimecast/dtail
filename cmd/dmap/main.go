@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strings"
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/config"
@@ -47,6 +48,15 @@ func main() {
 
 	flag.Parse()
 
+	if args.What == "" {
+		// Interpret additional args as file list.
+		var files []string
+		for _, file := range flag.Args() {
+			files = append(files, file)
+		}
+		args.What = strings.Join(files, ",")
+	}
+
 	config.Read(cfgFile, sshPort)
 	if noColor {
 		config.Client.TermColorsEnable = false
@@ -65,7 +75,7 @@ func main() {
 
 	client, err := clients.NewMaprClient(args, queryStr, clients.DefaultMode)
 	if err != nil {
-		panic(err)
+		logger.FatalExit(err)
 	}
 
 	status := client.Start(ctx, signal.InterruptCh(ctx))

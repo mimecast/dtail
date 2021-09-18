@@ -17,3 +17,6 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [ ] Update animated gifs
 [x] Fix dmap so that it always reads to the end of file
 [ ] Add more default fields to the default MAPREDUCE format.
+[x] By default connect to localhost
+[x] Can use additional args as file lists
+[ ] Document the two things above

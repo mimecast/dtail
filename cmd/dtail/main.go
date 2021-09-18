@@ -8,6 +8,7 @@ import (
 	_ "net/http"
 	_ "net/http/pprof"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients"
@@ -61,6 +62,15 @@ func main() {
 	flag.StringVar(&queryStr, "query", "", "Map reduce query")
 
 	flag.Parse()
+
+	if args.What == "" {
+		// Interpret additional args as file list.
+		var files []string
+		for _, file := range flag.Args() {
+			files = append(files, file)
+		}
+		args.What = strings.Join(files, ",")
+	}
 
 	if grep != "" {
 		args.RegexStr = grep

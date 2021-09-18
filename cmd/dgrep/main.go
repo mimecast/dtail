@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strings"
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/config"
@@ -43,6 +44,15 @@ func main() {
 	flag.StringVar(&grep, "grep", "", "Alias for -regex")
 
 	flag.Parse()
+
+	if args.What == "" {
+		// Interpret additional args as file list.
+		var files []string
+		for _, file := range flag.Args() {
+			files = append(files, file)
+		}
+		args.What = strings.Join(files, ",")
+	}
 
 	config.Read(cfgFile, sshPort)
 	if noColor {
