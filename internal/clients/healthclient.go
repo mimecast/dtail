@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mimecast/dtail/internal/clients/connectors"
 	"github.com/mimecast/dtail/internal/clients/handlers"
-	"github.com/mimecast/dtail/internal/clients/remote"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/protocol"
@@ -47,9 +47,13 @@ func (c *HealthClient) Start(ctx context.Context) (status int) {
 	throttleCh := make(chan struct{}, runtime.NumCPU())
 	statsCh := make(chan struct{}, 1)
 
-	conn := remote.NewOneOffConnection(c.server, c.userName, c.sshAuthMethods)
-	conn.Handler = handlers.NewHealthHandler(c.server, receive)
-	conn.Commands = []string{c.mode.String()}
+	conn := connectors.NewOneOffServerConnection(
+		c.server,
+		c.userName,
+		c.sshAuthMethods,
+		handlers.NewHealthHandler(c.server, receive),
+		[]string{c.mode.String()},
+	)
 
 	connCtx, cancel := context.WithCancel(ctx)
 	go conn.Start(connCtx, cancel, throttleCh, statsCh)

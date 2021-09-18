@@ -1,4 +1,4 @@
-package remote
+package connectors
 
 import (
 	"context"
@@ -16,20 +16,20 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// Connection represents a client connection connection to a single server.
-type Connection struct {
+// ServerConnection represents a client connection connection to a single server.
+type ServerConnection struct {
 	// The remote server's hostname connected to.
-	Server string
+	server string
 	// The remote server's port connected to.
 	port int
 	// The SSH client configuration used.
 	config *ssh.ClientConfig
 	// The SSH client handler to use.
-	Handler handlers.Handler
+	handler handlers.Handler
 	// DTail commands sent from client to server. When client loses
 	// connection to the server it re-connects automatically and sends the
 	// same commands again.
-	Commands []string
+	commands []string
 	// Is it a persistent connection or a one-off?
 	isOneOff bool
 	// To deal with SSH server host keys
@@ -38,28 +38,33 @@ type Connection struct {
 	throttlingDone bool
 }
 
-// NewConnection returns a new connection.
-func NewConnection(server string, userName string, authMethods []ssh.AuthMethod, hostKeyCallback client.HostKeyCallback) *Connection {
+// NewServerConnection returns a new connection.
+func NewServerConnection(server string, userName string, authMethods []ssh.AuthMethod, hostKeyCallback client.HostKeyCallback, handler handlers.Handler, commands []string) *ServerConnection {
 	logger.Debug(server, "Creating new connection")
 
-	c := Connection{
+	c := ServerConnection{
 		hostKeyCallback: hostKeyCallback,
+		server:          server,
+		handler:         handler,
+		commands:        commands,
 		config: &ssh.ClientConfig{
 			User:            userName,
 			Auth:            authMethods,
 			HostKeyCallback: hostKeyCallback.Wrap(),
-			Timeout:         time.Second * 3,
+			Timeout:         time.Second * 2,
 		},
 	}
 
-	c.initServerPort(server)
-
+	c.initServerPort()
 	return &c
 }
 
-// NewOneOffConnection creates new one-off connection (only for sending a series of commands and then quit).
-func NewOneOffConnection(server string, userName string, authMethods []ssh.AuthMethod) *Connection {
-	c := Connection{
+// NewOneOffServerConnection creates new one-off connection (only for sending a series of commands and then quit).
+func NewOneOffServerConnection(server string, userName string, authMethods []ssh.AuthMethod, handler handlers.Handler, commands []string) *ServerConnection {
+	c := ServerConnection{
+		server:   server,
+		handler:  handler,
+		commands: commands,
 		config: &ssh.ClientConfig{
 			User:            userName,
 			Auth:            authMethods,
@@ -68,46 +73,54 @@ func NewOneOffConnection(server string, userName string, authMethods []ssh.AuthM
 		isOneOff: true,
 	}
 
-	c.initServerPort(server)
-
+	c.initServerPort()
 	return &c
 }
 
+// Server hostname
+func (c *ServerConnection) Server() string {
+	return c.server
+}
+
+// Handler for the connection
+func (c *ServerConnection) Handler() handlers.Handler {
+	return c.handler
+}
+
 // Attempt to parse the server port address from the provided server FQDN.
-func (c *Connection) initServerPort(server string) {
-	c.Server = server
+func (c *ServerConnection) initServerPort() {
 	c.port = config.Common.SSHPort
-	parts := strings.Split(server, ":")
+	parts := strings.Split(c.server, ":")
 
 	if len(parts) == 2 {
 		logger.Debug("Parsing port from hostname", parts)
 		port, err := strconv.Atoi(parts[1])
 		if err != nil {
-			logger.FatalExit("Unable to parse client port", server, parts, err)
+			logger.FatalExit("Unable to parse client port", c.server, parts, err)
 		}
-		c.Server = parts[0]
+		c.server = parts[0]
 		c.port = port
 	}
 }
 
 // Start the server connection. Build up SSH session and send some DTail commands.
-func (c *Connection) Start(ctx context.Context, cancel context.CancelFunc, throttleCh, statsCh chan struct{}) {
+func (c *ServerConnection) Start(ctx context.Context, cancel context.CancelFunc, throttleCh, statsCh chan struct{}) {
 	// Throttle how many connections can be established concurrently (based on ch length)
-	logger.Debug(c.Server, "Throttling connection", len(throttleCh), cap(throttleCh))
+	logger.Debug(c.server, "Throttling connection", len(throttleCh), cap(throttleCh))
 
 	select {
 	case throttleCh <- struct{}{}:
 	case <-ctx.Done():
-		logger.Debug(c.Server, "Not establishing connection as context is done", len(throttleCh), cap(throttleCh))
+		logger.Debug(c.server, "Not establishing connection as context is done", len(throttleCh), cap(throttleCh))
 		return
 	}
 
-	logger.Debug(c.Server, "Throttling says that the connection can be established", len(throttleCh), cap(throttleCh))
+	logger.Debug(c.server, "Throttling says that the connection can be established", len(throttleCh), cap(throttleCh))
 
 	go func() {
 		defer func() {
 			if !c.throttlingDone {
-				logger.Debug(c.Server, "Unthrottling connection (1)", len(throttleCh), cap(throttleCh))
+				logger.Debug(c.server, "Unthrottling connection (1)", len(throttleCh), cap(throttleCh))
 				c.throttlingDone = true
 				<-throttleCh
 			}
@@ -115,9 +128,9 @@ func (c *Connection) Start(ctx context.Context, cancel context.CancelFunc, throt
 		}()
 
 		if err := c.dial(ctx, cancel, throttleCh, statsCh); err != nil {
-			logger.Warn(c.Server, c.port, err)
-			if c.hostKeyCallback.Untrusted(fmt.Sprintf("%s:%d", c.Server, c.port)) {
-				logger.Debug(c.Server, "Not trusting host")
+			logger.Warn(c.server, c.port, err)
+			if c.hostKeyCallback.Untrusted(fmt.Sprintf("%s:%d", c.server, c.port)) {
+				logger.Debug(c.server, "Not trusting host")
 			}
 		}
 	}()
@@ -126,16 +139,16 @@ func (c *Connection) Start(ctx context.Context, cancel context.CancelFunc, throt
 }
 
 // Dail into a new SSH connection. Close connection in case of an error.
-func (c *Connection) dial(ctx context.Context, cancel context.CancelFunc, throttleCh, statsCh chan struct{}) error {
-	logger.Debug(c.Server, "Incrementing connection stats")
+func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc, throttleCh, statsCh chan struct{}) error {
+	logger.Debug(c.server, "Incrementing connection stats")
 	statsCh <- struct{}{}
 	defer func() {
-		logger.Debug(c.Server, "Decrementing connection stats")
+		logger.Debug(c.server, "Decrementing connection stats")
 		<-statsCh
 	}()
 
-	logger.Debug(c.Server, "Dialing into the connection")
-	address := fmt.Sprintf("%s:%d", c.Server, c.port)
+	logger.Debug(c.server, "Dialing into the connection")
+	address := fmt.Sprintf("%s:%d", c.server, c.port)
 
 	client, err := ssh.Dial("tcp", address, c.config)
 	if err != nil {
@@ -147,8 +160,8 @@ func (c *Connection) dial(ctx context.Context, cancel context.CancelFunc, thrott
 }
 
 // Create the SSH session. Close the session in case of an error.
-func (c *Connection) session(ctx context.Context, cancel context.CancelFunc, client *ssh.Client, throttleCh chan struct{}) error {
-	logger.Debug(c.Server, "session")
+func (c *ServerConnection) session(ctx context.Context, cancel context.CancelFunc, client *ssh.Client, throttleCh chan struct{}) error {
+	logger.Debug(c.server, "session")
 
 	session, err := client.NewSession()
 	if err != nil {
@@ -159,8 +172,8 @@ func (c *Connection) session(ctx context.Context, cancel context.CancelFunc, cli
 	return c.handle(ctx, cancel, session, throttleCh)
 }
 
-func (c *Connection) handle(ctx context.Context, cancel context.CancelFunc, session *ssh.Session, throttleCh chan struct{}) error {
-	logger.Debug(c.Server, "handle")
+func (c *ServerConnection) handle(ctx context.Context, cancel context.CancelFunc, session *ssh.Session, throttleCh chan struct{}) error {
+	logger.Debug(c.server, "handle")
 
 	stdinPipe, err := session.StdinPipe()
 	if err != nil {
@@ -177,36 +190,36 @@ func (c *Connection) handle(ctx context.Context, cancel context.CancelFunc, sess
 	}
 
 	go func() {
-		io.Copy(stdinPipe, c.Handler)
+		io.Copy(stdinPipe, c.handler)
 		cancel()
 	}()
 
 	go func() {
-		io.Copy(c.Handler, stdoutPipe)
+		io.Copy(c.handler, stdoutPipe)
 		cancel()
 	}()
 
 	go func() {
 		select {
-		case <-c.Handler.Done():
+		case <-c.handler.Done():
 		case <-ctx.Done():
 		}
 		cancel()
 	}()
 
 	// Send all commands to client.
-	for _, command := range c.Commands {
+	for _, command := range c.commands {
 		logger.Debug(command)
-		c.Handler.SendMessage(command)
+		c.handler.SendMessage(command)
 	}
 
 	if !c.throttlingDone {
-		logger.Debug(c.Server, "Unthrottling connection (2)", len(throttleCh), cap(throttleCh))
+		logger.Debug(c.server, "Unthrottling connection (2)", len(throttleCh), cap(throttleCh))
 		c.throttlingDone = true
 		<-throttleCh
 	}
 
 	<-ctx.Done()
-	c.Handler.Shutdown()
+	c.handler.Shutdown()
 	return nil
 }

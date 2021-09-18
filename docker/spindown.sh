@@ -11,3 +11,5 @@ for (( i=0; i < $NUM_INSTANCES; i++ )); do
     echo Removing $name
     docker rm $name
 done
+
+exit 0

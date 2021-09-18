@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mimecast/dtail/internal/clients/remote"
+	"github.com/mimecast/dtail/internal/clients/connectors"
 	"github.com/mimecast/dtail/internal/discovery"
 	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/omode"
@@ -23,7 +23,7 @@ type baseClient struct {
 	// List of remote servers to connect to.
 	servers []string
 	// We have one connection per remote server.
-	connections []*remote.Connection
+	connections []connectors.Connector
 	// SSH auth methods to use to connect to the remote servers.
 	sshAuthMethods []gossh.AuthMethod
 	// To deal with SSH host keys
@@ -77,7 +77,7 @@ func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status i
 
 	var mutex sync.Mutex
 	for i, conn := range c.connections {
-		go func(i int, conn *remote.Connection) {
+		go func(i int, conn connectors.Connector) {
 			connStatus := c.start(ctx, active, i, conn)
 
 			// Update global status.
@@ -93,7 +93,7 @@ func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status i
 	return
 }
 
-func (c *baseClient) start(ctx context.Context, active chan struct{}, i int, conn *remote.Connection) (status int) {
+func (c *baseClient) start(ctx context.Context, active chan struct{}, i int, conn connectors.Connector) (status int) {
 	// Increment connection count
 	active <- struct{}{}
 	// Derement connection count
@@ -105,26 +105,20 @@ func (c *baseClient) start(ctx context.Context, active chan struct{}, i int, con
 
 		conn.Start(connCtx, cancel, c.throttleCh, c.stats.connectionsEstCh)
 		// Retrieve status code from handler (dtail client will exit with that status)
-		status = conn.Handler.Status()
+		status = conn.Handler().Status()
 
 		if !c.retry {
 			return
 		}
 
 		time.Sleep(time.Second * 2)
-		logger.Debug(conn.Server, "Reconnecting")
-
-		conn = c.makeConnection(conn.Server, c.sshAuthMethods, c.hostKeyCallback)
-		c.connections[i] = conn
+		logger.Debug(conn.Server(), "Reconnecting")
+		c.connections[i] = c.makeConnection(conn.Server(), c.sshAuthMethods, c.hostKeyCallback)
 	}
 }
 
-func (c *baseClient) makeConnection(server string, sshAuthMethods []gossh.AuthMethod, hostKeyCallback client.HostKeyCallback) *remote.Connection {
-	conn := remote.NewConnection(server, c.UserName, sshAuthMethods, hostKeyCallback)
-	conn.Handler = c.maker.makeHandler(server)
-	conn.Commands = c.maker.makeCommands()
-
-	return conn
+func (c *baseClient) makeConnection(server string, sshAuthMethods []gossh.AuthMethod, hostKeyCallback client.HostKeyCallback) connectors.Connector {
+	return connectors.NewServerConnection(server, c.UserName, sshAuthMethods, hostKeyCallback, c.maker.makeHandler(server), c.maker.makeCommands())
 }
 
 func (c *baseClient) waitUntilDone(ctx context.Context, active chan struct{}) {
