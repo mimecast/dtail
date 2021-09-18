@@ -2,3 +2,4 @@ dserver
 mapr_testdata.log
 log
 *.csv
+*.out

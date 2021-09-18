@@ -22,6 +22,16 @@ type baseHandler struct {
 	status       int
 }
 
+func (h *baseHandler) String() string {
+	return fmt.Sprintf("baseHandler(%s,server:%s,shellStarted:%v,status:%d)@%p",
+		h.done,
+		h.server,
+		h.shellStarted,
+		h.status,
+		h,
+	)
+}
+
 func (h *baseHandler) Server() string {
 	return h.server
 }

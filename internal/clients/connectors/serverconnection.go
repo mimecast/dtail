@@ -16,31 +16,21 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ServerConnection represents a client connection connection to a single server.
+// ServerConnection represents a connection to a single remote dtail server via SSH protocol.
 type ServerConnection struct {
-	// The remote server's hostname connected to.
-	server string
-	// The remote server's port connected to.
-	port int
-	// The SSH client configuration used.
-	config *ssh.ClientConfig
-	// The SSH client handler to use.
-	handler handlers.Handler
-	// DTail commands sent from client to server. When client loses
-	// connection to the server it re-connects automatically and sends the
-	// same commands again.
-	commands []string
-	// Is it a persistent connection or a one-off?
-	isOneOff bool
-	// To deal with SSH server host keys
+	server          string
+	port            int
+	config          *ssh.ClientConfig
+	handler         handlers.Handler
+	commands        []string
+	isOneOff        bool
 	hostKeyCallback client.HostKeyCallback
-	// To determine if connection throttling has finished or not
-	throttlingDone bool
+	throttlingDone  bool
 }
 
-// NewServerConnection returns a new connection.
+// NewServerConnection returns a new DTail SSH server connection.
 func NewServerConnection(server string, userName string, authMethods []ssh.AuthMethod, hostKeyCallback client.HostKeyCallback, handler handlers.Handler, commands []string) *ServerConnection {
-	logger.Debug(server, "Creating new connection")
+	logger.Debug(server, "Creating new connection", server, handler, commands)
 
 	c := ServerConnection{
 		hostKeyCallback: hostKeyCallback,
@@ -77,12 +67,10 @@ func NewOneOffServerConnection(server string, userName string, authMethods []ssh
 	return &c
 }
 
-// Server hostname
 func (c *ServerConnection) Server() string {
 	return c.server
 }
 
-// Handler for the connection
 func (c *ServerConnection) Handler() handlers.Handler {
 	return c.handler
 }
@@ -103,7 +91,6 @@ func (c *ServerConnection) initServerPort() {
 	}
 }
 
-// Start the server connection. Build up SSH session and send some DTail commands.
 func (c *ServerConnection) Start(ctx context.Context, cancel context.CancelFunc, throttleCh, statsCh chan struct{}) {
 	// Throttle how many connections can be established concurrently (based on ch length)
 	logger.Debug(c.server, "Throttling connection", len(throttleCh), cap(throttleCh))
@@ -161,7 +148,7 @@ func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc, 
 
 // Create the SSH session. Close the session in case of an error.
 func (c *ServerConnection) session(ctx context.Context, cancel context.CancelFunc, client *ssh.Client, throttleCh chan struct{}) error {
-	logger.Debug(c.server, "session")
+	logger.Debug(c.server, "Creating SSH session")
 
 	session, err := client.NewSession()
 	if err != nil {
@@ -173,7 +160,7 @@ func (c *ServerConnection) session(ctx context.Context, cancel context.CancelFun
 }
 
 func (c *ServerConnection) handle(ctx context.Context, cancel context.CancelFunc, session *ssh.Session, throttleCh chan struct{}) error {
-	logger.Debug(c.server, "handle")
+	logger.Debug(c.server, "Creating handler for SSH session")
 
 	stdinPipe, err := session.StdinPipe()
 	if err != nil {
@@ -221,5 +208,6 @@ func (c *ServerConnection) handle(ctx context.Context, cancel context.CancelFunc
 
 	<-ctx.Done()
 	c.handler.Shutdown()
+
 	return nil
 }

@@ -331,7 +331,11 @@ func (h *ServerHandler) handleAckCommand(argc int, args []string) {
 		return
 	}
 	if args[1] == "close" && args[2] == "connection" {
-		close(h.ackCloseReceived)
+		select {
+		case <-h.ackCloseReceived:
+		default:
+			close(h.ackCloseReceived)
+		}
 	}
 }
 

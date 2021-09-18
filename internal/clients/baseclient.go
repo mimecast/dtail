@@ -113,12 +113,17 @@ func (c *baseClient) start(ctx context.Context, active chan struct{}, i int, con
 
 		time.Sleep(time.Second * 2)
 		logger.Debug(conn.Server(), "Reconnecting")
-		c.connections[i] = c.makeConnection(conn.Server(), c.sshAuthMethods, c.hostKeyCallback)
+		conn = c.makeConnection(conn.Server(), c.sshAuthMethods, c.hostKeyCallback)
+		c.connections[i] = conn
 	}
 }
 
 func (c *baseClient) makeConnection(server string, sshAuthMethods []gossh.AuthMethod, hostKeyCallback client.HostKeyCallback) connectors.Connector {
-	return connectors.NewServerConnection(server, c.UserName, sshAuthMethods, hostKeyCallback, c.maker.makeHandler(server), c.maker.makeCommands())
+	if c.Args.Serverless {
+		return connectors.NewServerless(c.UserName, c.maker.makeHandler(server), c.maker.makeCommands())
+	}
+	return connectors.NewServerConnection(server, c.UserName, sshAuthMethods,
+		hostKeyCallback, c.maker.makeHandler(server), c.maker.makeCommands())
 }
 
 func (c *baseClient) waitUntilDone(ctx context.Context, active chan struct{}) {

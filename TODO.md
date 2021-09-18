@@ -22,6 +22,13 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [ ] Document the two things above
 [x] Implement spartan mode
 [x] Make sure that diff is the same (plain file fs dcatted-file) in spartan mode
+[ ] Document servless mode
+[x] Implement serverless mode
+[ ] Fix serverless mode (e.g. dmap doesn't aggregate all lines)
 [ ] document spartan mode
 [ ] Default client log dir is ~/log not ./log
   [ ] Make sure dmap results aren't in color in local log file
+[ ] Unit test for dcat in serverless mode
+[ ] Unit test for dgrep in serverless mode
+[ ] Unit test for dmap in serverless mode
+[ ] Separate logger into server logger and client logger for serverless operation (e.g. server info logs are all Debug)

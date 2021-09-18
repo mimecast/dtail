@@ -18,12 +18,21 @@ dgrep:
 	../dgrep --servers serverlist.txt --files '/var/log/dserver/*' --regex MAPREDUCE --trustAllHosts
 dcat:
 	../dcat --servers serverlist.txt --files '/etc/passwd' --trustAllHosts
+dcat2:
+	../dcat /etc/passwd
 dmap:
 	../dmap --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts --query 'from stats select avg(goroutines),max(goroutines),min(goroutines),last(goroutines),count($$hostname),$$hostname group by $$hostname order by avg(goroutines)'
 dmap2:
 	../dmap --servers serverlist.txt --files '/var/log/mapr_testdata.log' --trustAllHosts --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-A.csv'
 	../dmap --servers serverlist.txt --files '/var/log/mapr_testdata.log' --trustAllHosts --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-B.csv'
+	../dmap --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-serverless.csv' ./mapr_testdata.log
 	@echo Expecting zero diff!
 	diff -u <(sort dmap2-A.csv) <(sort dmap2-B.csv)
+	diff -u <(sort dmap2-A.csv) <(sort dmap2-serverless.csv)
+dmap3:
+	../dmap --servers serverlist.txt --files '/var/log/mapr_testdata.log' --trustAllHosts --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-A.csv'
+	../dmap --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-serverless.csv' ./mapr_testdata.log
+	@echo Expecting zero diff!
+	diff -u <(sort dmap2-A.csv) <(sort dmap2-serverless.csv)
 spinup1:
 	docker run -p 2222:2222 dserver:develop
