@@ -38,9 +38,12 @@ func (c TailClient) makeHandler(server string) handlers.Handler {
 }
 
 func (c TailClient) makeCommands() (commands []string) {
-	options := fmt.Sprintf("quiet=%v", c.Args.Quiet)
 	for _, file := range strings.Split(c.What, ",") {
-		commands = append(commands, fmt.Sprintf("%s:%s %s %s", c.Mode.String(), options, file, c.Regex.Serialize()))
+		commands = append(commands, fmt.Sprintf("%s:%s %s %s",
+			c.Mode.String(),
+			c.Args.SerializeOptions(),
+			file,
+			c.Regex.Serialize()))
 	}
 	logger.Debug(commands)
 

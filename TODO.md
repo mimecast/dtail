@@ -20,3 +20,8 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [x] By default connect to localhost
 [x] Can use additional args as file lists
 [ ] Document the two things above
+[x] Implement spartan mode
+[x] Make sure that diff is the same (plain file fs dcatted-file) in spartan mode
+[ ] document spartan mode
+[ ] Default client log dir is ~/log not ./log
+  [ ] Make sure dmap results aren't in color in local log file

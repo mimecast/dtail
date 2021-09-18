@@ -45,6 +45,7 @@ type ServerHandler struct {
 	ackCloseReceived chan struct{}
 	activeCommands   int32
 	quiet            bool
+	spartan          bool
 	readBuf          bytes.Buffer
 	writeBuf         bytes.Buffer
 }
@@ -118,16 +119,18 @@ func (h *ServerHandler) Read(p []byte) (n int, err error) {
 		n = copy(p, h.readBuf.Bytes())
 
 	case line := <-h.lines:
-		h.readBuf.WriteString("REMOTE")
-		h.readBuf.WriteString(protocol.FieldDelimiter)
-		h.readBuf.WriteString(h.hostname)
-		h.readBuf.WriteString(protocol.FieldDelimiter)
-		h.readBuf.WriteString(fmt.Sprintf("%3d", line.TransmittedPerc))
-		h.readBuf.WriteString(protocol.FieldDelimiter)
-		h.readBuf.WriteString(fmt.Sprintf("%v", line.Count))
-		h.readBuf.WriteString(protocol.FieldDelimiter)
-		h.readBuf.WriteString(line.SourceID)
-		h.readBuf.WriteString(protocol.FieldDelimiter)
+		if !h.spartan {
+			h.readBuf.WriteString("REMOTE")
+			h.readBuf.WriteString(protocol.FieldDelimiter)
+			h.readBuf.WriteString(h.hostname)
+			h.readBuf.WriteString(protocol.FieldDelimiter)
+			h.readBuf.WriteString(fmt.Sprintf("%3d", line.TransmittedPerc))
+			h.readBuf.WriteString(protocol.FieldDelimiter)
+			h.readBuf.WriteString(fmt.Sprintf("%v", line.Count))
+			h.readBuf.WriteString(protocol.FieldDelimiter)
+			h.readBuf.WriteString(line.SourceID)
+			h.readBuf.WriteString(protocol.FieldDelimiter)
+		}
 		h.readBuf.WriteString(line.Content.String())
 		h.readBuf.WriteByte(protocol.MessageDelimiter)
 		n = copy(p, h.readBuf.Bytes())
@@ -275,6 +278,12 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 			h.quiet = true
 		}
 	}
+	if spartan, ok := options["spartan"]; ok {
+		if spartan == "true" {
+			logger.Debug(h.user, "Enabling spartan mode")
+			h.spartan = true
+		}
+	}
 
 	switch commandName {
 	case "grep", "cat":
@@ -397,6 +406,7 @@ func (h *ServerHandler) decrementActiveCommands() int32 {
 }
 
 func readOptions(opts []string) (map[string]string, error) {
+	logger.Debug("Parsing options", opts)
 	options := make(map[string]string, len(opts))
 
 	for _, o := range opts {
@@ -416,6 +426,7 @@ func readOptions(opts []string) (map[string]string, error) {
 			val = string(decoded)
 		}
 
+		logger.Debug("Setting option", key, val)
 		options[key] = val
 	}
 

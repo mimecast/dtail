@@ -8,7 +8,6 @@ import (
 	_ "net/http"
 	_ "net/http/pprof"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients"
@@ -30,7 +29,6 @@ func main() {
 	var displayColorTable bool
 	var displayVersion bool
 	var grep string
-	var noColor bool
 	var pprof int
 	var queryStr string
 	var shutdownAfter int
@@ -40,12 +38,13 @@ func main() {
 
 	flag.BoolVar(&args.Quiet, "quiet", false, "Quiet output mode")
 	flag.BoolVar(&args.RegexInvert, "invert", false, "Invert regex")
+	flag.BoolVar(&args.Spartan, "spartan", false, "Spartan output mode")
 	flag.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.BoolVar(&checkHealth, "checkHealth", false, "Only check for server health")
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayColorTable, "colorTable", false, "Show color table")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
-	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
+	flag.BoolVar(&args.NoColor, "noColor", false, "Disable ANSII terminal colors")
 	flag.IntVar(&args.ConnectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
 	flag.IntVar(&args.Timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
@@ -62,32 +61,21 @@ func main() {
 	flag.StringVar(&queryStr, "query", "", "Map reduce query")
 
 	flag.Parse()
-
-	if args.What == "" {
-		// Interpret additional args as file list.
-		var files []string
-		for _, file := range flag.Args() {
-			files = append(files, file)
-		}
-		args.What = strings.Join(files, ",")
-	}
-
 	if grep != "" {
 		args.RegexStr = grep
 	}
-
-	config.Read(cfgFile, sshPort)
-	if noColor {
-		config.Client.TermColorsEnable = false
-	}
+	args.Transform(flag.Args())
+	config.Read(cfgFile, sshPort, args.NoColor)
+	args.TransformAfterConfigFile()
 
 	if displayVersion {
 		version.PrintAndExit()
 	}
-	version.Print()
-
-	if displayColorTable {
-		color.TablePrintAndExit(debugEnable)
+	if !args.Spartan {
+		version.Print()
+		if displayColorTable {
+			color.TablePrintAndExit(debugEnable)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

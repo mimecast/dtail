@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,14 +31,35 @@ type Args struct {
 	SSHHostKeyCallback gossh.HostKeyCallback
 	PrivateKeyPathFile string
 	Quiet              bool
+	Spartan            bool
+	NoColor            bool
 }
 
-// When no servers are given, connect to localhost!
-func (a *Args) handleEmptyServer() {
-	if a.Discovery != "" || a.ServersStr != "" {
-		return
+// Transform the arguments based on certain conditions.
+func (a *Args) Transform(args []string) {
+	// Interpret additional args as file list.
+	if a.What == "" {
+		var files []string
+		for _, file := range flag.Args() {
+			files = append(files, file)
+		}
+		a.What = strings.Join(files, ",")
 	}
 
+	if a.Spartan {
+		a.Quiet = true
+		a.NoColor = true
+	}
+}
+
+// TransformAfterConfigFile same as Transform, but after the config file has been read.
+func (a *Args) TransformAfterConfigFile() {
+	if a.Discovery == "" && a.ServersStr == "" {
+		a.handleEmptyServer()
+	}
+}
+
+func (a *Args) handleEmptyServer() {
 	fqdn, err := os.Hostname()
 	if err != nil {
 		logger.FatalExit(err)
@@ -67,4 +89,8 @@ func (a *Args) handleEmptyServer() {
 
 	a.What = strings.Join(filePaths, ",")
 	logger.Debug("Clean file paths", a.What)
+}
+
+func (a *Args) SerializeOptions() string {
+	return fmt.Sprintf("quiet=%v:spartan=%v", a.Quiet, a.Spartan)
 }

@@ -5,7 +5,7 @@ import (
 )
 
 // Read the DTail configuration.
-func Read(configFile string, sshPort int) {
+func Read(configFile string, sshPort int, noColor bool) {
 	initializer := configInitializer{
 		Common: newDefaultCommonConfig(),
 		Server: newDefaultServerConfig(),
@@ -33,5 +33,8 @@ func Read(configFile string, sshPort int) {
 	// If non-standard port specified, overwrite config
 	if sshPort != 2222 {
 		Common.SSHPort = sshPort
+	}
+	if noColor {
+		Client.TermColorsEnable = false
 	}
 }

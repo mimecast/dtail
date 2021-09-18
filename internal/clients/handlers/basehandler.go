@@ -67,9 +67,12 @@ func (h *baseHandler) Write(p []byte) (n int, err error) {
 		*/
 		case '\n', protocol.MessageDelimiter:
 			message := h.receiveBuf.String()
-			if len(message) == 0 {
-				continue
-			}
+			/*
+				// dcat/grep should actually display empty lines.
+					if len(message) == 0 {
+						continue
+					}
+			*/
 			h.handleMessageType(message)
 			h.receiveBuf.Reset()
 		default:
@@ -93,12 +96,8 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 
 // Handle various message types.
 func (h *baseHandler) handleMessageType(message string) {
-	if len(message) == 0 {
-		return
-	}
-
 	// Hidden server commands starti with a dot "."
-	if message[0] == '.' {
+	if len(message) > 0 && message[0] == '.' {
 		h.handleHiddenMessage(message)
 		return
 	}

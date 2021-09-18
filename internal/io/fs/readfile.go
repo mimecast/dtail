@@ -182,11 +182,14 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Bu
 
 		switch b {
 		case '\n':
-			if message.Len() == 0 {
-				time.Sleep(time.Millisecond * 100)
-				continue
-			}
-			message.WriteString("\n")
+			/*
+				// dcat/dgrep should actually transfer empty lines
+					if message.Len() == 0 {
+						time.Sleep(time.Millisecond * 100)
+						continue
+					}
+			*/
+			//message.WriteString("\n")
 			select {
 			case rawLines <- message:
 				message = pool.BytesBuffer.Get().(*bytes.Buffer)

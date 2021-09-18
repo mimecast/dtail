@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"os"
-	"strings"
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/config"
@@ -20,16 +19,16 @@ func main() {
 	var cfgFile string
 	var debugEnable bool
 	var displayVersion bool
-	var noColor bool
 	var sshPort int
 
 	userName := user.Name()
 
+	flag.BoolVar(&args.Quiet, "quiet", false, "Quiet output mode")
+	flag.BoolVar(&args.Spartan, "spartan", false, "Spartan output mode")
 	flag.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Auto trust all unknown host keys")
 	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
-	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
-	flag.BoolVar(&args.Quiet, "quiet", false, "Quiet output mode")
+	flag.BoolVar(&args.NoColor, "noColor", false, "Disable ANSII terminal colors")
 	flag.IntVar(&args.ConnectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
 	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
@@ -40,25 +39,16 @@ func main() {
 	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
 
 	flag.Parse()
-
-	if args.What == "" {
-		// Interpret additional args as file list.
-		var files []string
-		for _, file := range flag.Args() {
-			files = append(files, file)
-		}
-		args.What = strings.Join(files, ",")
-	}
-
-	config.Read(cfgFile, sshPort)
-	if noColor {
-		config.Client.TermColorsEnable = false
-	}
+	args.Transform(flag.Args())
+	config.Read(cfgFile, sshPort, args.NoColor)
+	args.TransformAfterConfigFile()
 
 	if displayVersion {
 		version.PrintAndExit()
 	}
-	version.Print()
+	if !args.Spartan {
+		version.Print()
+	}
 
 	ctx := context.TODO()
 	logger.Start(ctx, logger.Modes{

@@ -43,8 +43,8 @@ func main() {
 	flag.StringVar(&logDir, "logDir", "", "Log dir path")
 
 	flag.Parse()
-	config.Read(cfgFile, sshPort)
-	config.Client.TermColorsEnable = color
+	config.Read(cfgFile, sshPort, !color)
+
 	if logDir != "" {
 		config.Common.LogDir = logDir
 		if config.Common.LogStrategy == "" {
