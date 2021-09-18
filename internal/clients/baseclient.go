@@ -41,6 +41,9 @@ type baseClient struct {
 func (c *baseClient) init() {
 	logger.Debug("Initiating base client")
 
+	// When empty server list provided, connect to localhost by default.
+	c.Args.handleEmptyServer()
+
 	flag := regex.Default
 	if c.Args.RegexInvert {
 		flag = regex.Invert

@@ -12,10 +12,12 @@ spindown:
 	./spindown.sh 10
 dtail:
 	../dtail --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts --debug
+dtail2:
+	../dtail --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts --debug --query 'from stats select max(goroutines),count($$hostname),$$hostname,last($$time) group by $$hostname order by max(goroutines)'
 dgrep:
 	../dgrep --servers serverlist.txt --files '/var/log/dserver/*' --regex MAPREDUCE --trustAllHosts
 dcat:
-	../dcat --servers serverlist.txt --files '/etc/passwd' --trustAllHosts --debug
+	../dcat --servers serverlist.txt --files '/etc/passwd' --trustAllHosts
 dmap:
 	../dmap --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts --query 'from stats select avg(goroutines),max(goroutines),min(goroutines),last(goroutines),count($$hostname),$$hostname group by $$hostname order by avg(goroutines)'
 dmap2:
