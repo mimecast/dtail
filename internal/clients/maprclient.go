@@ -11,7 +11,7 @@ import (
 	"github.com/mimecast/dtail/internal/clients/handlers"
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/omode"
 )
@@ -44,14 +44,14 @@ type MaprClient struct {
 }
 
 // NewMaprClient returns a new mapreduce client.
-func NewMaprClient(args Args, queryStr string, maprClientMode MaprClientMode) (*MaprClient, error) {
+func NewMaprClient(args config.Args, queryStr string, maprClientMode MaprClientMode) (*MaprClient, error) {
 	if queryStr == "" {
 		return nil, errors.New("No mapreduce query specified, use '-query' flag")
 	}
 
 	query, err := mapr.NewQuery(queryStr)
 	if err != nil {
-		logger.FatalExit(queryStr, "Can't parse mapr query", err)
+		dlog.Client.FatalPanic(queryStr, "Can't parse mapr query", err)
 	}
 
 	// Don't retry connection if in tail mode and no outfile specified.
@@ -68,7 +68,7 @@ func NewMaprClient(args Args, queryStr string, maprClientMode MaprClientMode) (*
 		cumulative = args.Mode == omode.MapClient || query.HasOutfile()
 	}
 
-	logger.Debug("Cumulative mapreduce mode?", cumulative)
+	dlog.Client.Debug("Cumulative mapreduce mode?", cumulative)
 
 	c := MaprClient{
 		baseClient: baseClient{
@@ -103,7 +103,7 @@ func (c *MaprClient) Start(ctx context.Context, statsCh <-chan string) (status i
 
 	status = c.baseClient.Start(ctx, statsCh)
 	if c.cumulative {
-		logger.Debug("Received final mapreduce result")
+		dlog.Client.Debug("Received final mapreduce result")
 		c.reportResults()
 	}
 
@@ -123,15 +123,17 @@ func (c MaprClient) makeCommands() (commands []string) {
 	}
 
 	for _, file := range strings.Split(c.What, ",") {
+		regex, err := c.Regex.Serialize()
+		if err != nil {
+			dlog.Client.FatalPanic(err)
+		}
 		if c.Timeout > 0 {
-			commands = append(commands, fmt.Sprintf("timeout %d %s %s %s", c.Timeout, modeStr, file, c.Regex.Serialize()))
+			commands = append(commands, fmt.Sprintf("timeout %d %s %s %s", c.Timeout,
+				modeStr, file, regex))
 			continue
 		}
 		commands = append(commands, fmt.Sprintf("%s:%s %s %s",
-			modeStr,
-			c.Args.SerializeOptions(),
-			file,
-			c.Regex.Serialize()))
+			modeStr, c.Args.SerializeOptions(), file, regex))
 	}
 
 	return
@@ -141,7 +143,7 @@ func (c *MaprClient) periodicReportResults(ctx context.Context) {
 	for {
 		select {
 		case <-time.After(c.query.Interval):
-			logger.Debug("Gathering interim mapreduce result")
+			dlog.Client.Debug("Gathering interim mapreduce result")
 			c.reportResults()
 		case <-ctx.Done():
 			return
@@ -177,17 +179,17 @@ func (c *MaprClient) printResults() {
 	}
 
 	if err != nil {
-		logger.FatalExit(err)
+		dlog.Client.FatalPanic(err)
 	}
 
 	if result == c.lastResult {
-		logger.Debug("Result hasn't changed compared to last time...")
+		dlog.Client.Debug("Result hasn't changed compared to last time...")
 		return
 	}
 	c.lastResult = result
 
 	if numRows == 0 {
-		logger.Debug("Empty result set this time...")
+		dlog.Client.Debug("Empty result set this time...")
 		return
 	}
 
@@ -198,24 +200,24 @@ func (c *MaprClient) printResults() {
 			config.Client.TermColors.MaprTable.RawQueryBg,
 			config.Client.TermColors.MaprTable.RawQueryAttr)
 	}
-	logger.Raw(rawQuery)
+	dlog.Client.Raw(rawQuery)
 
 	if rowsLimit > 0 && numRows > rowsLimit {
-		logger.Warn(fmt.Sprintf("Got %d results but limited output to %d rows! Use 'limit' clause to override!",
+		dlog.Client.Warn(fmt.Sprintf("Got %d results but limited output to %d rows! Use 'limit' clause to override!",
 			numRows, rowsLimit))
 	}
-	logger.Raw(result)
+	dlog.Client.Raw(result)
 }
 
 func (c *MaprClient) writeResultsToOutfile() {
 	if c.cumulative {
 		if err := c.globalGroup.WriteResult(c.query); err != nil {
-			logger.FatalExit(err)
+			dlog.Client.FatalPanic(err)
 		}
 		return
 	}
 
 	if err := c.globalGroup.SwapOut().WriteResult(c.query); err != nil {
-		logger.FatalExit(err)
+		dlog.Client.FatalPanic(err)
 	}
 }

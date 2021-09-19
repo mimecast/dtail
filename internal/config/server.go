@@ -76,6 +76,7 @@ func newDefaultServerConfig() *ServerConfig {
 		MaxConcurrentTails: 50,
 		HostKeyFile:        "./cache/ssh_host_key",
 		HostKeyBits:        4096,
+		MapreduceLogFormat: "default",
 		Permissions: Permissions{
 			Default: defaultPermissions,
 		},

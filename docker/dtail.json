@@ -33,7 +33,7 @@
     "TmpDir" : "tmp",
     "LogStrategy": "daily",
     "SSHPort": 2222,
-    "DebugEnable": true,
+    "LogLevel": "DEVEL",
     "ExperimentalFeaturesEnable": false
   }
 }

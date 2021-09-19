@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 )
 
 // QueryOperation determines the mapreduce operation.
@@ -168,7 +168,7 @@ func (wc *whereCondition) floatClause(lValue float64, rValue float64) bool {
 	case FloatGe:
 		return lValue >= rValue
 	default:
-		logger.Error("Unknown float operation", lValue, wc.Operation, rValue)
+		dlog.Common.Error("Unknown float operation", lValue, wc.Operation, rValue)
 	}
 
 	return false
@@ -193,7 +193,7 @@ func (wc *whereCondition) stringClause(lValue string, rValue string) bool {
 	case StringNotHasSuffix:
 		return !strings.HasSuffix(lValue, rValue)
 	default:
-		logger.Error("Unknown string operation", lValue, wc.Operation, rValue)
+		dlog.Common.Error("Unknown string operation", lValue, wc.Operation, rValue)
 	}
 
 	return false

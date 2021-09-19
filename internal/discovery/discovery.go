@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 )
 
 // ServerOrder to specify how to sort the server list.
@@ -42,7 +42,7 @@ func New(method, server string, order ServerOrder) *Discovery {
 	if strings.Contains(module, ":") {
 		s := strings.Split(module, ":")
 		if len(s) != 2 {
-			logger.FatalExit("Unable to parse discovery module", module)
+			dlog.Common.FatalPanic("Unable to parse discovery module", module)
 		}
 		module = s[0]
 		options = s[1]
@@ -72,11 +72,11 @@ func (d *Discovery) initRegex() {
 	}
 
 	regexStr := string(runes)
-	logger.Debug("Using filter regex", regexStr)
+	dlog.Common.Debug("Using filter regex", regexStr)
 
 	regex, err := regexp.Compile(regexStr)
 	if err != nil {
-		logger.FatalExit("Could not compile regex", regexStr, err)
+		dlog.Common.FatalPanic("Could not compile regex", regexStr, err)
 	}
 
 	d.regex = regex
@@ -97,7 +97,7 @@ func (d *Discovery) ServerList() []string {
 		servers = d.shuffleList(servers)
 	}
 
-	logger.Debug("Discovered servers", len(servers), servers)
+	dlog.Common.Debug("Discovered servers", len(servers), servers)
 	return servers
 }
 
@@ -124,7 +124,7 @@ func (d *Discovery) serverListFromReflectedModule() []string {
 	rt := reflect.TypeOf(d)
 	reflectedMethod, ok := rt.MethodByName(methodName)
 	if !ok {
-		logger.FatalExit("No such server discovery module", d.module, methodName)
+		dlog.Common.FatalPanic("No such server discovery module", d.module, methodName)
 	}
 
 	inputValues := make([]reflect.Value, 1)
@@ -138,7 +138,7 @@ func (d *Discovery) serverListFromReflectedModule() []string {
 
 // Filter server list based on a regexp.
 func (d *Discovery) filterList(servers []string) (filtered []string) {
-	logger.Debug("Filtering server list")
+	dlog.Common.Debug("Filtering server list")
 
 	for _, server := range servers {
 		if d.regex.MatchString(server) {
@@ -160,13 +160,13 @@ func (d *Discovery) dedupList(servers []string) (deduped []string) {
 		}
 	}
 
-	logger.Debug("Deduped server list", len(servers), len(deduped))
+	dlog.Common.Debug("Deduped server list", len(servers), len(deduped))
 	return
 }
 
 // Randomly shuffle the server list.
 func (d *Discovery) shuffleList(servers []string) []string {
-	logger.Debug("Shuffling server list")
+	dlog.Common.Debug("Shuffling server list")
 
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 	shuffled := make([]string, len(servers))

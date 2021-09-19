@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal/io/line"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/regex"
 
@@ -62,7 +62,7 @@ func (f readFile) Retry() bool {
 
 // Start tailing a log file.
 func (f readFile) Start(ctx context.Context, lines chan<- line.Line, re regex.Regex) error {
-	logger.Debug("readFile", f)
+	dlog.Common.Debug("readFile", f)
 	defer func() {
 		select {
 		case <-f.limiter:
@@ -74,7 +74,7 @@ func (f readFile) Start(ctx context.Context, lines chan<- line.Line, re regex.Re
 	case f.limiter <- struct{}{}:
 	default:
 		select {
-		case f.serverMessages <- logger.Warn(f.filePath, f.globID, "Server limit reached. Queuing file..."):
+		case f.serverMessages <- dlog.Common.Warn(f.filePath, f.globID, "Server limit reached. Queuing file..."):
 		case <-ctx.Done():
 			return nil
 		}
@@ -126,7 +126,7 @@ func (f readFile) makeReader(fd *os.File) (reader *bufio.Reader, err error) {
 	case strings.HasSuffix(f.FilePath(), ".gz"):
 		fallthrough
 	case strings.HasSuffix(f.FilePath(), ".gzip"):
-		logger.Info(f.FilePath(), "Detected gzip compression format")
+		dlog.Common.Info(f.FilePath(), "Detected gzip compression format")
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(fd)
 		if err != nil {
@@ -134,7 +134,7 @@ func (f readFile) makeReader(fd *os.File) (reader *bufio.Reader, err error) {
 		}
 		reader = bufio.NewReader(gzipReader)
 	case strings.HasSuffix(f.FilePath(), ".zst"):
-		logger.Info(f.FilePath(), "Detected zstd compression format")
+		dlog.Common.Info(f.FilePath(), "Detected zstd compression format")
 		reader = bufio.NewReader(zstd.NewReader(fd))
 	default:
 		reader = bufio.NewReader(fd)
@@ -172,7 +172,7 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Bu
 			default:
 			}
 			if !f.seekEOF {
-				logger.Info(f.FilePath(), "End of file reached")
+				dlog.Common.Info(f.FilePath(), "End of file reached")
 				return nil
 			}
 			time.Sleep(time.Millisecond * 100)
@@ -201,7 +201,7 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Bu
 		default:
 			if message.Len() >= lineLengthThreshold {
 				if !warnedAboutLongLine {
-					f.serverMessages <- logger.Warn(f.filePath, "Long log line, splitting into multiple lines")
+					f.serverMessages <- dlog.Common.Warn(f.filePath, "Long log line, splitting into multiple lines")
 					warnedAboutLongLine = true
 				}
 				message.WriteString("\n")
@@ -268,7 +268,7 @@ func (f readFile) transmittable(lineBytes *bytes.Buffer, length, capacity int, r
 
 // Check wether log file is truncated. Returns nil if not.
 func (f readFile) truncated(fd *os.File) (bool, error) {
-	logger.Debug(f.filePath, "File truncation check")
+	dlog.Common.Debug(f.filePath, "File truncation check")
 
 	// Can not seek currently open FD.
 	curPos, err := fd.Seek(0, os.SEEK_CUR)

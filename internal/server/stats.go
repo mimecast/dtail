@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 )
 
 // Used to collect and display various server stats.
@@ -41,7 +41,7 @@ func (s *stats) hasConnections() bool {
 	s.mutex.Unlock()
 
 	has := currentConnections > 0
-	logger.Info("stats", "Server with open connections?", has, currentConnections)
+	dlog.Server.Info("stats", "Server with open connections?", has, currentConnections)
 
 	return has
 }
@@ -57,7 +57,7 @@ func (s *stats) logServerStats() {
 	data["cgocalls"] = runtime.NumCgoCall()
 	data["cpu"] = runtime.NumCPU()
 
-	logger.Mapreduce("STATS", data)
+	dlog.Server.Mapreduce("STATS", data)
 }
 
 func (s *stats) serverLimitExceeded() error {

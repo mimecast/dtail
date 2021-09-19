@@ -3,7 +3,7 @@ package mapr
 import (
 	"strconv"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 )
 
 // WhereClause interprets the where clause of the mapreduce query.
@@ -55,7 +55,7 @@ func whereClauseFloatValue(fields map[string]string, str string, float float64, 
 		}
 		return f, true
 	default:
-		logger.Error("Unexpected argument in 'where' clause", str, float, t)
+		dlog.Common.Error("Unexpected argument in 'where' clause", str, float, t)
 		return 0, false
 	}
 }
@@ -71,7 +71,7 @@ func whereClauseStringValue(fields map[string]string, str string, t fieldType) (
 	case String:
 		return str, true
 	default:
-		logger.Error("Unexpected argument in 'where' clause", str, t)
+		dlog.Common.Error("Unexpected argument in 'where' clause", str, t)
 		return str, false
 	}
 }

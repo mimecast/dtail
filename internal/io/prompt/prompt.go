@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 )
 
 // Answer is a user input of a prompt question.
@@ -58,7 +58,7 @@ func (p *Prompt) Add(answer Answer) {
 // Ask a question.
 func (p *Prompt) Ask() {
 	reader := bufio.NewReader(os.Stdin)
-	logger.Pause()
+	dlog.Common.Pause()
 
 	for {
 		fmt.Print(p.askString())
@@ -70,7 +70,7 @@ func (p *Prompt) Ask() {
 			}
 
 			if !a.AskAgain {
-				logger.Resume()
+				dlog.Common.Resume()
 				if a.EndCallback != nil {
 					a.EndCallback()
 				}

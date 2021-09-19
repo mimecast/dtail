@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/mapr"
 )
 
@@ -76,12 +75,10 @@ func (p *Parser) MakeFields(maprLine string) (fields map[string]string, err erro
 
 	if errInterface == nil {
 		fields, err = returnValues[0].Interface().(map[string]string), nil
-		logger.Trace("parser.MakeFields", fields, err)
 		return
 	}
 
 	fields, err = returnValues[0].Interface().(map[string]string), errInterface.(error)
-	logger.Trace("parser.MakeFields", fields, err)
 
 	return
 }

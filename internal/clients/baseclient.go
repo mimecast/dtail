@@ -6,8 +6,9 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients/connectors"
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/discovery"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/regex"
 	"github.com/mimecast/dtail/internal/ssh/client"
@@ -17,7 +18,7 @@ import (
 
 // This is the main client data structure.
 type baseClient struct {
-	Args
+	config.Args
 	// To display client side stats
 	stats *stats
 	// List of remote servers to connect to.
@@ -39,7 +40,8 @@ type baseClient struct {
 }
 
 func (c *baseClient) init() {
-	logger.Debug("Initiating base client")
+	dlog.Client.Debug("Initiating base client")
+	dlog.Client.Debug(c.Args.String())
 
 	flag := regex.Default
 	if c.Args.RegexInvert {
@@ -47,11 +49,14 @@ func (c *baseClient) init() {
 	}
 	regex, err := regex.New(c.Args.RegexStr, flag)
 	if err != nil {
-		logger.FatalExit(c.Regex, "invalid regex!", err, regex)
+		dlog.Client.FatalPanic(c.Regex, "invalid regex!", err, regex)
 	}
 	c.Regex = regex
-	logger.Debug("Regex", c.Regex)
+	dlog.Client.Debug("Regex", c.Regex)
 
+	if c.Args.Serverless {
+		return
+	}
 	c.sshAuthMethods, c.hostKeyCallback = client.InitSSHAuthMethods(c.Args.SSHAuthMethods, c.Args.SSHHostKeyCallback, c.Args.TrustAllHosts, c.throttleCh, c.Args.PrivateKeyPathFile)
 }
 
@@ -67,8 +72,11 @@ func (c *baseClient) makeConnections(maker maker) {
 }
 
 func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status int) {
-	// Periodically check for unknown hosts, and ask the user whether to trust them or not.
-	go c.hostKeyCallback.PromptAddHosts(ctx)
+	// Can be nil when serverless.
+	if c.hostKeyCallback != nil {
+		// Periodically check for unknown hosts, and ask the user whether to trust them or not.
+		go c.hostKeyCallback.PromptAddHosts(ctx)
+	}
 	// Print client stats every time something on statsCh is recieved.
 	go c.stats.Start(ctx, c.throttleCh, statsCh, c.Args.Quiet)
 
@@ -112,7 +120,7 @@ func (c *baseClient) start(ctx context.Context, active chan struct{}, i int, con
 		}
 
 		time.Sleep(time.Second * 2)
-		logger.Debug(conn.Server(), "Reconnecting")
+		dlog.Client.Debug(conn.Server(), "Reconnecting")
 		conn = c.makeConnection(conn.Server(), c.sshAuthMethods, c.hostKeyCallback)
 		c.connections[i] = conn
 	}
@@ -127,7 +135,7 @@ func (c *baseClient) makeConnection(server string, sshAuthMethods []gossh.AuthMe
 }
 
 func (c *baseClient) waitUntilDone(ctx context.Context, active chan struct{}) {
-	defer logger.Debug("Terminated connection")
+	defer dlog.Client.Debug("Terminated connection")
 
 	// We want to have at least one active connection
 	<-active
@@ -143,7 +151,7 @@ func (c *baseClient) waitUntilDone(ctx context.Context, active chan struct{}) {
 		if numActive == 0 {
 			return
 		}
-		logger.Debug("Active connections", numActive)
+		dlog.Client.Debug("Active connections", numActive)
 		time.Sleep(time.Second)
 	}
 }

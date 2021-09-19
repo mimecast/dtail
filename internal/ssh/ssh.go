@@ -11,7 +11,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -58,7 +58,7 @@ func Agent() (gossh.AuthMethod, error) {
 		return nil, err
 	}
 	for i, key := range keys {
-		logger.Debug("Public key", i, key)
+		dlog.Common.Debug("Public key", i, key)
 	}
 	return gossh.PublicKeysCallback(agentClient.Signers), nil
 }
@@ -106,7 +106,7 @@ func KeyFile(keyFile string) (gossh.AuthMethod, error) {
 func PrivateKey(keyFile string) (gossh.AuthMethod, error) {
 	signer, err := KeyFile(keyFile)
 	if err != nil {
-		logger.Debug(keyFile, err)
+		dlog.Common.Debug(keyFile, err)
 		return nil, err
 	}
 	return gossh.AuthMethod(signer), nil

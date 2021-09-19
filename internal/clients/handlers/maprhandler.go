@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/mimecast/dtail/internal"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/mapr/client"
 	"github.com/mimecast/dtail/internal/protocol"
@@ -40,7 +40,7 @@ func (h *MaprHandler) Write(p []byte) (n int, err error) {
 			continue
 		case protocol.MessageDelimiter:
 			message := h.baseHandler.receiveBuf.String()
-			logger.Debug(message)
+			dlog.Client.Debug(message)
 			if message[0] == 'A' {
 				h.handleAggregateMessage(message)
 			} else {
@@ -60,10 +60,10 @@ func (h *MaprHandler) Write(p []byte) (n int, err error) {
 func (h *MaprHandler) handleAggregateMessage(message string) {
 	parts := strings.SplitN(message, protocol.FieldDelimiter, 3)
 	if len(parts) != 3 {
-		logger.Error("Unable to aggregate data", h.server, message, parts, len(parts), "expected 3 parts")
+		dlog.Client.Error("Unable to aggregate data", h.server, message, parts, len(parts), "expected 3 parts")
 		return
 	}
 	if err := h.aggregate.Aggregate(parts[2]); err != nil {
-		logger.Error("Unable to aggregate data", h.server, message, err)
+		dlog.Client.Error("Unable to aggregate data", h.server, message, err)
 	}
 }

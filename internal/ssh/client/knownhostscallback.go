@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/prompt"
 
 	"golang.org/x/crypto/ssh"
@@ -97,7 +97,7 @@ func (c KnownHostsCallback) Wrap() ssh.HostKeyCallback {
 			responseCh: make(chan response),
 		}
 
-		logger.Warn("Encountered unknown host", unknown)
+		dlog.Common.Warn("Encountered unknown host", unknown)
 		// Notify user that there is an unknown host
 		c.unknownCh <- unknown
 
@@ -139,7 +139,7 @@ func (c KnownHostsCallback) PromptAddHosts(ctx context.Context) {
 				hosts = []unknownHost{}
 			}
 		case <-ctx.Done():
-			logger.Debug("Stopping goroutine prompting new hosts...")
+			dlog.Common.Debug("Stopping goroutine prompting new hosts...")
 			return
 		}
 	}
@@ -154,7 +154,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 
 	select {
 	case <-c.trustAllHostsCh:
-		logger.Warn("Trusting host keys of servers", servers)
+		dlog.Common.Warn("Trusting host keys of servers", servers)
 		c.trustHosts(hosts)
 		return
 	default:
@@ -175,7 +175,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 			c.trustHosts(hosts)
 		},
 		EndCallback: func() {
-			logger.Info("Added hosts to known hosts file", c.knownHostsPath)
+			dlog.Common.Info("Added hosts to known hosts file", c.knownHostsPath)
 		},
 	}
 	p.Add(a)
@@ -188,7 +188,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 			c.trustHosts(hosts)
 		},
 		EndCallback: func() {
-			logger.Info("Added hosts to known hosts file", c.knownHostsPath)
+			dlog.Common.Info("Added hosts to known hosts file", c.knownHostsPath)
 		},
 	}
 	p.Add(a)
@@ -200,7 +200,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 			c.dontTrustHosts(hosts)
 		},
 		EndCallback: func() {
-			logger.Info("Didn't add hosts to known hosts file", c.knownHostsPath)
+			dlog.Common.Info("Didn't add hosts to known hosts file", c.knownHostsPath)
 		},
 	}
 	p.Add(a)

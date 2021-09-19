@@ -7,7 +7,7 @@ import (
 	osUser "os/user"
 
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	user "github.com/mimecast/dtail/internal/user/server"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -16,7 +16,7 @@ import (
 // PublicKeyCallback is for the server to check whether a public SSH key is authorized ot not.
 func PublicKeyCallback(c gossh.ConnMetadata, offeredPubKey gossh.PublicKey) (*gossh.Permissions, error) {
 	user := user.New(c.User(), c.RemoteAddr().String())
-	logger.Info(user, "Incoming authorization")
+	dlog.Common.Info(user, "Incoming authorization")
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -24,7 +24,7 @@ func PublicKeyCallback(c gossh.ConnMetadata, offeredPubKey gossh.PublicKey) (*go
 	}
 
 	if config.ServerRelaxedAuthEnable {
-		logger.Fatal(user, "Granting permissions via relaxed-auth")
+		dlog.Common.Fatal(user, "Granting permissions via relaxed-auth")
 		return nil, nil
 	}
 
@@ -38,7 +38,7 @@ func PublicKeyCallback(c gossh.ConnMetadata, offeredPubKey gossh.PublicKey) (*go
 		authorizedKeysFile = user.HomeDir + "/.ssh/authorized_keys"
 	}
 
-	logger.Info(user, "Reading", authorizedKeysFile)
+	dlog.Common.Info(user, "Reading", authorizedKeysFile)
 	authorizedKeysBytes, err := ioutil.ReadFile(authorizedKeysFile)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to read authorized keys file|%s|%s|%s", authorizedKeysFile, user, err.Error())
@@ -53,10 +53,10 @@ func PublicKeyCallback(c gossh.ConnMetadata, offeredPubKey gossh.PublicKey) (*go
 		authorizedKeysMap[string(authorizedPubKey.Marshal())] = true
 		authorizedKeysBytes = restBytes
 
-		logger.Debug(user, "Authorized public key fingerprint", gossh.FingerprintSHA256(authorizedPubKey))
+		dlog.Common.Debug(user, "Authorized public key fingerprint", gossh.FingerprintSHA256(authorizedPubKey))
 	}
 
-	logger.Debug(user, "Offered public key fingerprint", gossh.FingerprintSHA256(offeredPubKey))
+	dlog.Common.Debug(user, "Offered public key fingerprint", gossh.FingerprintSHA256(offeredPubKey))
 
 	if authorizedKeysMap[string(offeredPubKey.Marshal())] {
 		return &gossh.Permissions{

@@ -6,7 +6,7 @@ import (
 
 	"github.com/mimecast/dtail/internal/clients/handlers"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	serverHandlers "github.com/mimecast/dtail/internal/server/handlers"
 	user "github.com/mimecast/dtail/internal/user/server"
 )
@@ -26,7 +26,7 @@ func NewServerless(userName string, handler handlers.Handler, commands []string)
 		commands: commands,
 	}
 
-	logger.Debug("Creating new serverless connector", handler, commands)
+	dlog.Client.Debug("Creating new serverless connector", handler, commands)
 	return &s
 }
 
@@ -43,7 +43,7 @@ func (s *Serverless) Start(ctx context.Context, cancel context.CancelFunc, throt
 		defer cancel()
 
 		if err := s.handle(ctx, cancel); err != nil {
-			logger.Warn(err)
+			dlog.Client.Warn(err)
 		}
 	}()
 
@@ -51,7 +51,7 @@ func (s *Serverless) Start(ctx context.Context, cancel context.CancelFunc, throt
 }
 
 func (s *Serverless) handle(ctx context.Context, cancel context.CancelFunc) error {
-	logger.Debug("Creating server handler for a serverless session")
+	dlog.Client.Debug("Creating server handler for a serverless session")
 
 	serverHandler := serverHandlers.NewServerHandler(
 		user.New(s.userName, s.Server()),
@@ -59,14 +59,19 @@ func (s *Serverless) handle(ctx context.Context, cancel context.CancelFunc) erro
 		make(chan struct{}, config.Server.MaxConcurrentTails),
 	)
 
+	terminate := func() {
+		serverHandler.Shutdown()
+		cancel()
+	}
+
 	go func() {
 		io.Copy(serverHandler, s.handler)
-		cancel()
+		terminate()
 	}()
 
 	go func() {
 		io.Copy(s.handler, serverHandler)
-		cancel()
+		terminate()
 	}()
 
 	go func() {
@@ -74,12 +79,12 @@ func (s *Serverless) handle(ctx context.Context, cancel context.CancelFunc) erro
 		case <-s.handler.Done():
 		case <-ctx.Done():
 		}
-		cancel()
+		terminate()
 	}()
 
 	// Send all commands to client.
 	for _, command := range s.commands {
-		logger.Debug(command)
+		dlog.Client.Debug(command)
 		s.handler.SendMessage(command)
 	}
 

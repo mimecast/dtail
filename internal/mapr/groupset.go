@@ -11,7 +11,7 @@ import (
 
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/protocol"
 )
@@ -189,7 +189,7 @@ func (g *GroupSet) WriteResult(query *Query) error {
 		return err
 	}
 
-	logger.Info("Writing outfile", query.Outfile)
+	dlog.Common.Info("Writing outfile", query.Outfile)
 	tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile)
 
 	file, err := os.Create(tmpOutfile)

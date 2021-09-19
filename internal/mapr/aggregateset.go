@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/protocol"
 )
@@ -37,7 +37,7 @@ func (s *AggregateSet) String() string {
 // Merge one aggregate set into this one.
 func (s *AggregateSet) Merge(query *Query, set *AggregateSet) error {
 	s.Samples += set.Samples
-	//logger.Trace("Merge", set)
+	//dlog.Common.Trace("Merge", set)
 
 	for _, sc := range query.Select {
 		storage := sc.FieldStorage
@@ -70,7 +70,7 @@ func (s *AggregateSet) Merge(query *Query, set *AggregateSet) error {
 
 // Serialize the aggregate set so it can be sent over the wire.
 func (s *AggregateSet) Serialize(ctx context.Context, groupKey string, ch chan<- string) {
-	logger.Trace("Serialising mapr.AggregateSet", s)
+	dlog.Common.Trace("Serialising mapr.AggregateSet", s)
 	sb := pool.BuilderBuffer.Get().(*strings.Builder)
 	defer pool.RecycleBuilderBuffer(sb)
 

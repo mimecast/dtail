@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 // Regex for filtering lines.
@@ -91,17 +89,17 @@ func (r Regex) MatchString(str string) bool {
 }
 
 // Serialize the regex.
-func (r Regex) Serialize() string {
+func (r Regex) Serialize() (string, error) {
 	var flags []string
 	for _, flag := range r.flags {
 		flags = append(flags, flag.String())
 	}
 
 	if !r.initialized {
-		logger.FatalExit("Unable to serialize regex as not initialized properly", r)
+		return "", fmt.Errorf("Unable to serialize regex as not initialized properly: %v", r)
 	}
 
-	return fmt.Sprintf("regex:%s %s", strings.Join(flags, ","), r.regexStr)
+	return fmt.Sprintf("regex:%s %s", strings.Join(flags, ","), r.regexStr), nil
 }
 
 // Deserialize the regex.
@@ -109,7 +107,6 @@ func Deserialize(str string) (Regex, error) {
 	// Get regex string
 	s := strings.SplitN(str, " ", 2)
 	if len(s) < 2 {
-		logger.Debug("Using noop regex", str)
 		return NewNoop(), nil
 	}
 
@@ -127,10 +124,8 @@ func Deserialize(str string) (Regex, error) {
 		for _, flagStr := range strings.Split(s[1], ",") {
 			flag, err := NewFlag(flagStr)
 			if err != nil {
-				logger.Error("ignoring flag", err)
 				continue
 			}
-			logger.Debug("Adding regex flag", flag)
 			flags = append(flags, flag)
 		}
 	}

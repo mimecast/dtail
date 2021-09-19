@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/mimecast/dtail/internal/io/logger"
 )
 
 const (
@@ -67,8 +65,6 @@ func NewQuery(queryStr string) (*Query, error) {
 	}
 
 	err := q.parse(tokens)
-
-	logger.Debug(q)
 	return &q, err
 }
 

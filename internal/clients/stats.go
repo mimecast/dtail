@@ -10,7 +10,7 @@ import (
 
 	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -67,7 +67,7 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 			s.printStatsDueInterrupt(messages)
 		default:
 			data := s.statsData(connected, newConnections, throttle)
-			logger.Mapreduce("STATS", data)
+			dlog.Client.Mapreduce("STATS", data)
 		}
 
 		connectedLast = connected
@@ -78,7 +78,7 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <
 }
 
 func (s *stats) printStatsDueInterrupt(messages []string) {
-	logger.Pause()
+	dlog.Client.Pause()
 	for i, message := range messages {
 		if i > 0 && config.Client.TermColorsEnable {
 			fmt.Println(color.PaintStrWithAttr(message,
@@ -91,7 +91,7 @@ func (s *stats) printStatsDueInterrupt(messages []string) {
 		fmt.Println(fmt.Sprintf(" %s", message))
 	}
 	time.Sleep(time.Second * time.Duration(config.InterruptTimeoutS))
-	logger.Resume()
+	dlog.Client.Resume()
 }
 
 func (s *stats) statsData(connected, newConnections int, throttle int) map[string]interface{} {

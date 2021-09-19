@@ -6,10 +6,8 @@ type CommonConfig struct {
 	SSHPort int
 	// Enable experimental features (mainly for dev purposes)
 	ExperimentalFeaturesEnable bool `json:",omitempty"`
-	// Enable debug logging. Don't enable in production.
-	DebugEnable bool `json:",omitempty"`
-	// Enable trace logging. Don't enable in production.
-	TraceEnable bool `json:",omitempty"`
+	// LogLevel defines how much is logged. TODO: Adjust JSONschema
+	LogLevel string `json:",omitempty"`
 	// The log strategy to use, one of
 	//   stdout: only log to stdout (useful when used with systemd)
 	//   daily: create a log file for every day
@@ -26,8 +24,6 @@ type CommonConfig struct {
 func newDefaultCommonConfig() *CommonConfig {
 	return &CommonConfig{
 		SSHPort:                    2222,
-		DebugEnable:                false,
-		TraceEnable:                false,
 		ExperimentalFeaturesEnable: false,
 		LogDir:                     "log",
 		CacheDir:                   "cache",

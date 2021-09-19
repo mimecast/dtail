@@ -16,7 +16,7 @@ import (
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/line"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/mapr/server"
 	"github.com/mimecast/dtail/internal/omode"
@@ -66,7 +66,7 @@ func NewServerHandler(user *user.User, catLimiter, tailLimiter chan struct{}) *S
 
 	fqdn, err := os.Hostname()
 	if err != nil {
-		logger.FatalExit(err)
+		dlog.Server.FatalPanic(err)
 	}
 
 	s := strings.Split(fqdn, ".")
@@ -165,18 +165,18 @@ func (h *ServerHandler) Write(p []byte) (n int, err error) {
 }
 
 func (h *ServerHandler) handleCommand(commandStr string) {
-	logger.Debug(h.user, commandStr)
+	dlog.Server.Debug(h.user, commandStr)
 	ctx := context.Background()
 
 	args, argc, add, err := h.handleProtocolVersion(strings.Split(commandStr, " "))
 	if err != nil {
-		h.send(h.serverMessages, logger.Error(h.user, err)+add)
+		h.send(h.serverMessages, dlog.Server.Error(h.user, err)+add)
 		return
 	}
 
 	args, argc, err = h.handleBase64(args, argc)
 	if err != nil {
-		h.send(h.serverMessages, logger.Error(h.user, err))
+		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
 		return
 	}
 
@@ -239,7 +239,7 @@ func (h *ServerHandler) handleBase64(args []string, argc int) ([]string, int, er
 
 	args = strings.Split(decodedStr, " ")
 	argc = len(decodedStr)
-	logger.Trace(h.user, "Base64 decoded received command", decodedStr, argc, args)
+	dlog.Server.Trace(h.user, "Base64 decoded received command", decodedStr, argc, args)
 
 	return args, argc, nil
 }
@@ -247,14 +247,14 @@ func (h *ServerHandler) handleBase64(args []string, argc int) ([]string, int, er
 func (h *ServerHandler) handleControlCommand(argc int, args []string) {
 	switch args[0] {
 	case "debug":
-		h.send(h.serverMessages, logger.Debug(h.user, "Receiving debug command", argc, args))
+		h.send(h.serverMessages, dlog.Server.Debug(h.user, "Receiving debug command", argc, args))
 	default:
-		logger.Warn(h.user, "Received unknown control command", argc, args)
+		dlog.Server.Warn(h.user, "Received unknown control command", argc, args)
 	}
 }
 
 func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []string) {
-	logger.Debug(h.user, "handleUserCommand", argc, args)
+	dlog.Server.Debug(h.user, "handleUserCommand", argc, args)
 
 	h.incrementActiveCommands()
 	commandFinished := func() {
@@ -268,19 +268,19 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 
 	options, err := readOptions(splitted[1:])
 	if err != nil {
-		h.sendServerMessage(logger.Error(h.user, err))
+		h.sendServerMessage(dlog.Server.Error(h.user, err))
 		commandFinished()
 		return
 	}
 	if quiet, ok := options["quiet"]; ok {
 		if quiet == "true" {
-			logger.Debug(h.user, "Enabling quiet mode")
+			dlog.Server.Debug(h.user, "Enabling quiet mode")
 			h.quiet = true
 		}
 	}
 	if spartan, ok := options["spartan"]; ok {
 		if spartan == "true" {
-			logger.Debug(h.user, "Enabling spartan mode")
+			dlog.Server.Debug(h.user, "Enabling spartan mode")
 			h.spartan = true
 		}
 	}
@@ -304,7 +304,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		command, aggregate, err := newMapCommand(h, argc, args)
 		if err != nil {
 			h.sendServerMessage(err.Error())
-			logger.Error(h.user, err)
+			dlog.Server.Error(h.user, err)
 			commandFinished()
 			return
 		}
@@ -320,14 +320,14 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		commandFinished()
 
 	default:
-		h.sendServerMessage(logger.Error(h.user, "Received unknown user command", commandName, argc, args, options))
+		h.sendServerMessage(dlog.Server.Error(h.user, "Received unknown user command", commandName, argc, args, options))
 		commandFinished()
 	}
 }
 
 func (h *ServerHandler) handleAckCommand(argc int, args []string) {
 	if argc < 3 {
-		h.sendServerWarnMessage(logger.Warn(h.user, commandParseWarning, args, argc))
+		h.sendServerWarnMessage(dlog.Server.Warn(h.user, commandParseWarning, args, argc))
 		return
 	}
 	if args[1] == "close" && args[2] == "connection" {
@@ -362,25 +362,25 @@ func (h *ServerHandler) serverMessageC() chan<- string {
 }
 
 func (h *ServerHandler) flushMessages() {
-	logger.Debug(h.user, "flushMessages()")
+	dlog.Server.Debug(h.user, "flushMessages()")
 
 	unsentMessages := func() int {
 		return len(h.lines) + len(h.serverMessages) + len(h.maprMessages)
 	}
 	for i := 0; i < 3; i++ {
 		if unsentMessages() == 0 {
-			logger.Debug(h.user, "All lines sent")
+			dlog.Server.Debug(h.user, "All lines sent")
 			return
 		}
-		logger.Debug(h.user, "Still lines to be sent")
+		dlog.Server.Debug(h.user, "Still lines to be sent")
 		time.Sleep(time.Second)
 	}
 
-	logger.Warn(h.user, "Some lines remain unsent", unsentMessages())
+	dlog.Server.Warn(h.user, "Some lines remain unsent", unsentMessages())
 }
 
 func (h *ServerHandler) shutdown() {
-	logger.Debug(h.user, "shutdown()")
+	dlog.Server.Debug(h.user, "shutdown()")
 	h.flushMessages()
 
 	go func() {
@@ -393,7 +393,7 @@ func (h *ServerHandler) shutdown() {
 	select {
 	case <-h.ackCloseReceived:
 	case <-time.After(time.Second * 5):
-		logger.Debug(h.user, "Shutdown timeout reached, enforcing shutdown")
+		dlog.Server.Debug(h.user, "Shutdown timeout reached, enforcing shutdown")
 	case <-h.done.Done():
 	}
 
@@ -410,7 +410,7 @@ func (h *ServerHandler) decrementActiveCommands() int32 {
 }
 
 func readOptions(opts []string) (map[string]string, error) {
-	logger.Debug("Parsing options", opts)
+	dlog.Server.Debug("Parsing options", opts)
 	options := make(map[string]string, len(opts))
 
 	for _, o := range opts {
@@ -430,7 +430,7 @@ func readOptions(opts []string) (map[string]string, error) {
 			val = string(decoded)
 		}
 
-		logger.Debug("Setting option", key, val)
+		dlog.Server.Debug("Setting option", key, val)
 		options[key] = val
 	}
 

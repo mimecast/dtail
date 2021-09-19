@@ -1,5 +1,7 @@
 package logger
 
+// TODO: Rewrite this logger
+
 import (
 	"bufio"
 	"context"
@@ -64,10 +66,23 @@ var resumeCh chan struct{}
 // Tell the logger about logrotation
 var rotateCh chan os.Signal
 
+// Override the logger with a custom callack (e.g. for the t.Log for unit tests)
+type unitTestCallback func(message string)
+
+var unitTestOkCb unitTestCallback
+var unitTestErrorCb unitTestCallback
+
 // Helper type to make logging non-blocking.
 type buf struct {
 	time    time.Time
 	message string
+}
+
+// StartUnitTests enables to log all messages to the unit tests.
+func StartUnitTests(ctx context.Context, okCb, errCb unitTestCallback) {
+	unitTestOkCb = okCb
+	unitTestErrorCb = errCb
+	Start(ctx, Modes{UnitTest: true})
 }
 
 // Start logging.
@@ -91,12 +106,12 @@ func Start(ctx context.Context, mode Modes) {
 	switch strategy {
 	case DailyStrategy:
 		_, err := os.Stat(config.Common.LogDir)
-		Mode.logToFile = !os.IsNotExist(err)
+		Mode.logToFile = !os.IsNotExist(err) && !Mode.UnitTest
 		Mode.logToStdout = !Mode.Server || Mode.Debug || Mode.Trace || Mode.Quiet
 	case StdoutStrategy:
 		fallthrough
 	default:
-		Mode.logToFile = !Mode.Server
+		Mode.logToFile = !Mode.Server && !Mode.UnitTest
 		Mode.logToStdout = true
 	}
 
@@ -182,8 +197,8 @@ func Fatal(args ...interface{}) string {
 	return log(clientStr, fatalStr, args)
 }
 
-// FatalExit logs an error and exists the process.
-func FatalExit(args ...interface{}) {
+// FatalPanic logs an error and exists the process.
+func FatalPanic(args ...interface{}) {
 	what := clientStr
 	if Mode.Server {
 		what = serverStr

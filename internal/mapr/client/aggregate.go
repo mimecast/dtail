@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/protocol"
 )
@@ -52,7 +52,7 @@ func (a *Aggregate) Aggregate(message string) error {
 	for _, sc := range a.query.Select {
 		if val, ok := fields[sc.FieldStorage]; ok {
 			if err := set.Aggregate(sc.FieldStorage, sc.Operation, val, true); err != nil {
-				logger.Error(err)
+				dlog.Common.Error(err)
 				continue
 			}
 			addedSamples = true

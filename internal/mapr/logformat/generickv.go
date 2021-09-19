@@ -21,7 +21,7 @@ func (p *Parser) MakeFieldsGENERIGKV(maprLine string) (map[string]string, error)
 	for _, kv := range splitted[0:] {
 		keyAndValue := strings.SplitN(kv, "=", 2)
 		if len(keyAndValue) != 2 {
-			//logger.Debug("Unable to parse key-value token, ignoring it", kv)
+			//dlog.Common.Debug("Unable to parse key-value token, ignoring it", kv)
 			continue
 		}
 		fields[strings.ToLower(keyAndValue[0])] = keyAndValue[1]

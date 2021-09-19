@@ -70,7 +70,7 @@
     "TmpDir": "tmp",
     "LogStrategy": "stdout",
     "SSHPort": 2222,
-    "DebugEnable": false,
+    "LogLevel": "INFO",
     "ExperimentalFeaturesEnable": false
   }
 }

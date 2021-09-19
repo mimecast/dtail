@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -51,7 +51,7 @@ func (h *baseHandler) Shutdown() {
 // SendMessage to the server.
 func (h *baseHandler) SendMessage(command string) error {
 	encoded := base64.StdEncoding.EncodeToString([]byte(command))
-	logger.Debug("Sending command", h.server, command, encoded)
+	dlog.Client.Debug("Sending command", h.server, command, encoded)
 
 	select {
 	case h.commands <- fmt.Sprintf("protocol %s base64 %v;", protocol.ProtocolCompat, encoded):
@@ -112,7 +112,7 @@ func (h *baseHandler) handleMessageType(message string) {
 		return
 	}
 
-	logger.Raw(message)
+	dlog.Client.Raw(message)
 }
 
 // Handle messages received from server which are not meant to be displayed

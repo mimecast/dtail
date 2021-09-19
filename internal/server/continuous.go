@@ -8,9 +8,8 @@ import (
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/omode"
-
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -22,7 +21,7 @@ func newContinuous() *continuous {
 }
 
 func (c *continuous) start(ctx context.Context) {
-	logger.Info("Starting continuous job runner after 10s")
+	dlog.Server.Info("Starting continuous job runner after 10s")
 	time.Sleep(time.Second * 10)
 
 	c.runJobs(ctx)
@@ -31,7 +30,7 @@ func (c *continuous) start(ctx context.Context) {
 func (c *continuous) runJobs(ctx context.Context) {
 	for _, job := range config.Server.Continuous {
 		if !job.Enable {
-			logger.Debug(job.Name, "Not running job as not enabled")
+			dlog.Server.Debug(job.Name, "Not running job as not enabled")
 			continue
 		}
 
@@ -51,7 +50,7 @@ func (c *continuous) runJobs(ctx context.Context) {
 }
 
 func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
-	logger.Debug(job.Name, "Processing job")
+	dlog.Server.Debug(job.Name, "Processing job")
 
 	files := fillDates(job.Files)
 	outfile := fillDates(job.Outfile)
@@ -61,7 +60,7 @@ func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
 		servers = config.Server.SSHBindAddress
 	}
 
-	args := clients.Args{
+	args := config.Args{
 		ConnectionsPerCPU: 10,
 		Discovery:         job.Discovery,
 		ServersStr:        servers,
@@ -75,7 +74,7 @@ func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
 	query := fmt.Sprintf("%s outfile %s", job.Query, outfile)
 	client, err := clients.NewMaprClient(args, query, clients.NonCumulativeMode)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Unable to create job %s", job.Name), err)
+		dlog.Server.Error(fmt.Sprintf("Unable to create job %s", job.Name), err)
 		return
 	}
 
@@ -85,21 +84,21 @@ func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
 	if job.RestartOnDayChange {
 		go func() {
 			if c.waitForDayChange(ctx) {
-				logger.Info(fmt.Sprintf("Canceling job %s due to day change", job.Name))
+				dlog.Server.Info(fmt.Sprintf("Canceling job %s due to day change", job.Name))
 				cancel()
 			}
 		}()
 	}
 
-	logger.Info(fmt.Sprintf("Starting job %s", job.Name))
+	dlog.Server.Info(fmt.Sprintf("Starting job %s", job.Name))
 	status := client.Start(jobCtx, make(chan string))
 	logMessage := fmt.Sprintf("Job exited with status %d", status)
 
 	if status != 0 {
-		logger.Warn(logMessage)
+		dlog.Server.Warn(logMessage)
 		return
 	}
-	logger.Info(logMessage)
+	dlog.Server.Info(logMessage)
 }
 
 func (c *continuous) waitForDayChange(ctx context.Context) bool {

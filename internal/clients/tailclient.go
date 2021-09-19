@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	"github.com/mimecast/dtail/internal/clients/handlers"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/omode"
 )
 
@@ -16,7 +17,7 @@ type TailClient struct {
 }
 
 // NewTailClient returns a new TailClient.
-func NewTailClient(args Args) (*TailClient, error) {
+func NewTailClient(args config.Args) (*TailClient, error) {
 	args.Mode = omode.TailClient
 
 	c := TailClient{
@@ -38,14 +39,15 @@ func (c TailClient) makeHandler(server string) handlers.Handler {
 }
 
 func (c TailClient) makeCommands() (commands []string) {
+	regex, err := c.Regex.Serialize()
+	if err != nil {
+		dlog.Client.FatalPanic(err)
+	}
 	for _, file := range strings.Split(c.What, ",") {
 		commands = append(commands, fmt.Sprintf("%s:%s %s %s",
-			c.Mode.String(),
-			c.Args.SerializeOptions(),
-			file,
-			c.Regex.Serialize()))
+			c.Mode.String(), c.Args.SerializeOptions(), file, regex))
 	}
-	logger.Debug(commands)
+	dlog.Client.Debug(commands)
 
 	return
 }

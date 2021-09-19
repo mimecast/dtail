@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/mimecast/dtail/internal"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	user "github.com/mimecast/dtail/internal/user/server"
 )
 
@@ -22,7 +22,7 @@ type ControlHandler struct {
 
 // NewControlHandler returns a new control handler.
 func NewControlHandler(user *user.User) *ControlHandler {
-	logger.Debug(user, "Creating control handler")
+	dlog.Server.Debug(user, "Creating control handler")
 
 	h := ControlHandler{
 		done:           internal.NewDone(),
@@ -32,7 +32,7 @@ func NewControlHandler(user *user.User) *ControlHandler {
 
 	fqdn, err := os.Hostname()
 	if err != nil {
-		logger.FatalExit(err)
+		dlog.Server.FatalPanic(err)
 	}
 
 	s := strings.Split(fqdn, ".")
@@ -84,15 +84,15 @@ func (h *ControlHandler) Write(p []byte) (n int, err error) {
 }
 
 func (h *ControlHandler) handleCommand(command string) {
-	logger.Info(h.user, command)
+	dlog.Server.Info(h.user, command)
 	s := strings.Split(command, " ")
-	logger.Debug(h.user, "Receiving command", command, s)
+	dlog.Server.Debug(h.user, "Receiving command", command, s)
 
 	switch s[0] {
 	case "health":
 		h.serverMessages <- "OK: DTail SSH Server seems fine"
 		h.serverMessages <- "done;"
 	default:
-		h.serverMessages <- logger.Error(h.user, "Received unknown control command", command, s)
+		h.serverMessages <- dlog.Server.Error(h.user, "Received unknown control command", command, s)
 	}
 }

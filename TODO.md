@@ -15,20 +15,17 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [?] Client 4.x should print a warning when trying to connect to a 3.x server.
 [ ] Update docs for color configuration
 [ ] Update animated gifs
-[x] Fix dmap so that it always reads to the end of file
 [ ] Add more default fields to the default MAPREDUCE format.
 [x] By default connect to localhost
 [x] Can use additional args as file lists
 [ ] Document the two things above
 [x] Implement spartan mode
-[x] Make sure that diff is the same (plain file fs dcatted-file) in spartan mode
-[ ] Document servless mode
+[ ] Document serverless mode
 [x] Implement serverless mode
-[ ] Fix serverless mode (e.g. dmap doesn't aggregate all lines)
 [ ] document spartan mode
 [ ] Default client log dir is ~/log not ./log
-  [ ] Make sure dmap results aren't in color in local log file
-[ ] Unit test for dcat in serverless mode
-[ ] Unit test for dgrep in serverless mode
-[ ] Unit test for dmap in serverless mode
+[ ] Integration test for dcat in serverless mode
+[ ] Integration test for dgrep in serverless mode
+[ ] Integration test for dmap in serverless mode
 [ ] Separate logger into server logger and client logger for serverless operation (e.g. server info logs are all Debug)
+[ ] In serverless, use prefix LOCAL and not REMOTE. And also use another color schema (magenta?)

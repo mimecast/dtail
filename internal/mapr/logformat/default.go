@@ -26,6 +26,7 @@ func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 	fields["$timeoffset"] = p.timeZoneOffset
 
 	fields["$severity"] = splitted[0]
+	fields["$loglevel"] = splitted[0]
 	// TODO: Parse time like we do at Mimecast
 	fields["$time"] = splitted[1]
 

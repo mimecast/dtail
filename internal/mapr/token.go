@@ -58,12 +58,12 @@ func tokenize(queryStr string) []token {
 }
 
 func tokensConsume(tokens []token) ([]token, []token) {
-	//logger.Trace("=====================")
+	//dlog.Common.Trace("=====================")
 	var consumed []token
 
 	for i, t := range tokens {
 		if t.isKeyword() {
-			//logger.Trace("keyword", t)
+			//dlog.Common.Trace("keyword", t)
 			return tokens[i:], consumed
 		}
 		// strip escapes, such as ` from `foo`, this allows to use keywords as field names
@@ -73,7 +73,7 @@ func tokensConsume(tokens []token) ([]token, []token) {
 		}
 		if t.str[0] == '`' && t.str[length-1] == '`' {
 			stripped := t.str[1 : length-1]
-			//logger.Trace("stripped", stripped)
+			//dlog.Common.Trace("stripped", stripped)
 			t := token{
 				str:        stripped,
 				isBareword: t.isBareword,
@@ -81,11 +81,11 @@ func tokensConsume(tokens []token) ([]token, []token) {
 			consumed = append(consumed, t)
 			continue
 		}
-		//logger.Trace("bare", token)
+		//dlog.Common.Trace("bare", token)
 		consumed = append(consumed, t)
 	}
 
-	//logger.Trace("result", consumed)
+	//dlog.Common.Trace("result", consumed)
 	return nil, consumed
 }
 

@@ -3,18 +3,18 @@ all: test build
 build: dserver dcat dgrep dmap dtail
 dserver:
 ifndef USE_ACL
-	${GO} build -o dserver ./cmd/dserver/main.go
+	${GO} build ${GO_FLAGS} -o dserver ./cmd/dserver/main.go
 else
-	${GO} build -tags linuxacl -o dserver ./cmd/dserver/main.go
+	${GO} build ${GO_FLAGS} -tags linuxacl -o dserver ./cmd/dserver/main.go
 endif
 dcat:
-	${GO} build -o dcat ./cmd/dcat/main.go
+	${GO} build ${GO_FLAGS} -o dcat ./cmd/dcat/main.go
 dgrep:
-	${GO} build -o dgrep ./cmd/dgrep/main.go
+	${GO} build ${GO_FLAGS} -o dgrep ./cmd/dgrep/main.go
 dmap:
-	${GO} build -o dmap ./cmd/dmap/main.go
+	${GO} build ${GO_FLAGS} -o dmap ./cmd/dmap/main.go
 dtail:
-	${GO} build -o dtail ./cmd/dtail/main.go
+	${GO} build ${GO_FLAGS} -o dtail ./cmd/dtail/main.go
 install:
 ifndef USE_ACL
 	${GO} install ./cmd/dserver/main.go
