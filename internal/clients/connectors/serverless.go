@@ -53,8 +53,13 @@ func (s *Serverless) Start(ctx context.Context, cancel context.CancelFunc, throt
 func (s *Serverless) handle(ctx context.Context, cancel context.CancelFunc) error {
 	dlog.Client.Debug("Creating server handler for a serverless session")
 
+	user, err := user.New(s.userName, s.Server())
+	if err != nil {
+		return err
+	}
+
 	serverHandler := serverHandlers.NewServerHandler(
-		user.New(s.userName, s.Server()),
+		user,
 		make(chan struct{}, config.Server.MaxConcurrentCats),
 		make(chan struct{}, config.Server.MaxConcurrentTails),
 	)

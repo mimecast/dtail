@@ -69,7 +69,7 @@ func (h *baseHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
 		switch b {
 		/*
-			// TODO: Next DTail version make it so that '\n' gets ignored. For now
+			// NEXT: Next DTail version make it so that '\n' gets ignored. For now
 			// leave it for compatibility with older DTail server + ability to display
 			// the protocol mismatch warn message.
 			case '\n' {

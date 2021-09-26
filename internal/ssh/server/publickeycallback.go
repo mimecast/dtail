@@ -15,7 +15,10 @@ import (
 
 // PublicKeyCallback is for the server to check whether a public SSH key is authorized ot not.
 func PublicKeyCallback(c gossh.ConnMetadata, offeredPubKey gossh.PublicKey) (*gossh.Permissions, error) {
-	user := user.New(c.User(), c.RemoteAddr().String())
+	user, err := user.New(c.User(), c.RemoteAddr().String())
+	if err != nil {
+		return nil, err
+	}
 	dlog.Common.Info(user, "Incoming authorization")
 
 	cwd, err := os.Getwd()

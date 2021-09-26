@@ -61,7 +61,7 @@ func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
 	}
 
 	args := config.Args{
-		ConnectionsPerCPU: 10,
+		ConnectionsPerCPU: config.DefaultConnectionsPerCPU,
 		Discovery:         job.Discovery,
 		ServersStr:        servers,
 		What:              files,

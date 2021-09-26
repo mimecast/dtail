@@ -72,7 +72,7 @@ func (s *scheduler) runJobs(ctx context.Context) {
 		}
 
 		args := config.Args{
-			ConnectionsPerCPU: 10,
+			ConnectionsPerCPU: config.DefaultConnectionsPerCPU,
 			Discovery:         job.Discovery,
 			ServersStr:        servers,
 			What:              files,

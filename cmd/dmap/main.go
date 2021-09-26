@@ -31,13 +31,12 @@ func main() {
 	flag.BoolVar(&args.Spartan, "spartan", false, "Spartan output mode")
 	flag.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Trust all unknown host keys")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
-	// TODO: Make ConnectionsPerCPU default value as a constant in config package.
-	flag.IntVar(&args.ConnectionsPerCPU, "cpc", 10, "How many connections established per CPU core concurrently")
-	// TODO: make default ssh port a constant in the config package.
-	flag.IntVar(&args.SSHPort, "port", 2222, "SSH server port")
+	flag.IntVar(&args.ConnectionsPerCPU, "cpc", config.DefaultConnectionsPerCPU, "How many connections established per CPU core concurrently")
+	flag.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
 	flag.IntVar(&args.Timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
+	flag.StringVar(&args.LogDir, "logDir", "", "Log dir")
 	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
 	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
 	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")

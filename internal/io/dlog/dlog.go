@@ -3,6 +3,7 @@ package dlog
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +22,6 @@ var Client *DLog
 var Server *DLog
 
 // Common is the log handler for all other packages.
-// TODO: Rename Common to Common
 var Common *DLog
 
 var mutex sync.Mutex
@@ -75,15 +75,22 @@ type DLog struct {
 	sourcePackage source
 	// Max log level to log.
 	maxLevel level
+	// Current hostname.
+	hostname string
 }
 
 // New creates a new DTail logger.
 func New(sourceProcess, sourcePackage source, impl loggers.Impl, maxLevel level) *DLog {
+	hostname, err := os.Hostname()
+	if err != nil {
+		panic(err)
+	}
 	return &DLog{
 		logger:        loggers.Factory(sourceProcess.String(), impl),
 		sourceProcess: sourceProcess,
 		sourcePackage: sourcePackage,
 		maxLevel:      maxLevel,
+		hostname:      hostname,
 	}
 }
 
@@ -106,11 +113,18 @@ func (d *DLog) log(level level, args []interface{}) string {
 	defer pool.RecycleBuilderBuffer(sb)
 	now := time.Now()
 
-	sb.WriteString(d.sourcePackage.String())
-	sb.WriteString(protocol.FieldDelimiter)
-	sb.WriteString(now.Format("20060102-150405"))
-	sb.WriteString(protocol.FieldDelimiter)
-	sb.WriteString(level.String())
+	switch d.sourceProcess {
+	case CLIENT:
+		sb.WriteString(d.sourcePackage.String())
+		sb.WriteString(protocol.FieldDelimiter)
+		sb.WriteString(d.hostname)
+		sb.WriteString(protocol.FieldDelimiter)
+		sb.WriteString(level.String())
+	default:
+		sb.WriteString(level.String())
+		sb.WriteString(protocol.FieldDelimiter)
+		sb.WriteString(now.Format("20060102-150405"))
+	}
 	sb.WriteString(protocol.FieldDelimiter)
 	d.writeArgStrings(sb, args)
 
@@ -159,6 +173,11 @@ func (d *DLog) Warn(args ...interface{}) string {
 }
 
 func (d *DLog) Info(args ...interface{}) string {
+	if d.sourcePackage == SERVER && d.sourceProcess != CLIENT {
+		// This can be dtail client in serverless mode. In this case log all
+		// info server messages as verbose.
+		return d.log(VERBOSE, args)
+	}
 	return d.log(INFO, args)
 }
 
@@ -183,13 +202,14 @@ func (d *DLog) Raw(message string) string {
 		d.logger.Log(time.Now(), message)
 		return message
 	}
-
-	d.logger.Log(time.Now(), brush.Colorfy(message))
+	d.logger.LogWithColors(time.Now(), message, brush.Colorfy(message))
 	return message
 }
 
 func (d *DLog) Mapreduce(table string, data map[string]interface{}) string {
 	args := make([]interface{}, len(data)+1)
+
+	// TODO: mC compatible SERVER mapreduce fields, no MAPREDUCE keyword in CLIENT mode
 	args[0] = fmt.Sprintf("%s:%s", "MAPREDUCE", strings.ToUpper(table))
 
 	i := 1
@@ -197,7 +217,6 @@ func (d *DLog) Mapreduce(table string, data map[string]interface{}) string {
 		args[i] = fmt.Sprintf("%s=%v", k, v)
 		i++
 	}
-
 	return d.log(INFO, args)
 }
 

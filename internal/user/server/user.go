@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/fs/permissions"
 	"github.com/mimecast/dtail/internal/io/dlog"
+	"github.com/mimecast/dtail/internal/io/fs/permissions"
 )
 
 const maxLinkDepth int = 100
@@ -25,11 +25,16 @@ type User struct {
 }
 
 // New returns a new user.
-func New(name, remoteAddress string) *User {
+func New(name, remoteAddress string) (*User, error) {
+	permissions, err := config.ServerUserPermissions(name)
+	if err != nil {
+		return nil, err
+	}
 	return &User{
 		Name:          name,
 		remoteAddress: remoteAddress,
-	}
+		permissions:   permissions,
+	}, nil
 }
 
 // String representation of the user.
@@ -39,9 +44,9 @@ func (u *User) String() string {
 
 // HasFilePermission is used to determine whether user is alowed to read a file.
 func (u *User) HasFilePermission(filePath, permissionType string) (hasPermission bool) {
-	dlog.Common.Debug(u, filePath, permissionType, "Checking config permissions")
+	dlog.Server.Debug(u, filePath, permissionType, "Checking config permissions")
 	if config.ServerRelaxedAuthEnable {
-		dlog.Common.Fatal(u, filePath, permissionType, "Server releaxed auth enabled")
+		dlog.Server.Fatal(u, filePath, permissionType, "Server releaxed auth enabled")
 		return true
 	}
 
@@ -52,25 +57,25 @@ func (u *User) HasFilePermission(filePath, permissionType string) (hasPermission
 
 	cleanPath, err := filepath.EvalSymlinks(filePath)
 	if err != nil {
-		dlog.Common.Error(u, filePath, permissionType, "Unable to evaluate symlinks", err)
+		dlog.Server.Error(u, filePath, permissionType, "Unable to evaluate symlinks", err)
 		hasPermission = false
 		return
 	}
 
 	cleanPath, err = filepath.Abs(cleanPath)
 	if err != nil {
-		dlog.Common.Error(u, cleanPath, permissionType, "Unable to make file path absolute", err)
+		dlog.Server.Error(u, cleanPath, permissionType, "Unable to make file path absolute", err)
 		hasPermission = false
 		return
 	}
 
 	if cleanPath != filePath {
-		dlog.Common.Info(u, filePath, cleanPath, permissionType, "Calculated new clean path from original file path (possibly symlink)")
+		dlog.Server.Info(u, filePath, cleanPath, permissionType, "Calculated new clean path from original file path (possibly symlink)")
 	}
 
 	hasPermission, err = u.hasFilePermission(cleanPath, permissionType)
 	if err != nil {
-		dlog.Common.Warn(u, cleanPath, err)
+		dlog.Server.Warn(u, cleanPath, err)
 	}
 
 	return
@@ -81,7 +86,7 @@ func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error)
 	if _, err := permissions.ToRead(u.Name, cleanPath); err != nil {
 		return false, fmt.Errorf("User without OS file system permissions to read path: '%v'", err)
 	}
-	dlog.Common.Info(u, cleanPath, permissionType, "User with OS file system permissions to path")
+	dlog.Server.Info(u, cleanPath, permissionType, "User with OS file system permissions to path")
 
 	// Only allow to follow regular files or symlinks.
 	info, err := os.Lstat(cleanPath)
@@ -92,12 +97,6 @@ func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error)
 	if !info.Mode().IsRegular() {
 		return false, fmt.Errorf("Can only open regular files or follow symlinks")
 	}
-
-	permissions, err := config.ServerUserPermissions(u.Name)
-	if err != nil {
-		return false, err
-	}
-	u.permissions = permissions
 
 	hasPermission, err := u.iteratePaths(cleanPath, permissionType)
 	if err != nil {
@@ -123,7 +122,7 @@ func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 			permission = strings.Join(splitted[1:], ":")
 		}
 
-		dlog.Common.Debug(u, cleanPath, typeStr, permission)
+		dlog.Server.Debug(u, cleanPath, typeStr, permission)
 
 		if typeStr != permissionType {
 			continue
@@ -141,12 +140,12 @@ func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 		}
 
 		if negate && re.MatchString(cleanPath) {
-			dlog.Common.Info(u, cleanPath, "Permission test failed partially, matching negative pattern '%s'", permission)
+			dlog.Server.Info(u, cleanPath, "Permission test failed partially, matching negative pattern '%s'", permission)
 			hasPermission = false
 		}
 
 		if !negate && re.MatchString(cleanPath) {
-			dlog.Common.Info(u, cleanPath, "Permission test passed partially, matching positive pattern", permission)
+			dlog.Server.Info(u, cleanPath, "Permission test passed partially, matching positive pattern", permission)
 			hasPermission = true
 		}
 	}

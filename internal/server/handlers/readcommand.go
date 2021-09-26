@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/fs"
 	"github.com/mimecast/dtail/internal/io/line"
-	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/regex"
 )

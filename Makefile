@@ -34,7 +34,7 @@ vet:
 	  echo ${GO} vet $$dir; \
 	  ${GO} vet $$dir; \
 	done
-	grep -R TODO .
+	grep -R TODO: .
 lint:
 	${GO} get golang.org/x/lint/golint
 	find . -type d | while read dir; do \
@@ -43,7 +43,7 @@ lint:
 	done
 test:
 ifndef USE_ACL
-	${GO} test ./... -v
+	${GO} test -race ./... -v
 else
-	${GO} test -tags linuxacl ./... -v
+	${GO} test -race -tags linuxacl ./... -v
 endif

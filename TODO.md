@@ -22,6 +22,9 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [x] Implement spartan mode
 [ ] Document serverless mode
 [x] Implement serverless mode
+[ ] test dtail colors (Again)
+[ ] test server health check
+[ ] test spartan mode
 [ ] document spartan mode
 [ ] Default client log dir is ~/log not ./log
 [ ] Integration test for dcat in serverless mode

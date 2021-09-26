@@ -11,9 +11,9 @@ spinup:
 spindown:
 	./spindown.sh 10
 dtail:
-	../dtail --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts --debug
+	../dtail --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts --logLevel DEBUG
 dtail2:
-	../dtail --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts --debug --query 'from stats select max(goroutines),count($$hostname),$$hostname,last($$time) group by $$hostname order by max(goroutines)'
+	../dtail --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts --logLevel DEBUG --query 'from stats select max(goroutines),count($$hostname),$$hostname,last($$time) group by $$hostname order by max(goroutines)'
 dgrep:
 	../dgrep --servers serverlist.txt --files '/var/log/dserver/*' --regex MAPREDUCE --trustAllHosts
 dcat:
@@ -28,10 +28,8 @@ dmap:
 dmap2:
 	../dmap --servers serverlist.txt --files '/var/log/mapr_testdata.log' --trustAllHosts --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-A.csv'
 	../dmap --servers serverlist.txt --files '/var/log/mapr_testdata.log' --trustAllHosts --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-B.csv'
-	../dmap --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-serverless.csv' ./mapr_testdata.log
 	@echo Expecting zero diff!
 	diff -u <(sort dmap2-A.csv) <(sort dmap2-B.csv)
-	diff -u <(sort dmap2-A.csv) <(sort dmap2-serverless.csv)
 dmap3:
 	../dmap --servers <(head -n 1 serverlist.txt) --files '/var/log/mapr_testdata.log' --trustAllHosts --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-A.csv'
 	../dmap --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-serverless.csv' ./mapr_testdata.log

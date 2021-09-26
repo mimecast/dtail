@@ -27,7 +27,7 @@ func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 
 	fields["$severity"] = splitted[0]
 	fields["$loglevel"] = splitted[0]
-	// TODO: Parse time like we do at Mimecast
+	// NEXT: Parse time like we do at Mimecast
 	fields["$time"] = splitted[1]
 
 	for _, kv := range splitted[4:] {

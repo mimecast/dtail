@@ -1,7 +1,5 @@
 package logger
 
-// TODO: Rewrite this logger
-
 import (
 	"bufio"
 	"context"

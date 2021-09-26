@@ -25,7 +25,6 @@ func main() {
 	var args config.Args
 	var color bool
 	var displayVersion bool
-	var logDir string
 	var pprof int
 	var shutdownAfter int
 
@@ -34,24 +33,17 @@ func main() {
 	flag.BoolVar(&color, "color", false, "Enable ANSII terminal colors")
 	flag.BoolVar(&config.ServerRelaxedAuthEnable, "relaxedAuth", false, "Enable relaxced SSH auth mode (don't use in production!)")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
-	flag.IntVar(&args.SSHPort, "port", 2222, "SSH server port")
+	flag.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Shutdown after so many seconds")
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
+	flag.StringVar(&args.LogDir, "logDir", "", "Log dir")
 	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
-	flag.StringVar(&logDir, "logDir", "", "Log dir path")
+	flag.StringVar(&args.LogDir, "logDir", "", "Log dir path")
 
 	flag.Parse()
 	args.NoColor = !color
 	config.Setup(&args, flag.Args())
-
-	if logDir != "" {
-		// TODO: Re-Implement log strategy support.
-		config.Common.LogDir = logDir
-		if config.Common.LogStrategy == "" {
-			config.Common.LogStrategy = "daily"
-		}
-	}
 
 	if displayVersion {
 		version.PrintAndExit()

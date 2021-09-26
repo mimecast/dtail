@@ -23,7 +23,7 @@ type CommonConfig struct {
 // Create a new default configuration.
 func newDefaultCommonConfig() *CommonConfig {
 	return &CommonConfig{
-		SSHPort:                    2222,
+		SSHPort:                    DefaultSSHPort,
 		ExperimentalFeaturesEnable: false,
 		LogDir:                     "log",
 		CacheDir:                   "cache",

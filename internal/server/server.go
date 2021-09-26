@@ -124,7 +124,12 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 }
 
 func (s *Server) handleChannel(ctx context.Context, sshConn gossh.Conn, newChannel gossh.NewChannel) {
-	user := user.New(sshConn.User(), sshConn.RemoteAddr().String())
+	user, err := user.New(sshConn.User(), sshConn.RemoteAddr().String())
+	if err != nil {
+		dlog.Server.Error(user, err)
+		newChannel.Reject(gossh.Prohibited, err.Error())
+		return
+	}
 	dlog.Server.Info(user, "Invoking channel handler")
 
 	if newChannel.ChannelType() != "session" {
@@ -213,7 +218,10 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 
 // Callback for SSH authentication.
 func (s *Server) Callback(c gossh.ConnMetadata, authPayload []byte) (*gossh.Permissions, error) {
-	user := user.New(c.User(), c.RemoteAddr().String())
+	user, err := user.New(c.User(), c.RemoteAddr().String())
+	if err != nil {
+		return nil, err
+	}
 
 	if config.ServerRelaxedAuthEnable {
 		dlog.Server.Fatal(user, "Granting permissions via relaxed-auth")
