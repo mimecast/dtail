@@ -1,7 +1,6 @@
 package config
 
 import (
-	"flag"
 	"fmt"
 	"strings"
 
@@ -66,48 +65,6 @@ func (a *Args) String() string {
 	sb.WriteString(")")
 
 	return sb.String()
-}
-
-// Based on the argument list, transform/manipulate some of the arguments.
-func (a *Args) transformConfig(args []string, client *ClientConfig, server *ServerConfig, common *CommonConfig) (*ClientConfig, *ServerConfig, *CommonConfig) {
-	if a.LogDir != "" {
-		common.LogDir = a.LogDir
-		if common.LogStrategy == "" {
-			// TODO: Implement the other (not-daily) log strategy for the server.
-			common.LogStrategy = "daily"
-		}
-	}
-
-	if a.LogLevel != "" {
-		common.LogLevel = a.LogLevel
-	}
-
-	if a.SSHPort != DefaultSSHPort {
-		common.SSHPort = a.SSHPort
-	}
-	if a.NoColor {
-		client.TermColorsEnable = false
-	}
-
-	if a.Spartan {
-		a.Quiet = true
-		a.NoColor = true
-	}
-
-	if a.Discovery == "" && a.ServersStr == "" {
-		a.Serverless = true
-	}
-
-	// Interpret additional args as file list.
-	if a.What == "" {
-		var files []string
-		for _, file := range flag.Args() {
-			files = append(files, file)
-		}
-		a.What = strings.Join(files, ",")
-	}
-
-	return client, server, common
 }
 
 // SerializeOptions returns a string ready to be sent over the wire to the server.

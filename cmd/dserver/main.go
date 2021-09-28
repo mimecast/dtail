@@ -39,7 +39,6 @@ func main() {
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.LogDir, "logDir", "", "Log dir")
 	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
-	flag.StringVar(&args.LogDir, "logDir", "", "Log dir path")
 
 	flag.Parse()
 	args.NoColor = !color

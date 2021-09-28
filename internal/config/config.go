@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -77,4 +78,46 @@ func (c *configInitializer) parseSpecificConfig(configFile string) {
 	if err != nil {
 		panic(fmt.Sprintf("Unable to parse config file %s: %v", configFile, err))
 	}
+}
+
+func (c *configInitializer) transformConfig(args *Args, additionalArgs []string,
+	client *ClientConfig, server *ServerConfig, common *CommonConfig) (*ClientConfig, *ServerConfig, *CommonConfig) {
+	if args.LogDir != "" {
+		common.LogDir = args.LogDir
+		if common.LogStrategy == "" {
+			// TODO: Implement the other (not-daily) log strategy for the server.
+			common.LogStrategy = "daily"
+		}
+	}
+
+	if args.LogLevel != "" {
+		common.LogLevel = args.LogLevel
+	}
+
+	if args.SSHPort != DefaultSSHPort {
+		common.SSHPort = args.SSHPort
+	}
+	if args.NoColor {
+		client.TermColorsEnable = false
+	}
+
+	if args.Spartan {
+		args.Quiet = true
+		args.NoColor = true
+	}
+
+	if args.Discovery == "" && args.ServersStr == "" {
+		args.Serverless = true
+	}
+
+	// Interpret additional args as file list.
+	if args.What == "" {
+		var files []string
+		for _, file := range flag.Args() {
+			files = append(files, file)
+		}
+		args.What = strings.Join(files, ",")
+	}
+
+	return client, server, common
 }

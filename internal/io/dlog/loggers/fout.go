@@ -12,8 +12,8 @@ type fout struct {
 }
 
 // Logs to both, a file and stdout
-func newFout() *fout {
-	return &fout{file: newFile(), stdout: newStdout()}
+func newFout(strategy Strategy) *fout {
+	return &fout{file: newFile(strategy), stdout: newStdout()}
 }
 
 func (f *fout) Start(ctx context.Context, wg *sync.WaitGroup) {

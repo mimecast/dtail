@@ -36,19 +36,21 @@ func Start(ctx context.Context, wg *sync.WaitGroup, sourceProcess source, logLev
 		Common.FatalPanic("Logger already started")
 	}
 
+	strategy := loggers.GetStrategy(config.Common.LogStrategy)
 	level := newLevel(logLevel)
+
 	switch sourceProcess {
 	case CLIENT:
 		// This is a DTail client process running.
 		impl := loggers.FOUT
-		Client = New(CLIENT, CLIENT, impl, level)
-		Server = New(CLIENT, SERVER, impl, level)
+		Client = New(CLIENT, CLIENT, level, impl, strategy)
+		Server = New(CLIENT, SERVER, level, impl, strategy)
 		Common = Client
 	case SERVER:
 		// This is a DTail server process running.
 		impl := loggers.FILE
-		Client = New(SERVER, CLIENT, impl, level)
-		Server = New(SERVER, SERVER, impl, level)
+		Client = New(SERVER, CLIENT, level, impl, strategy)
+		Server = New(SERVER, SERVER, level, impl, strategy)
 		Common = Server
 	}
 
@@ -80,13 +82,13 @@ type DLog struct {
 }
 
 // New creates a new DTail logger.
-func New(sourceProcess, sourcePackage source, impl loggers.Impl, maxLevel level) *DLog {
+func New(sourceProcess, sourcePackage source, maxLevel level, impl loggers.Impl, strategy loggers.Strategy) *DLog {
 	hostname, err := os.Hostname()
 	if err != nil {
 		panic(err)
 	}
 	return &DLog{
-		logger:        loggers.Factory(sourceProcess.String(), impl),
+		logger:        loggers.Factory(sourceProcess.String(), impl, strategy),
 		sourceProcess: sourceProcess,
 		sourcePackage: sourcePackage,
 		maxLevel:      maxLevel,

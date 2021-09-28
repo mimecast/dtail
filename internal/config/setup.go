@@ -8,8 +8,8 @@ func Setup(args *Args, additionalArgs []string) {
 		Client: newDefaultClientConfig(),
 	}
 	initializer.parseConfig(args)
-	Client, Server, Common = args.transformConfig(
-		additionalArgs,
+	Client, Server, Common = initializer.transformConfig(
+		args, additionalArgs,
 		initializer.Client,
 		initializer.Server,
 		initializer.Common,

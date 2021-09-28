@@ -12,49 +12,54 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 )
 
+type fileWriter struct {
+}
+
 type fileMessageBuf struct {
 	now     time.Time
 	message string
 }
 
 type file struct {
-	bufferCh    chan *fileMessageBuf
-	pauseCh     chan struct{}
-	resumeCh    chan struct{}
-	rotateCh    chan struct{}
-	flushCh     chan struct{}
-	lastDateStr string
-	fd          *os.File
-	writer      *bufio.Writer
-	mutex       sync.Mutex
-	started     bool
+	bufferCh     chan *fileMessageBuf
+	pauseCh      chan struct{}
+	resumeCh     chan struct{}
+	rotateCh     chan struct{}
+	flushCh      chan struct{}
+	fd           *os.File
+	writer       *bufio.Writer
+	mutex        sync.Mutex
+	started      bool
+	lastFileName string
+	strategy     Strategy
 }
 
-func newFile() *file {
+func newFile(strategy Strategy) *file {
 	f := file{
 		bufferCh: make(chan *fileMessageBuf, runtime.NumCPU()*100),
 		pauseCh:  make(chan struct{}),
 		resumeCh: make(chan struct{}),
 		rotateCh: make(chan struct{}),
 		flushCh:  make(chan struct{}),
+		strategy: strategy,
 	}
-	f.getWriter(time.Now().Format("20060102"))
+
 	return &f
 }
 
-func (s *file) Start(ctx context.Context, wg *sync.WaitGroup) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+func (f *file) Start(ctx context.Context, wg *sync.WaitGroup) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
 
 	// Logger already started from another Goroutine.
-	if s.started {
+	if f.started {
 		wg.Done()
 		return
 	}
 
 	pause := func(ctx context.Context) {
 		select {
-		case <-s.resumeCh:
+		case <-f.resumeCh:
 			return
 		case <-ctx.Done():
 			return
@@ -66,55 +71,61 @@ func (s *file) Start(ctx context.Context, wg *sync.WaitGroup) {
 
 		for {
 			select {
-			case m := <-s.bufferCh:
-				s.write(m)
-			case <-s.pauseCh:
+			case m := <-f.bufferCh:
+				f.write(m)
+			case <-f.pauseCh:
 				pause(ctx)
-			case <-s.flushCh:
-				s.flush()
+			case <-f.flushCh:
+				f.flush()
 			case <-ctx.Done():
-				s.flush()
-				s.fd.Close()
+				f.flush()
+				f.fd.Close()
 				return
 			}
 		}
 	}()
 
-	s.started = true
+	f.started = true
 }
 
-func (s *file) Log(now time.Time, message string) {
-	s.bufferCh <- &fileMessageBuf{now, message}
+func (f *file) Log(now time.Time, message string) {
+	f.bufferCh <- &fileMessageBuf{now, message}
 }
 
-func (s *file) LogWithColors(now time.Time, message, coloredMessage string) {
+func (f *file) LogWithColors(now time.Time, message, coloredMessage string) {
 	panic("Colors not supported in file logger")
 }
 
-func (s *file) Pause()  { s.pauseCh <- struct{}{} }
-func (s *file) Resume() { s.resumeCh <- struct{}{} }
-func (s *file) Flush()  { s.flushCh <- struct{}{} }
+func (f *file) Pause()  { f.pauseCh <- struct{}{} }
+func (f *file) Resume() { f.resumeCh <- struct{}{} }
+func (f *file) Flush()  { f.flushCh <- struct{}{} }
 
 // TODO: Test that Rotate() actually works.
-func (s *file) Rotate()           { s.rotateCh <- struct{}{} }
-func (file) SupportsColors() bool { return false }
+func (f *file) Rotate()            { f.rotateCh <- struct{}{} }
+func (*file) SupportsColors() bool { return false }
 
-func (s *file) write(m *fileMessageBuf) {
+func (f *file) write(m *fileMessageBuf) {
 	select {
-	case <-s.rotateCh:
-		// Force re-opening the outfile.
-		s.lastDateStr = ""
+	case <-f.rotateCh:
+		// Force re-opening the outfile next time in getWriter.
+		f.lastFileName = ""
 	default:
 	}
 
-	writer := s.getWriter(m.now.Format("20060102"))
+	var writer *bufio.Writer
+	if f.strategy.Rotation == DailyRotation {
+		writer = f.getWriter(m.now.Format("20060102"))
+	} else {
+		writer = f.getWriter(f.strategy.FileBase)
+	}
+
 	writer.WriteString(m.message)
 	writer.WriteByte('\n')
 }
 
-func (s *file) getWriter(dateStr string) *bufio.Writer {
-	if s.lastDateStr == dateStr {
-		return s.writer
+func (f *file) getWriter(name string) *bufio.Writer {
+	if f.lastFileName == name {
+		return f.writer
 	}
 
 	if _, err := os.Stat(config.Common.LogDir); os.IsNotExist(err) {
@@ -123,32 +134,32 @@ func (s *file) getWriter(dateStr string) *bufio.Writer {
 		}
 	}
 
-	logFile := fmt.Sprintf("%s/%s.log", config.Common.LogDir, dateStr)
+	logFile := fmt.Sprintf("%s/%s.log", config.Common.LogDir, name)
 	newFd, err := os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		panic(err)
 	}
 
 	// Close old writer.
-	if s.fd != nil {
-		s.writer.Flush()
-		s.fd.Close()
+	if f.fd != nil {
+		f.writer.Flush()
+		f.fd.Close()
 	}
 
-	s.fd = newFd
-	s.writer = bufio.NewWriterSize(s.fd, 1)
-	s.lastDateStr = dateStr
+	f.fd = newFd
+	f.writer = bufio.NewWriterSize(f.fd, 1)
+	f.lastFileName = name
 
-	return s.writer
+	return f.writer
 }
 
-func (s *file) flush() {
-	defer s.writer.Flush()
+func (f *file) flush() {
+	defer f.writer.Flush()
 
 	for {
 		select {
-		case m := <-s.bufferCh:
-			s.write(m)
+		case m := <-f.bufferCh:
+			f.write(m)
 		default:
 			return
 		}
