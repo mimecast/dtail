@@ -17,6 +17,7 @@ import (
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/signal"
 	"github.com/mimecast/dtail/internal/omode"
+	"github.com/mimecast/dtail/internal/source"
 	"github.com/mimecast/dtail/internal/user"
 	"github.com/mimecast/dtail/internal/version"
 )
@@ -51,7 +52,7 @@ func main() {
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 3600*24, "Shutdown after so many seconds")
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
-	flag.StringVar(&args.LogDir, "logDir", "", "Log dir")
+	flag.StringVar(&args.LogDir, "logDir", "~/log", "Log dir")
 	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
 	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
 	flag.StringVar(&args.RegexStr, "regex", ".", "Regular expression")
@@ -95,7 +96,7 @@ func main() {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	dlog.Start(ctx, &wg, dlog.CLIENT, config.Common.LogLevel)
+	dlog.Start(ctx, &wg, source.Client, config.Common.LogLevel)
 
 	if pprof > -1 {
 		// For debugging purposes only

@@ -17,6 +17,7 @@ import (
 	"github.com/mimecast/dtail/internal/io/dlog/loggers"
 	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/protocol"
+	"github.com/mimecast/dtail/internal/source"
 )
 
 // Client is the log handler for the client packages.
@@ -32,7 +33,7 @@ var mutex sync.Mutex
 var started bool
 
 // Start logger(s).
-func Start(ctx context.Context, wg *sync.WaitGroup, sourceProcess source, logLevel string) {
+func Start(ctx context.Context, wg *sync.WaitGroup, sourceProcess source.Source, logLevel string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -44,17 +45,17 @@ func Start(ctx context.Context, wg *sync.WaitGroup, sourceProcess source, logLev
 	level := newLevel(logLevel)
 
 	switch sourceProcess {
-	case CLIENT:
+	case source.Client:
 		// This is a DTail client process running.
 		impl := loggers.FOUT
-		Client = New(CLIENT, CLIENT, level, impl, strategy)
-		Server = New(CLIENT, SERVER, level, impl, strategy)
+		Client = New(source.Client, source.Client, level, impl, strategy)
+		Server = New(source.Client, source.Server, level, impl, strategy)
 		Common = Client
-	case SERVER:
+	case source.Server:
 		// This is a DTail server process running.
 		impl := loggers.FILE
-		Client = New(SERVER, CLIENT, level, impl, strategy)
-		Server = New(SERVER, SERVER, level, impl, strategy)
+		Client = New(source.Server, source.Client, level, impl, strategy)
+		Server = New(source.Server, source.Server, level, impl, strategy)
 		Common = Server
 	}
 
@@ -75,10 +76,10 @@ func Start(ctx context.Context, wg *sync.WaitGroup, sourceProcess source, logLev
 type DLog struct {
 	logger loggers.Logger
 	// Is this a DTail server or client process logging?
-	sourceProcess source
+	sourceProcess source.Source
 	// Is this a DTail server or client package logging? In serverless mode
 	// the client can also execute code from the server package.
-	sourcePackage source
+	sourcePackage source.Source
 	// Max log level to log.
 	maxLevel level
 	// Current hostname.
@@ -86,7 +87,7 @@ type DLog struct {
 }
 
 // New creates a new DTail logger.
-func New(sourceProcess, sourcePackage source, maxLevel level, impl loggers.Impl, strategy loggers.Strategy) *DLog {
+func New(sourceProcess, sourcePackage source.Source, maxLevel level, impl loggers.Impl, strategy loggers.Strategy) *DLog {
 	hostname, err := os.Hostname()
 	if err != nil {
 		panic(err)
@@ -120,7 +121,7 @@ func (d *DLog) log(level level, args []interface{}) string {
 	now := time.Now()
 
 	switch d.sourceProcess {
-	case CLIENT:
+	case source.Client:
 		sb.WriteString(d.sourcePackage.String())
 		sb.WriteString(protocol.FieldDelimiter)
 		sb.WriteString(d.hostname)
@@ -179,7 +180,7 @@ func (d *DLog) Warn(args ...interface{}) string {
 }
 
 func (d *DLog) Info(args ...interface{}) string {
-	if d.sourcePackage == SERVER && d.sourceProcess != CLIENT {
+	if d.sourcePackage == source.Server && d.sourceProcess != source.Client {
 		// This can be dtail client in serverless mode. In this case log all
 		// info server messages as verbose.
 		return d.log(VERBOSE, args)
@@ -215,7 +216,7 @@ func (d *DLog) Raw(message string) string {
 func (d *DLog) Mapreduce(table string, data map[string]interface{}) string {
 	args := make([]interface{}, len(data)+1)
 
-	if d.sourceProcess == SERVER {
+	if d.sourceProcess == source.Server {
 		// level|date-time|process|caller|cpus|goroutines|cgocalls|loadavg|uptime|MAPREDUCE:TABLE|key=value|...
 
 		var loadAvg string

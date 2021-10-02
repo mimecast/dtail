@@ -84,9 +84,16 @@ func (c *configInitializer) transformConfig(args *Args, additionalArgs []string,
 	client *ClientConfig, server *ServerConfig, common *CommonConfig) (*ClientConfig, *ServerConfig, *CommonConfig) {
 	if args.LogDir != "" {
 		common.LogDir = args.LogDir
-		if common.LogStrategy == "" {
-			common.LogStrategy = "daily"
+	}
+	if strings.Contains(common.LogDir, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			panic(err)
 		}
+		common.LogDir = strings.ReplaceAll(common.LogDir, "~/", fmt.Sprintf("%s/", homeDir))
+	}
+	if common.LogStrategy == "" {
+		common.LogStrategy = "daily"
 	}
 
 	if args.LogLevel != "" {

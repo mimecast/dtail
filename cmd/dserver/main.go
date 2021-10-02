@@ -16,6 +16,7 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/server"
+	"github.com/mimecast/dtail/internal/source"
 	"github.com/mimecast/dtail/internal/user"
 	"github.com/mimecast/dtail/internal/version"
 )
@@ -67,7 +68,7 @@ func main() {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	dlog.Start(ctx, &wg, dlog.SERVER, config.Common.LogLevel)
+	dlog.Start(ctx, &wg, source.Server, config.Common.LogLevel)
 
 	if config.ServerRelaxedAuthEnable {
 		dlog.Server.Fatal("SSH relaxed-auth mode enabled")
