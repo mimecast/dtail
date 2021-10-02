@@ -15,8 +15,8 @@ import (
 
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/dlog"
+	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/mapr/server"
 	"github.com/mimecast/dtail/internal/omode"
@@ -46,6 +46,7 @@ type ServerHandler struct {
 	activeCommands   int32
 	quiet            bool
 	spartan          bool
+	serverless       bool
 	readBuf          bytes.Buffer
 	writeBuf         bytes.Buffer
 }
@@ -96,6 +97,12 @@ func (h *ServerHandler) Read(p []byte) (n int, err error) {
 			h.readBuf.WriteString(message)
 			h.readBuf.WriteByte(protocol.MessageDelimiter)
 			n = copy(p, h.readBuf.Bytes())
+			return
+		}
+
+		if h.serverless {
+			// In serverless mode we have logged the server message already via the
+			// dlog logger, no need to send the message again to the client part.
 			return
 		}
 
@@ -266,23 +273,24 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 	splitted := strings.Split(args[0], ":")
 	commandName := splitted[0]
 
-	options, err := readOptions(splitted[1:])
+	options, err := config.DeserializeOptions(splitted[1:])
 	if err != nil {
-		h.sendServerMessage(dlog.Server.Error(h.user, err))
+		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
 		commandFinished()
 		return
 	}
-	if quiet, ok := options["quiet"]; ok {
-		if quiet == "true" {
-			dlog.Server.Debug(h.user, "Enabling quiet mode")
-			h.quiet = true
-		}
+
+	if quiet, _ := options["quiet"]; quiet == "true" {
+		dlog.Server.Debug(h.user, "Enabling quiet mode")
+		h.quiet = true
 	}
-	if spartan, ok := options["spartan"]; ok {
-		if spartan == "true" {
-			dlog.Server.Debug(h.user, "Enabling spartan mode")
-			h.spartan = true
-		}
+	if spartan, _ := options["spartan"]; spartan == "true" {
+		dlog.Server.Debug(h.user, "Enabling spartan mode")
+		h.spartan = true
+	}
+	if serverless, _ := options["serverless"]; serverless == "true" {
+		dlog.Server.Debug(h.user, "Enabling serverless mode")
+		h.serverless = true
 	}
 
 	switch commandName {
@@ -303,7 +311,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 	case "map":
 		command, aggregate, err := newMapCommand(h, argc, args)
 		if err != nil {
-			h.sendServerMessage(err.Error())
+			h.send(h.serverMessages, err.Error())
 			dlog.Server.Error(h.user, err)
 			commandFinished()
 			return
@@ -320,14 +328,16 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		commandFinished()
 
 	default:
-		h.sendServerMessage(dlog.Server.Error(h.user, "Received unknown user command", commandName, argc, args, options))
+		h.send(h.serverMessages, dlog.Server.Error(h.user, "Received unknown user command", commandName, argc, args, options))
 		commandFinished()
 	}
 }
 
 func (h *ServerHandler) handleAckCommand(argc int, args []string) {
 	if argc < 3 {
-		h.sendServerWarnMessage(dlog.Server.Warn(h.user, commandParseWarning, args, argc))
+		if !h.quiet {
+			h.send(h.serverMessages, dlog.Server.Warn(h.user, commandParseWarning, args, argc))
+		}
 		return
 	}
 	if args[1] == "close" && args[2] == "connection" {
@@ -346,23 +356,8 @@ func (h *ServerHandler) send(ch chan<- string, message string) {
 	}
 }
 
-func (h *ServerHandler) sendServerMessage(message string) {
-	h.send(h.serverMessageC(), message)
-}
-
-func (h *ServerHandler) sendServerWarnMessage(message string) {
-	if h.quiet {
-		return
-	}
-	h.send(h.serverMessageC(), message)
-}
-
-func (h *ServerHandler) serverMessageC() chan<- string {
-	return h.serverMessages
-}
-
-func (h *ServerHandler) flushMessages() {
-	dlog.Server.Debug(h.user, "flushMessages()")
+func (h *ServerHandler) flush() {
+	dlog.Server.Debug(h.user, "flush()")
 
 	unsentMessages := func() int {
 		return len(h.lines) + len(h.serverMessages) + len(h.maprMessages)
@@ -381,11 +376,11 @@ func (h *ServerHandler) flushMessages() {
 
 func (h *ServerHandler) shutdown() {
 	dlog.Server.Debug(h.user, "shutdown()")
-	h.flushMessages()
+	h.flush()
 
 	go func() {
 		select {
-		case h.serverMessageC() <- ".syn close connection":
+		case h.serverMessages <- ".syn close connection":
 		case <-h.done.Done():
 		}
 	}()
@@ -407,32 +402,4 @@ func (h *ServerHandler) incrementActiveCommands() {
 func (h *ServerHandler) decrementActiveCommands() int32 {
 	atomic.AddInt32(&h.activeCommands, -1)
 	return atomic.LoadInt32(&h.activeCommands)
-}
-
-func readOptions(opts []string) (map[string]string, error) {
-	dlog.Server.Debug("Parsing options", opts)
-	options := make(map[string]string, len(opts))
-
-	for _, o := range opts {
-		kv := strings.SplitN(o, "=", 2)
-		if len(kv) != 2 {
-			return options, fmt.Errorf("Unable to parse options: %v", kv)
-		}
-		key := kv[0]
-		val := kv[1]
-
-		if strings.HasPrefix(val, "base64%") {
-			s := strings.SplitN(val, "%", 2)
-			decoded, err := base64.StdEncoding.DecodeString(s[1])
-			if err != nil {
-				return options, err
-			}
-			val = string(decoded)
-		}
-
-		dlog.Server.Debug("Setting option", key, val)
-		options[key] = val
-	}
-
-	return options, nil
 }

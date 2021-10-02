@@ -39,7 +39,7 @@ func PaintedString() string {
 		color.FgBlack, color.BgGreen)
 
 	additional := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Additional),
-		color.FgWhite, color.BgMagenta, color.AttrBlink)
+		color.FgWhite, color.BgMagenta, color.AttrUnderline)
 
 	return fmt.Sprintf("%s%v%s%s", name, version, protocol, additional)
 }

@@ -180,11 +180,6 @@ func (d *DLog) Warn(args ...interface{}) string {
 }
 
 func (d *DLog) Info(args ...interface{}) string {
-	if d.sourcePackage == source.Server && d.sourceProcess != source.Client {
-		// This can be dtail client in serverless mode. In this case log all
-		// info server messages as verbose.
-		return d.log(VERBOSE, args)
-	}
 	return d.log(INFO, args)
 }
 

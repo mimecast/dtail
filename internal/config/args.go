@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -69,7 +70,32 @@ func (a *Args) String() string {
 
 // SerializeOptions returns a string ready to be sent over the wire to the server.
 func (a *Args) SerializeOptions() string {
-	return fmt.Sprintf("quiet=%v:spartan=%v", a.Quiet, a.Spartan)
+	return fmt.Sprintf("quiet=%v:spartan=%v:serverless=%v", a.Quiet, a.Spartan, a.Serverless)
 }
 
-// NEXT: Put the DeseializeOptions function here (move it away from the internal/server package)
+// DeserializeOptions deserializes the options, but into a map.
+func DeserializeOptions(opts []string) (map[string]string, error) {
+	options := make(map[string]string, len(opts))
+
+	for _, o := range opts {
+		kv := strings.SplitN(o, "=", 2)
+		if len(kv) != 2 {
+			return options, fmt.Errorf("Unable to parse options: %v", kv)
+		}
+		key := kv[0]
+		val := kv[1]
+
+		if strings.HasPrefix(val, "base64%") {
+			s := strings.SplitN(val, "%", 2)
+			decoded, err := base64.StdEncoding.DecodeString(s[1])
+			if err != nil {
+				return options, err
+			}
+			val = string(decoded)
+		}
+
+		options[key] = val
+	}
+
+	return options, nil
+}

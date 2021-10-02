@@ -10,9 +10,9 @@ const (
 func (s Source) String() string {
 	switch s {
 	case Client:
-		return "Client"
+		return "CLIENT"
 	case Server:
-		return "Server"
+		return "SERVER"
 	}
 
 	panic("Unknown log source type")
