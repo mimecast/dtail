@@ -209,6 +209,9 @@
         "LogDir": {
           "type": "string"
         },
+        "LogLevel": {
+          "type": "string"
+        },
         "CacheDir": {
           "type": "string"
         },

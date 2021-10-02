@@ -72,6 +72,17 @@ func (c *initializer) transformConfig(args *Args, additionalArgs []string,
 		common.LogStrategy = "daily"
 	}
 
+	if args.Spartan {
+		args.Quiet = true
+		args.NoColor = true
+		if args.LogLevel == "" {
+			args.LogLevel = "ERROR"
+		}
+	}
+	if args.NoColor {
+		client.TermColorsEnable = false
+	}
+
 	if args.LogLevel != "" {
 		common.LogLevel = args.LogLevel
 	} else if args.ServersStr == "" && args.Discovery == "" {
@@ -81,14 +92,6 @@ func (c *initializer) transformConfig(args *Args, additionalArgs []string,
 
 	if args.SSHPort != DefaultSSHPort {
 		common.SSHPort = args.SSHPort
-	}
-	if args.NoColor {
-		client.TermColorsEnable = false
-	}
-
-	if args.Spartan {
-		args.Quiet = true
-		args.NoColor = true
 	}
 
 	if args.Discovery == "" && args.ServersStr == "" {

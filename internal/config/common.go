@@ -6,7 +6,7 @@ type CommonConfig struct {
 	SSHPort int
 	// Enable experimental features (mainly for dev purposes)
 	ExperimentalFeaturesEnable bool `json:",omitempty"`
-	// LogLevel defines how much is logged. TODO: Adjust JSONschema
+	// LogLevel defines how much is logged.
 	LogLevel string `json:",omitempty"`
 	// The log strategy to use, one of
 	//   stdout: only log to stdout (useful when used with systemd)

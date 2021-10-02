@@ -1,6 +1,7 @@
 *_proprietary.go
 *.csv
 *.tmp
+*.out
 cache/
 log/
 tags

@@ -2,7 +2,7 @@ all: build
 testrun: build spinup dcat spindown
 serverfarm: spindown build spinup
 build:
-	cp ../testdata/mapr_testdata.log .
+	cp ../integrationtests/mapr_testdata.log .
 	cp ../dserver .
 	docker build . -t dserver:develop
 	rm ./dserver
