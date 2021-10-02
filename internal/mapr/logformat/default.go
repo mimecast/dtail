@@ -11,7 +11,7 @@ import (
 func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 	splitted := strings.Split(maprLine, protocol.FieldDelimiter)
 
-	if len(splitted) < 3 || !strings.HasPrefix(splitted[3], "MAPREDUCE:") || !strings.HasPrefix(splitted[0], "INFO") {
+	if len(splitted) < 11 || !strings.HasPrefix(splitted[9], "MAPREDUCE:") || !strings.HasPrefix(splitted[0], "INFO") {
 		// Not a DTail mapreduce log line.
 		return nil, IgnoreFieldsErr
 	}
@@ -27,10 +27,25 @@ func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 
 	fields["$severity"] = splitted[0]
 	fields["$loglevel"] = splitted[0]
-	// NEXT: Parse time like we do at Mimecast
-	fields["$time"] = splitted[1]
 
-	for _, kv := range splitted[4:] {
+	time := splitted[1]
+	fields["$time"] = time
+	if len(time) == 15 {
+		// Example: 20211002-071209
+		fields["$date"] = time[0:8]
+		fields["$hour"] = time[9:11]
+		fields["$minute"] = time[11:13]
+		fields["$second"] = time[13:]
+	}
+	fields["$pid"] = splitted[2]
+	fields["$caller"] = splitted[3]
+	fields["$cpus"] = splitted[4]
+	fields["$goroutines"] = splitted[5]
+	fields["$cgocalls"] = splitted[6]
+	fields["$loadavg"] = splitted[7]
+	fields["$uptime"] = splitted[8]
+
+	for _, kv := range splitted[10:] {
 		keyAndValue := strings.SplitN(kv, "=", 2)
 		if len(keyAndValue) != 2 {
 			return fields, fmt.Errorf("Unable to parse key-value token '%s'", kv)

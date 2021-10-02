@@ -85,7 +85,6 @@ func (c *configInitializer) transformConfig(args *Args, additionalArgs []string,
 	if args.LogDir != "" {
 		common.LogDir = args.LogDir
 		if common.LogStrategy == "" {
-			// TODO: Implement the other (not-daily) log strategy for the server.
 			common.LogStrategy = "daily"
 		}
 	}

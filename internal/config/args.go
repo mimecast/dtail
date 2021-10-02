@@ -39,7 +39,7 @@ func (a *Args) String() string {
 	var sb strings.Builder
 
 	sb.WriteString("Args(")
-	// TODO: All commands should make use of this
+
 	sb.WriteString(fmt.Sprintf("%s:%s,", "LogDir", a.LogDir))
 	sb.WriteString(fmt.Sprintf("%s:%s,", "LogLevel", a.LogLevel))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Arguments", a.Arguments))

@@ -3,7 +3,11 @@ package dlog
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -211,8 +215,38 @@ func (d *DLog) Raw(message string) string {
 func (d *DLog) Mapreduce(table string, data map[string]interface{}) string {
 	args := make([]interface{}, len(data)+1)
 
-	// TODO: mC compatible SERVER mapreduce fields, no MAPREDUCE keyword in CLIENT mode
-	args[0] = fmt.Sprintf("%s:%s", "MAPREDUCE", strings.ToUpper(table))
+	if d.sourceProcess == SERVER {
+		// level|date-time|process|caller|cpus|goroutines|cgocalls|loadavg|uptime|MAPREDUCE:TABLE|key=value|...
+
+		var loadAvg string
+		if loadAvgBytes, err := ioutil.ReadFile("/proc/loadavg"); err == nil {
+			tmp := string(loadAvgBytes)
+			s := strings.SplitN(tmp, " ", 2)
+			loadAvg = s[0]
+		}
+
+		var uptime string
+		if uptimeBytes, err := ioutil.ReadFile("/proc/uptime"); err == nil {
+			tmp := string(uptimeBytes)
+			s := strings.SplitN(tmp, ".", 2)
+			i, _ := strconv.ParseInt(s[0], 10, 64)
+			t := time.Duration(i) * time.Second
+			uptime = fmt.Sprintf("%v", t)
+		}
+
+		_, file, line, _ := runtime.Caller(1)
+		args[0] = fmt.Sprintf("%d|%s:%d|%d|%d|%d|%s|%s|MAPREDUCE:%s",
+			os.Getpid(),
+			filepath.Base(file), line,
+			runtime.NumCPU(),
+			runtime.NumGoroutine(),
+			runtime.NumCgoCall(),
+			loadAvg,
+			uptime,
+			strings.ToUpper(table))
+	} else {
+		args[0] = fmt.Sprintf("STATS:%s", strings.ToUpper(table))
+	}
 
 	i := 1
 	for k, v := range data {

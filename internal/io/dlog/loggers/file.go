@@ -100,7 +100,6 @@ func (f *file) Pause()  { f.pauseCh <- struct{}{} }
 func (f *file) Resume() { f.resumeCh <- struct{}{} }
 func (f *file) Flush()  { f.flushCh <- struct{}{} }
 
-// TODO: Test that Rotate() actually works.
 func (f *file) Rotate()            { f.rotateCh <- struct{}{} }
 func (*file) SupportsColors() bool { return false }
 

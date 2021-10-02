@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"sync"
 	"time"
 
@@ -53,9 +52,6 @@ func (s *stats) logServerStats() {
 	data := make(map[string]interface{})
 	data["currentConnections"] = s.currentConnections
 	data["lifetimeConnections"] = s.lifetimeConnections
-	data["goroutines"] = runtime.NumGoroutine()
-	data["cgocalls"] = runtime.NumCgoCall()
-	data["cpu"] = runtime.NumCPU()
 
 	dlog.Server.Mapreduce("STATS", data)
 }
