@@ -72,13 +72,13 @@ func main() {
 		version.PrintAndExit()
 	}
 	if !args.Spartan {
-		version.Print()
 		if displayWideColorTable {
 			color.TablePrintAndExit(true)
 		}
 		if displayColorTable {
 			color.TablePrintAndExit(false)
 		}
+		version.Print()
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
