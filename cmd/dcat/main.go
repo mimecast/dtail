@@ -39,7 +39,7 @@ func main() {
 	flag.StringVar(&args.What, "files", "", "File(s) to read")
 
 	flag.Parse()
-	config.Setup(&args, flag.Args())
+	config.Setup(source.Client, &args, flag.Args())
 
 	if displayVersion {
 		version.PrintAndExit()

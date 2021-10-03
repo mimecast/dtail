@@ -43,7 +43,7 @@ func main() {
 	flag.StringVar(&grep, "grep", "", "Alias for -regex")
 
 	flag.Parse()
-	config.Setup(&args, flag.Args())
+	config.Setup(source.Client, &args, flag.Args())
 
 	if displayVersion {
 		version.PrintAndExit()

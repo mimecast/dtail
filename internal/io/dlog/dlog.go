@@ -163,8 +163,11 @@ func (d *DLog) writeArgStrings(sb *strings.Builder, args []interface{}) {
 
 func (d *DLog) FatalPanic(args ...interface{}) {
 	d.log(FATAL, args)
-	d.logger.Flush()
-	panic("Not recovering from this fatal error...")
+	d.Flush()
+
+	var sb strings.Builder
+	d.writeArgStrings(&sb, args)
+	panic(sb.String())
 }
 
 func (d *DLog) Fatal(args ...interface{}) string {

@@ -46,7 +46,7 @@ func main() {
 	flag.StringVar(&queryStr, "query", "", "Map reduce query")
 
 	flag.Parse()
-	config.Setup(&args, flag.Args())
+	config.Setup(source.Client, &args, flag.Args())
 
 	if displayVersion {
 		version.PrintAndExit()

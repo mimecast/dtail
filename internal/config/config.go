@@ -1,5 +1,7 @@
 package config
 
+import "github.com/mimecast/dtail/internal/source"
+
 const (
 	// ControlUser is used for various DTail specific operations.
 	ControlUser string = "DTAIL-CONTROL"
@@ -25,7 +27,7 @@ var Server *ServerConfig
 var Common *CommonConfig
 
 // Setup the DTail configuration.
-func Setup(args *Args, additionalArgs []string) {
+func Setup(sourceProcess source.Source, args *Args, additionalArgs []string) {
 	initializer := initializer{
 		Common: newDefaultCommonConfig(),
 		Server: newDefaultServerConfig(),
@@ -33,6 +35,7 @@ func Setup(args *Args, additionalArgs []string) {
 	}
 	initializer.parseConfig(args)
 	Client, Server, Common = initializer.transformConfig(
+		sourceProcess,
 		args, additionalArgs,
 		initializer.Client,
 		initializer.Server,

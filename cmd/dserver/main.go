@@ -43,7 +43,7 @@ func main() {
 
 	flag.Parse()
 	args.NoColor = !color
-	config.Setup(&args, flag.Args())
+	config.Setup(source.Server, &args, flag.Args())
 
 	if displayVersion {
 		version.PrintAndExit()

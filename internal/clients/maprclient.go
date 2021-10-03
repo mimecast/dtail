@@ -203,7 +203,7 @@ func (c *MaprClient) printResults() {
 	dlog.Client.Raw(rawQuery)
 
 	if rowsLimit > 0 && numRows > rowsLimit {
-		dlog.Client.Warn(fmt.Sprintf("Got %d results but limited output to %d rows! Use 'limit' clause to override!",
+		dlog.Client.Warn(fmt.Sprintf("Got %d results but limited terminal output to %d rows! Use 'limit' clause to override!",
 			numRows, rowsLimit))
 	}
 	dlog.Client.Raw(result)

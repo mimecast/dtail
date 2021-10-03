@@ -1,6 +1,7 @@
 package integrationtests
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -29,6 +30,60 @@ func runCommand(t *testing.T, cmd string, args []string, stdoutFile string) erro
 	}
 	fd.Write(bytes)
 	fd.Close()
+
+	return nil
+}
+
+// Checks whether both files have the same lines (order doesn't matter)
+func compareFilesContents(t *testing.T, fileA, fileB string) error {
+	mapFile := func(file string) (map[string]int, error) {
+		t.Log("Reading", file)
+		contents := make(map[string]int)
+		fd, err := os.Open(file)
+		if err != nil {
+			return contents, err
+		}
+		defer fd.Close()
+
+		scanner := bufio.NewScanner(fd)
+		scanner.Split(bufio.ScanLines)
+		for scanner.Scan() {
+			line := scanner.Text()
+			count, _ := contents[line]
+			contents[line] = count + 1
+		}
+
+		return contents, nil
+	}
+
+	compareMaps := func(a, b map[string]int) error {
+		for line, countA := range a {
+			countB, ok := b[line]
+			if !ok {
+				return fmt.Errorf("Files differ, line '%s' is missing in one of them", line)
+			}
+			if countA != countB {
+				return fmt.Errorf("Files differ, count of line '%s' is %d in one but %d in another", line, countA, countB)
+			}
+		}
+		return nil
+	}
+
+	a, err := mapFile(fileA)
+	if err != nil {
+		return err
+	}
+	b, err := mapFile(fileB)
+	if err != nil {
+		return err
+	}
+
+	if err := compareMaps(a, b); err != nil {
+		return err
+	}
+	if err := compareMaps(b, a); err != nil {
+		return err
+	}
 
 	return nil
 }

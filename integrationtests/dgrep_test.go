@@ -6,16 +6,16 @@ import (
 )
 
 func TestDGrep(t *testing.T) {
-	testdataFile := "mapr_testdata.log"
-	stdoutFile := "dgrep.out"
-	expectedResultFile := "dgrep_expected.txt"
+	inFile := "mapr_testdata.log"
+	stdoutFile := "dgrep.stdout.tmp"
+	expectedStdoutFile := "dgrep.txt.expected"
 
-	if err := runCommand(t, "../dgrep", []string{"-spartan", "--grep", "20211002-071947", testdataFile}, stdoutFile); err != nil {
+	if err := runCommand(t, "../dgrep", []string{"-spartan", "--grep", "20211002-071947", inFile}, stdoutFile); err != nil {
 		t.Error(err)
 		return
 	}
 
-	if err := compareFiles(t, stdoutFile, expectedResultFile); err != nil {
+	if err := compareFiles(t, stdoutFile, expectedStdoutFile); err != nil {
 		t.Error(err)
 		return
 	}
@@ -23,16 +23,16 @@ func TestDGrep(t *testing.T) {
 }
 
 func TestDGrep2(t *testing.T) {
-	testdataFile := "mapr_testdata.log"
-	stdoutFile := "dgrep.out"
-	expectedResultFile := "dgrep_expected2.txt"
+	inFile := "mapr_testdata.log"
+	stdoutFile := "dgrep2.stdout.tmp"
+	expectedStdoutFile := "dgrep2.txt.expected"
 
-	if err := runCommand(t, "../dgrep", []string{"-spartan", "--grep", "20211002-071947", "--invert", testdataFile}, stdoutFile); err != nil {
+	if err := runCommand(t, "../dgrep", []string{"-spartan", "--grep", "20211002-071947", "--invert", inFile}, stdoutFile); err != nil {
 		t.Error(err)
 		return
 	}
 
-	if err := compareFiles(t, stdoutFile, expectedResultFile); err != nil {
+	if err := compareFiles(t, stdoutFile, expectedStdoutFile); err != nil {
 		t.Error(err)
 		return
 	}

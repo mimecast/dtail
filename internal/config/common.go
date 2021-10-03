@@ -26,6 +26,7 @@ func newDefaultCommonConfig() *CommonConfig {
 		SSHPort:                    DefaultSSHPort,
 		ExperimentalFeaturesEnable: false,
 		LogDir:                     "log",
+		LogLevel:                   "INFO",
 		CacheDir:                   "cache",
 		TmpDir:                     "/tmp",
 	}

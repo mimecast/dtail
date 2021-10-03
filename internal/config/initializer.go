@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/source"
 )
 
 // Used to initialize the configuration.
@@ -56,7 +58,7 @@ func (c *initializer) parseSpecificConfig(configFile string) {
 	}
 }
 
-func (c *initializer) transformConfig(args *Args, additionalArgs []string,
+func (c *initializer) transformConfig(sourceProcess source.Source, args *Args, additionalArgs []string,
 	client *ClientConfig, server *ServerConfig, common *CommonConfig) (*ClientConfig, *ServerConfig, *CommonConfig) {
 	if args.LogDir != "" {
 		common.LogDir = args.LogDir
@@ -85,7 +87,7 @@ func (c *initializer) transformConfig(args *Args, additionalArgs []string,
 
 	if args.LogLevel != "" {
 		common.LogLevel = args.LogLevel
-	} else if args.ServersStr == "" && args.Discovery == "" {
+	} else if sourceProcess == source.Client && args.ServersStr == "" && args.Discovery == "" {
 		// We are in serverless mode. Default log level is WARN.
 		common.LogLevel = "WARN"
 	}

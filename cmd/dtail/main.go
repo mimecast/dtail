@@ -66,7 +66,7 @@ func main() {
 	if grep != "" {
 		args.RegexStr = grep
 	}
-	config.Setup(&args, flag.Args())
+	config.Setup(source.Server, &args, flag.Args())
 
 	if displayVersion {
 		version.PrintAndExit()
