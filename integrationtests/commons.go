@@ -78,9 +78,12 @@ func compareFilesContents(t *testing.T, fileA, fileB string) error {
 		return err
 	}
 
+	// The mapreduce result can be in a different order each time (Golang maps are not sorted).
+	t.Log(fmt.Sprintf("Checking whether %s has same lines as file %s (ignoring line order)", fileA, fileB))
 	if err := compareMaps(a, b); err != nil {
 		return err
 	}
+	t.Log(fmt.Sprintf("Checking whether %s has same lines as file %s (ignoring line order)", fileB, fileA))
 	if err := compareMaps(b, a); err != nil {
 		return err
 	}

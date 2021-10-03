@@ -178,10 +178,30 @@ func (g *GroupSet) Result(query *Query, rowsLimit int) (string, int, error) {
 	return sb.String(), len(rows), nil
 }
 
+func (*GroupSet) writeQueryFile(query *Query) error {
+	queryFile := fmt.Sprintf("%s.query", query.Outfile)
+	tmpQueryFile := fmt.Sprintf("%s.tmp", queryFile)
+	dlog.Common.Debug("Writing query file", queryFile)
+
+	fd, err := os.Create(tmpQueryFile)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+
+	fd.WriteString(query.RawQuery)
+	os.Rename(tmpQueryFile, queryFile)
+
+	return nil
+}
+
 // WriteResult writes the result to an CSV outfile.
 func (g *GroupSet) WriteResult(query *Query) error {
 	if !query.HasOutfile() {
 		return errors.New("No outfile specified")
+	}
+	if err := g.writeQueryFile(query); err != nil {
+		return err
 	}
 
 	rows, _, err := g.result(query, false)
@@ -192,22 +212,22 @@ func (g *GroupSet) WriteResult(query *Query) error {
 	dlog.Common.Info("Writing outfile", query.Outfile)
 	tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile)
 
-	file, err := os.Create(tmpOutfile)
+	fd, err := os.Create(tmpOutfile)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer fd.Close()
 
 	// Generate header now
 	lastIndex := len(query.Select) - 1
 	for i, sc := range query.Select {
-		file.WriteString(sc.FieldStorage)
+		fd.WriteString(sc.FieldStorage)
 		if i == lastIndex {
 			continue
 		}
-		file.WriteString(protocol.CSVDelimiter)
+		fd.WriteString(protocol.CSVDelimiter)
 	}
-	file.WriteString("\n")
+	fd.WriteString("\n")
 
 	// And now write the data
 	for i, r := range rows {
@@ -215,13 +235,13 @@ func (g *GroupSet) WriteResult(query *Query) error {
 			break
 		}
 		for j, value := range r.values {
-			file.WriteString(value)
+			fd.WriteString(value)
 			if j == lastIndex {
 				continue
 			}
-			file.WriteString(protocol.CSVDelimiter)
+			fd.WriteString(protocol.CSVDelimiter)
 		}
-		file.WriteString("\n")
+		fd.WriteString("\n")
 	}
 
 	if err := os.Rename(tmpOutfile, query.Outfile); err != nil {
