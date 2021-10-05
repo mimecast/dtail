@@ -86,7 +86,7 @@ func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status i
 	var mutex sync.Mutex
 	for i, conn := range c.connections {
 		go func(i int, conn connectors.Connector) {
-			connStatus := c.start(ctx, active, i, conn)
+			connStatus := c.startConnection(ctx, active, i, conn)
 
 			// Update global status.
 			mutex.Lock()
@@ -97,11 +97,12 @@ func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status i
 		}(i, conn)
 	}
 
+	time.Sleep(time.Second * 2)
 	c.waitUntilDone(ctx, active)
 	return
 }
 
-func (c *baseClient) start(ctx context.Context, active chan struct{}, i int, conn connectors.Connector) (status int) {
+func (c *baseClient) startConnection(ctx context.Context, active chan struct{}, i int, conn connectors.Connector) (status int) {
 	// Increment connection count
 	active <- struct{}{}
 	// Derement connection count
@@ -146,12 +147,13 @@ func (c *baseClient) waitUntilDone(ctx context.Context, active chan struct{}) {
 		<-ctx.Done()
 	}
 
+	// TODO: Rewrite this to use a wait group.
 	for {
 		numActive := len(active)
 		if numActive == 0 {
 			return
 		}
 		dlog.Client.Debug("Active connections", numActive)
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * time.Millisecond * 100)
 	}
 }

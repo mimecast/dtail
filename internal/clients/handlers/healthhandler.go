@@ -1,90 +1,72 @@
 package handlers
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"time"
+	"strings"
 
 	"github.com/mimecast/dtail/internal"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
-// HealthHandler implements the handler required for health checks.
+// HealthHandler is the handler used on the client side for running mapreduce aggregations.
 type HealthHandler struct {
-	done *internal.Done
-	// Buffer of incoming data from server.
-	receiveBuf bytes.Buffer
-	// To send commands to the server.
-	commands chan string
-	// To receive messages from the server.
-	receive chan<- string
-	// The remote server address
-	server string
-	// The return status.
-	status int
+	baseHandler
+	HealthStatusCh chan<- int
 }
 
-// NewHealthHandler returns a new health check handler.
-func NewHealthHandler(server string, receive chan<- string) *HealthHandler {
-	h := HealthHandler{
-		server:   server,
-		receive:  receive,
-		commands: make(chan string),
-		status:   -1,
-		done:     internal.NewDone(),
+// NewHealthHandler returns a new health client handler.
+func NewHealthHandler(server string) *HealthHandler {
+	dlog.Client.Debug(server, "Creating new health handler")
+	return &HealthHandler{
+		baseHandler: baseHandler{
+			server:       server,
+			shellStarted: false,
+			commands:     make(chan string),
+			status:       -1,
+			done:         internal.NewDone(),
+		},
+		HealthStatusCh: make(chan int),
 	}
-
-	return &h
 }
 
-// Server returns the remote server name.
-func (h *HealthHandler) Server() string {
-	return h.server
-}
-
-// Status of the handler.
-func (h *HealthHandler) Status() int {
-	return h.status
-}
-
-// Done returns done channel of the handler.
-func (h *HealthHandler) Done() <-chan struct{} {
-	return h.done.Done()
-}
-
-// Shutdown the handler.
-func (h *HealthHandler) Shutdown() {
-	h.done.Shutdown()
-}
-
-// SendMessage sends a DTail command to the server.
-func (h *HealthHandler) SendMessage(command string) error {
-	select {
-	case h.commands <- fmt.Sprintf("%s;", command):
-	case <-time.NewTimer(time.Second * 10).C:
-		return errors.New("Timed out sending command " + command)
-	case <-h.Done():
-	}
-
-	return nil
-}
-
-// Server writes byte stream to client.
+// Read data from the dtail server via Writer interface.
 func (h *HealthHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
-		h.receiveBuf.WriteByte(b)
-		if b == protocol.MessageDelimiter {
-			h.receive <- h.receiveBuf.String()
-			h.receiveBuf.Reset()
+		switch b {
+		case '\n':
+			continue
+		case protocol.MessageDelimiter:
+			message := h.baseHandler.receiveBuf.String()
+			dlog.Client.Debug(message)
+			h.handleHealthMessage(message)
+			h.baseHandler.receiveBuf.Reset()
+		default:
+			h.baseHandler.receiveBuf.WriteByte(b)
 		}
 	}
 
 	return len(p), nil
 }
 
-// Server reads byte stream from client.
-func (h *HealthHandler) Read(p []byte) (n int, err error) {
-	n = copy(p, []byte(<-h.commands))
-	return
+func (h *HealthHandler) handleHealthMessage(message string) {
+	s := strings.Split(message, protocol.FieldDelimiter)
+	message = s[len(s)-1]
+	status := strings.Split(message, ":")
+	fmt.Println(status)
+	/*
+		switch status {
+		case "OK":
+			h.HealthStatusCh <- 0
+		case "WARNING":
+			h.HealthStatusCh <- 1
+		case "CRITICAL":
+			h.HealthStatusCh <- 2
+		case "UNKNOWN":
+			h.HealthStatusCh <- 3
+		default:
+			fmt.Println("CRITICAL: Unexpected server response: '%s'")
+			h.HealthStatusCh <- 2
+		}
+	*/
 }

@@ -3,8 +3,9 @@ package source
 type Source int
 
 const (
-	Client Source = iota
-	Server Source = iota
+	Client      Source = iota
+	Server      Source = iota
+	HealthCheck Source = iota
 )
 
 func (s Source) String() string {
@@ -13,7 +14,9 @@ func (s Source) String() string {
 		return "CLIENT"
 	case Server:
 		return "SERVER"
+	case HealthCheck:
+		return "HEALTHCHECK"
 	}
 
-	panic("Unknown log source type")
+	panic("Unknown source type")
 }

@@ -20,14 +20,12 @@ type Serverless struct {
 
 // NewServerConnection returns a new connection.
 func NewServerless(userName string, handler handlers.Handler, commands []string) *Serverless {
-	s := Serverless{
+	dlog.Client.Debug("Creating new serverless connector", handler, commands)
+	return &Serverless{
 		userName: userName,
 		handler:  handler,
 		commands: commands,
 	}
-
-	dlog.Client.Debug("Creating new serverless connector", handler, commands)
-	return &s
 }
 
 func (s *Serverless) Server() string {
@@ -58,11 +56,17 @@ func (s *Serverless) handle(ctx context.Context, cancel context.CancelFunc) erro
 		return err
 	}
 
-	serverHandler := serverHandlers.NewServerHandler(
-		user,
-		make(chan struct{}, config.Server.MaxConcurrentCats),
-		make(chan struct{}, config.Server.MaxConcurrentTails),
-	)
+	var serverHandler serverHandlers.Handler
+	switch s.userName {
+	case config.ControlUser:
+		serverHandler = serverHandlers.NewControlHandler(user)
+	default:
+		serverHandler = serverHandlers.NewServerHandler(
+			user,
+			make(chan struct{}, config.Server.MaxConcurrentCats),
+			make(chan struct{}, config.Server.MaxConcurrentTails),
+		)
+	}
 
 	terminate := func() {
 		serverHandler.Shutdown()

@@ -1,101 +1,44 @@
 package clients
 
 import (
-	"context"
-	"fmt"
 	"runtime"
-	"strings"
-	"time"
 
-	"github.com/mimecast/dtail/internal/clients/connectors"
 	"github.com/mimecast/dtail/internal/clients/handlers"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/omode"
-	"github.com/mimecast/dtail/internal/protocol"
 
 	gossh "golang.org/x/crypto/ssh"
 )
 
-// HealthClient is used for health checking (e.g. via Nagios)
+// HealthClient is used to perform a basic server health check.
 type HealthClient struct {
-	// Client operating mode
-	mode omode.Mode
-	// The remote server address
-	server string
-	// SSH user name
-	userName string
-	// SSH auth methods to use to connect to the remote servers.
-	sshAuthMethods []gossh.AuthMethod
+	baseClient
 }
 
-// NewHealthClient returns a new healh client.
-func NewHealthClient(mode omode.Mode) (*HealthClient, error) {
+// NewHealthClient returns a new health client.
+func NewHealthClient(args config.Args) (*HealthClient, error) {
+	args.Mode = omode.HealthClient
+	args.UserName = config.ControlUser
 	c := HealthClient{
-		mode:     mode,
-		server:   fmt.Sprintf("%s:%d", config.Server.SSHBindAddress, config.Common.SSHPort),
-		userName: config.ControlUser,
+		baseClient: baseClient{
+			Args:       args,
+			throttleCh: make(chan struct{}, args.ConnectionsPerCPU*runtime.NumCPU()),
+			retry:      false,
+		},
 	}
-	c.initSSHAuthMethods()
+
+	c.init()
+	c.sshAuthMethods = append(c.sshAuthMethods, gossh.Password(config.ControlUser))
+	c.makeConnections(c)
 
 	return &c, nil
 }
 
-// Start the health client.
-func (c *HealthClient) Start(ctx context.Context) (status int) {
-	receive := make(chan string)
-
-	throttleCh := make(chan struct{}, runtime.NumCPU())
-	statsCh := make(chan struct{}, 1)
-
-	conn := connectors.NewOneOffServerConnection(
-		c.server,
-		c.userName,
-		c.sshAuthMethods,
-		handlers.NewHealthHandler(c.server, receive),
-		[]string{c.mode.String()},
-	)
-
-	connCtx, cancel := context.WithCancel(ctx)
-	go conn.Start(connCtx, cancel, throttleCh, statsCh)
-
-	for {
-		select {
-		case data := <-receive:
-			// Parse recieved data.
-			s := strings.Split(data, protocol.FieldDelimiter)
-			message := s[len(s)-1]
-			if strings.HasPrefix(message, "done;") {
-				return
-			}
-
-			// Set severity.
-			s = strings.Split(message, ":")
-			switch s[0] {
-			case "OK":
-			case "WARNING":
-				if status < 1 {
-					status = 1
-				}
-			case "CRITICAL":
-				status = 2
-			case "UNKNOWN":
-				status = 3
-			default:
-				fmt.Printf("CRITICAL: Unexpected server response: '%s'\n", message)
-				status = 2
-				return
-			}
-			fmt.Print(message)
-
-		case <-time.After(time.Second * 2):
-			status = 2
-			fmt.Println("CRITICAL: Could not communicate with DTail server")
-			return
-		}
-	}
+func (c HealthClient) makeHandler(server string) handlers.Handler {
+	return handlers.NewHealthHandler(server)
 }
 
-// Initialize SSH auth methods.
-func (c *HealthClient) initSSHAuthMethods() {
-	c.sshAuthMethods = append(c.sshAuthMethods, gossh.Password(config.ControlUser))
+func (c HealthClient) makeCommands() (commands []string) {
+	commands = append(commands, "health")
+	return
 }

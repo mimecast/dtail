@@ -66,7 +66,11 @@ func main() {
 	if grep != "" {
 		args.RegexStr = grep
 	}
-	config.Setup(source.Server, &args, flag.Args())
+	sourceProcess := source.Client
+	if checkHealth {
+		sourceProcess = source.HealthCheck
+	}
+	config.Setup(sourceProcess, &args, flag.Args())
 
 	if displayVersion {
 		version.PrintAndExit()
@@ -88,15 +92,15 @@ func main() {
 		defer cancel()
 	}
 
-	if checkHealth {
-		healthClient, _ := clients.NewHealthClient(omode.HealthClient)
-		cancel()
-		os.Exit(healthClient.Start(ctx))
-	}
-
 	var wg sync.WaitGroup
 	wg.Add(1)
-	dlog.Start(ctx, &wg, source.Client, config.Common.LogLevel)
+	dlog.Start(ctx, &wg, sourceProcess, config.Common.LogLevel)
+
+	if checkHealth {
+		healthClient, _ := clients.NewHealthClient(args)
+		cancel()
+		os.Exit(healthClient.Start(ctx, signal.InterruptCh(ctx)))
+	}
 
 	if pprof > -1 {
 		// For debugging purposes only

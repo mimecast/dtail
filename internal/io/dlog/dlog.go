@@ -57,6 +57,12 @@ func Start(ctx context.Context, wg *sync.WaitGroup, sourceProcess source.Source,
 		Client = New(source.Server, source.Client, level, impl, strategy)
 		Server = New(source.Server, source.Server, level, impl, strategy)
 		Common = Server
+	case source.HealthCheck:
+		// Health check isn't logging anything.
+		impl := loggers.STDOUT
+		Client = New(source.HealthCheck, source.Client, level, impl, strategy)
+		Server = New(source.HealthCheck, source.Server, level, impl, strategy)
+		Common = Client
 	}
 
 	var wg2 sync.WaitGroup

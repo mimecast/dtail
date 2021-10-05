@@ -23,7 +23,6 @@ type ServerConnection struct {
 	config          *ssh.ClientConfig
 	handler         handlers.Handler
 	commands        []string
-	isOneOff        bool
 	hostKeyCallback client.HostKeyCallback
 	throttlingDone  bool
 }
@@ -43,24 +42,6 @@ func NewServerConnection(server string, userName string, authMethods []ssh.AuthM
 			HostKeyCallback: hostKeyCallback.Wrap(),
 			Timeout:         time.Second * 2,
 		},
-	}
-
-	c.initServerPort()
-	return &c
-}
-
-// NewOneOffServerConnection creates new one-off connection (only for sending a series of commands and then quit).
-func NewOneOffServerConnection(server string, userName string, authMethods []ssh.AuthMethod, handler handlers.Handler, commands []string) *ServerConnection {
-	c := ServerConnection{
-		server:   server,
-		handler:  handler,
-		commands: commands,
-		config: &ssh.ClientConfig{
-			User:            userName,
-			Auth:            authMethods,
-			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		},
-		isOneOff: true,
 	}
 
 	c.initServerPort()

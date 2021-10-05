@@ -32,13 +32,13 @@ func (r *readCommand) Start(ctx context.Context, argc int, args []string, retrie
 	if argc >= 4 {
 		deserializedRegex, err := regex.Deserialize(strings.Join(args[2:], " "))
 		if err != nil {
-			r.server.send(r.server.serverMessages, dlog.Server.Error(r.server.user, commandParseWarning, err))
+			r.server.send(r.server.serverMessages, dlog.Server.Error(r.server.user, "Unable to parse command", err))
 			return
 		}
 		re = deserializedRegex
 	}
 	if argc < 3 {
-		r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user, commandParseWarning, args, argc))
+		r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user, "Unable to parse command", args, argc))
 		return
 	}
 	r.readGlob(ctx, args[1], re, retries)
