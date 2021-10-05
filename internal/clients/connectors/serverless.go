@@ -69,6 +69,7 @@ func (s *Serverless) handle(ctx context.Context, cancel context.CancelFunc) erro
 	}
 
 	terminate := func() {
+		dlog.Client.Debug("Terminating serverless connection")
 		serverHandler.Shutdown()
 		cancel()
 	}

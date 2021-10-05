@@ -110,6 +110,8 @@ func (c *MaprClient) Start(ctx context.Context, statsCh <-chan string) (status i
 	return
 }
 
+// NEXT: Make this a callback function rather trying to use polymorphism to call this.
+// This applies to all clients.
 func (c MaprClient) makeHandler(server string) handlers.Handler {
 	return handlers.NewMaprHandler(server, c.query, c.globalGroup)
 }

@@ -40,14 +40,6 @@ func (h *baseHandler) Status() int {
 	return h.status
 }
 
-func (h *baseHandler) Done() <-chan struct{} {
-	return h.done.Done()
-}
-
-func (h *baseHandler) Shutdown() {
-	h.done.Shutdown()
-}
-
 // SendMessage to the server.
 func (h *baseHandler) SendMessage(command string) error {
 	encoded := base64.StdEncoding.EncodeToString([]byte(command))
@@ -77,12 +69,6 @@ func (h *baseHandler) Write(p []byte) (n int, err error) {
 		*/
 		case '\n', protocol.MessageDelimiter:
 			message := h.receiveBuf.String()
-			/*
-				// dcat/grep should actually display empty lines.
-					if len(message) == 0 {
-						continue
-					}
-			*/
 			h.handleMessageType(message)
 			h.receiveBuf.Reset()
 		default:
@@ -121,5 +107,14 @@ func (h *baseHandler) handleHiddenMessage(message string) {
 	switch {
 	case strings.HasPrefix(message, ".syn close connection"):
 		h.SendMessage(".ack close connection")
+		h.Shutdown()
 	}
+}
+
+func (h *baseHandler) Done() <-chan struct{} {
+	return h.done.Done()
+}
+
+func (h *baseHandler) Shutdown() {
+	h.done.Shutdown()
 }

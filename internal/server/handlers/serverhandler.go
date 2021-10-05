@@ -21,22 +21,6 @@ type ServerHandler struct {
 	catLimiter  chan struct{}
 	tailLimiter chan struct{}
 	regex       string
-	/*
-		done             *internal.Done
-		lines            chan line.Line
-		aggregate        *server.Aggregate
-		maprMessages     chan string
-		serverMessages   chan string
-		hostname         string
-		user             *user.User
-		ackCloseReceived chan struct{}
-		activeCommands   int32
-		quiet            bool
-		spartan          bool
-		serverless       bool
-		readBuf          bytes.Buffer
-		writeBuf         bytes.Buffer
-	*/
 }
 
 // NewServerHandler returns the server handler.

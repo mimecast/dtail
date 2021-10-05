@@ -162,8 +162,8 @@ func newDefaultClientConfig() *ClientConfig {
 				HostnameBg:    color.BgCyan,
 				HostnameFg:    color.FgBlack,
 				TextAttr:      color.AttrNone,
-				TextBg:        color.BgCyan,
-				TextFg:        color.FgBlack,
+				TextBg:        color.BgBlack,
+				TextFg:        color.FgWhite,
 			},
 			Common: commonTermColors{
 				SeverityErrorAttr: color.AttrBold,
