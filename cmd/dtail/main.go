@@ -41,7 +41,7 @@ func main() {
 	flag.BoolVar(&args.RegexInvert, "invert", false, "Invert regex")
 	flag.BoolVar(&args.Spartan, "spartan", false, "Spartan output mode")
 	flag.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Trust all unknown host keys")
-	flag.BoolVar(&checkHealth, "checkHealth", false, "Only check for server health")
+	flag.BoolVar(&checkHealth, "checkHealth", false, "Deprecated, flag will be removed soon")
 	flag.BoolVar(&displayColorTable, "colorTable", false, "Show color table")
 	flag.BoolVar(&displayWideColorTable, "wideColorTable", false, "Show a large color table")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
@@ -66,27 +66,23 @@ func main() {
 	if grep != "" {
 		args.RegexStr = grep
 	}
-	sourceProcess := source.Client
-	if checkHealth {
-		sourceProcess = source.HealthCheck
-	}
-	config.Setup(sourceProcess, &args, flag.Args())
-
+	config.Setup(source.Client, &args, flag.Args())
 	if displayVersion {
 		version.PrintAndExit()
 	}
 	if !args.Spartan {
+		if !checkHealth {
+			version.Print()
+		}
 		if displayWideColorTable {
 			color.TablePrintAndExit(true)
 		}
 		if displayColorTable {
 			color.TablePrintAndExit(false)
 		}
-		version.Print()
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-
 	if shutdownAfter > 0 {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(shutdownAfter)*time.Second)
 		defer cancel()
@@ -94,12 +90,12 @@ func main() {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	dlog.Start(ctx, &wg, sourceProcess, config.Common.LogLevel)
+	dlog.Start(ctx, &wg, source.Client, config.Common.LogLevel)
 
 	if checkHealth {
-		defer cancel()
-		healthClient, _ := clients.NewHealthClient(args)
-		os.Exit(healthClient.Start(ctx, signal.InterruptCh(ctx)))
+		fmt.Println("WARN: DTail health check has moved to separate binary dtailhealtcheck - please adjust the monitoring scripts!")
+		cancel()
+		os.Exit(1)
 	}
 
 	if pprof > -1 {

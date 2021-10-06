@@ -106,7 +106,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 			commandFinished()
 		}()
 
-	case "ack", ".ack":
+	case ".ack":
 		h.handleAckCommand(argc, args)
 		commandFinished()
 

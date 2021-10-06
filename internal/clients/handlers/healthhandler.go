@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/mimecast/dtail/internal"
@@ -22,7 +21,7 @@ func NewHealthHandler(server string) *HealthHandler {
 			server:       server,
 			shellStarted: false,
 			commands:     make(chan string),
-			status:       -1,
+			status:       2, // Assume CRITICAL status by default.
 			done:         internal.NewDone(),
 		},
 	}
@@ -34,14 +33,12 @@ func (h *HealthHandler) Write(p []byte) (n int, err error) {
 		switch b {
 		case '\n', protocol.MessageDelimiter:
 			message := h.baseHandler.receiveBuf.String()
-			dlog.Client.Debug(message)
 			h.handleMessage(message)
 			h.baseHandler.receiveBuf.Reset()
 		default:
 			h.baseHandler.receiveBuf.WriteByte(b)
 		}
 	}
-
 	return len(p), nil
 }
 
@@ -52,21 +49,7 @@ func (h *HealthHandler) handleMessage(message string) {
 	}
 	s := strings.Split(message, protocol.FieldDelimiter)
 	message = s[len(s)-1]
-	status := strings.Split(message, ":")
-	fmt.Println(status)
-	/*
-		switch status {
-		case "OK":
-			h.HealthStatusCh <- 0
-		case "WARNING":
-			h.HealthStatusCh <- 1
-		case "CRITICAL":
-			h.HealthStatusCh <- 2
-		case "UNKNOWN":
-			h.HealthStatusCh <- 3
-		default:
-			fmt.Println("CRITICAL: Unexpected server response: '%s'")
-			h.HealthStatusCh <- 2
-		}
-	*/
+	if message == "OK" {
+		h.baseHandler.status = 0
+	}
 }

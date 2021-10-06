@@ -48,8 +48,8 @@ func (h *HealthHandler) handleHealthCommand(ctx context.Context, argc int, args 
 
 	switch commandName {
 	case "health":
-		h.send(h.serverMessages, "OK: DTail SSH Server seems fine")
-	case "ack", ".ack":
+		h.send(h.serverMessages, "OK")
+	case ".ack":
 		h.handleAckCommand(argc, args)
 	default:
 		h.send(h.serverMessages, dlog.Server.Error(h.user, "Received unknown health command", commandName, argc, args))

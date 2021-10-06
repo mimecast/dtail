@@ -44,3 +44,8 @@ func InterruptCh(ctx context.Context) <-chan string {
 
 	return statsCh
 }
+
+// NoCh doesn't listen on a signal.
+func NoCh(ctx context.Context) <-chan string {
+	return make(chan string)
+}

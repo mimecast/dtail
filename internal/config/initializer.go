@@ -96,9 +96,17 @@ func (c *initializer) transformConfig(sourceProcess source.Source, args *Args, a
 		common.SSHPort = args.SSHPort
 	}
 
-	if args.Discovery == "" && args.ServersStr == "" {
+	if args.Discovery == "" && (args.ServersStr == "" ||
+		strings.ToLower(args.ServersStr) == "serverless") {
 		// We are not connecting to any servers.
 		args.Serverless = true
+	}
+
+	if sourceProcess == source.HealthCheck {
+		args.TrustAllHosts = true
+		if !args.Serverless && strings.ToLower(args.ServersStr) == "" {
+			args.ServersStr = fmt.Sprintf("localhost:%d", DefaultSSHPort)
+		}
 	}
 
 	// Interpret additional args as file list.

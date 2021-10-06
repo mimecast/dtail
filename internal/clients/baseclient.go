@@ -88,7 +88,6 @@ func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status i
 		go func(i int, conn connectors.Connector) {
 			defer wg.Done()
 			connStatus := c.startConnection(ctx, i, conn)
-			// Update global status.
 			mutex.Lock()
 			defer mutex.Unlock()
 			if connStatus > status {
