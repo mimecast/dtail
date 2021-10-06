@@ -12,7 +12,6 @@ import (
 // HealthHandler is the handler used on the client side for running mapreduce aggregations.
 type HealthHandler struct {
 	baseHandler
-	HealthStatusCh chan<- int
 }
 
 // NewHealthHandler returns a new health client handler.
@@ -26,7 +25,6 @@ func NewHealthHandler(server string) *HealthHandler {
 			status:       -1,
 			done:         internal.NewDone(),
 		},
-		HealthStatusCh: make(chan int),
 	}
 }
 
@@ -34,12 +32,10 @@ func NewHealthHandler(server string) *HealthHandler {
 func (h *HealthHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
 		switch b {
-		case '\n':
-			continue
-		case protocol.MessageDelimiter:
+		case '\n', protocol.MessageDelimiter:
 			message := h.baseHandler.receiveBuf.String()
 			dlog.Client.Debug(message)
-			h.handleHealthMessage(message)
+			h.handleMessage(message)
 			h.baseHandler.receiveBuf.Reset()
 		default:
 			h.baseHandler.receiveBuf.WriteByte(b)
@@ -49,7 +45,11 @@ func (h *HealthHandler) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func (h *HealthHandler) handleHealthMessage(message string) {
+func (h *HealthHandler) handleMessage(message string) {
+	if len(message) > 0 && message[0] == '.' {
+		h.baseHandler.handleHiddenMessage(message)
+		return
+	}
 	s := strings.Split(message, protocol.FieldDelimiter)
 	message = s[len(s)-1]
 	status := strings.Split(message, ":")

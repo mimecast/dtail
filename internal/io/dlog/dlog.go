@@ -201,6 +201,8 @@ func (d *DLog) Debug(args ...interface{}) string {
 }
 
 func (d *DLog) Trace(args ...interface{}) string {
+	_, file, line, _ := runtime.Caller(1)
+	args = append(args, fmt.Sprintf("at %s:%d", file, line))
 	return d.log(TRACE, args)
 }
 

@@ -162,8 +162,8 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn, in <-ch
 		case "shell":
 			var handler handlers.Handler
 			switch user.Name {
-			case config.ControlUser:
-				handler = handlers.NewControlHandler(user)
+			case config.HealthUser:
+				handler = handlers.NewHealthHandler(user)
 			default:
 				handler = handlers.NewServerHandler(user, s.catLimiter, s.tailLimiter)
 			}
@@ -234,9 +234,9 @@ func (s *Server) Callback(c gossh.ConnMetadata, authPayload []byte) (*gossh.Perm
 	remoteIP := splitted[0]
 
 	switch user.Name {
-	case config.ControlUser:
-		if authInfo == config.ControlUser {
-			dlog.Server.Debug(user, "Granting permissions to control user")
+	case config.HealthUser:
+		if authInfo == config.HealthUser {
+			dlog.Server.Debug(user, "Granting permissions to health user")
 			return nil, nil
 		}
 	case config.ScheduleUser:

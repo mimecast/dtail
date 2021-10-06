@@ -39,8 +39,7 @@ type baseClient struct {
 }
 
 func (c *baseClient) init() {
-	dlog.Client.Debug("Initiating base client")
-	dlog.Client.Debug(c.Args.String())
+	dlog.Client.Debug("Initiating base client", c.Args.String())
 
 	flag := regex.Default
 	if c.Args.RegexInvert {
@@ -48,15 +47,16 @@ func (c *baseClient) init() {
 	}
 	regex, err := regex.New(c.Args.RegexStr, flag)
 	if err != nil {
-		dlog.Client.FatalPanic(c.Regex, "invalid regex!", err, regex)
+		dlog.Client.FatalPanic(c.Regex, "Invalid regex!", err, regex)
 	}
 	c.Regex = regex
-	dlog.Client.Debug("Regex", c.Regex)
 
 	if c.Args.Serverless {
 		return
 	}
-	c.sshAuthMethods, c.hostKeyCallback = client.InitSSHAuthMethods(c.Args.SSHAuthMethods, c.Args.SSHHostKeyCallback, c.Args.TrustAllHosts, c.throttleCh, c.Args.PrivateKeyPathFile)
+	c.sshAuthMethods, c.hostKeyCallback = client.InitSSHAuthMethods(
+		c.Args.SSHAuthMethods, c.Args.SSHHostKeyCallback, c.Args.TrustAllHosts,
+		c.throttleCh, c.Args.PrivateKeyPathFile)
 }
 
 func (c *baseClient) makeConnections(maker maker) {
@@ -71,6 +71,7 @@ func (c *baseClient) makeConnections(maker maker) {
 }
 
 func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status int) {
+	dlog.Client.Trace("Starting base client")
 	// Can be nil when serverless.
 	if c.hostKeyCallback != nil {
 		// Periodically check for unknown hosts, and ask the user whether to trust them or not.
@@ -81,13 +82,12 @@ func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status i
 
 	var wg sync.WaitGroup
 	wg.Add(len(c.connections))
-
 	var mutex sync.Mutex
+
 	for i, conn := range c.connections {
 		go func(i int, conn connectors.Connector) {
 			defer wg.Done()
 			connStatus := c.startConnection(ctx, i, conn)
-
 			// Update global status.
 			mutex.Lock()
 			defer mutex.Unlock()

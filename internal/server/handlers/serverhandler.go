@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/mimecast/dtail/internal"
-	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/omode"
@@ -25,6 +24,7 @@ type ServerHandler struct {
 
 // NewServerHandler returns the server handler.
 func NewServerHandler(user *user.User, catLimiter, tailLimiter chan struct{}) *ServerHandler {
+	dlog.Server.Debug(user, "Creating new server handler")
 	h := ServerHandler{
 		baseHandler: baseHandler{
 			done:             internal.NewDone(),
@@ -51,7 +51,9 @@ func NewServerHandler(user *user.User, catLimiter, tailLimiter chan struct{}) *S
 	return &h
 }
 
-func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []string) {
+func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []string,
+	commandName string, options map[string]string) {
+
 	dlog.Server.Debug(h.user, "Handling user command", argc, args)
 
 	h.incrementActiveCommands()
@@ -59,16 +61,6 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 		if h.decrementActiveCommands() == 0 {
 			h.shutdown()
 		}
-	}
-
-	splitted := strings.Split(args[0], ":")
-	commandName := splitted[0]
-
-	options, err := config.DeserializeOptions(splitted[1:])
-	if err != nil {
-		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
-		commandFinished()
-		return
 	}
 
 	if quiet, _ := options["quiet"]; quiet == "true" {

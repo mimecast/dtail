@@ -97,8 +97,8 @@ func main() {
 	dlog.Start(ctx, &wg, sourceProcess, config.Common.LogLevel)
 
 	if checkHealth {
+		defer cancel()
 		healthClient, _ := clients.NewHealthClient(args)
-		cancel()
 		os.Exit(healthClient.Start(ctx, signal.InterruptCh(ctx)))
 	}
 

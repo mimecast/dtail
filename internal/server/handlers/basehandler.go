@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal"
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/pool"
@@ -21,7 +22,7 @@ import (
 	user "github.com/mimecast/dtail/internal/user/server"
 )
 
-type handleCommandCb func(context.Context, int, []string)
+type handleCommandCb func(context.Context, int, []string, string, map[string]string)
 
 type baseHandler struct {
 	done             *internal.Done
@@ -157,7 +158,16 @@ func (h *baseHandler) handleCommand(commandStr string) {
 		cancel()
 	}()
 
-	h.handleCommandCb(ctx, argc, args)
+	splitted := strings.Split(args[0], ":")
+	commandName := splitted[0]
+
+	options, err := config.DeserializeOptions(splitted[1:])
+	if err != nil {
+		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
+		return
+	}
+
+	h.handleCommandCb(ctx, argc, args, commandName, options)
 }
 
 func (h *baseHandler) handleProtocolVersion(args []string) ([]string, int, string, error) {
@@ -234,19 +244,19 @@ func (h *baseHandler) send(ch chan<- string, message string) {
 }
 
 func (h *baseHandler) flush() {
-	dlog.Server.Debug(h.user, "flush()")
+	dlog.Server.Trace(h.user, "flush()")
 
 	numUnsentMessages := func() int {
 		return len(h.lines) + len(h.serverMessages) + len(h.maprMessages)
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 10; i++ {
 		if numUnsentMessages() == 0 {
 			dlog.Server.Debug(h.user, "All lines sent", fmt.Sprintf("%p", h))
 			return
 		}
 		dlog.Server.Debug(h.user, "Still lines to be sent")
-		time.Sleep(time.Second)
+		time.Sleep(time.Millisecond * 10)
 	}
 
 	dlog.Server.Warn(h.user, "Some lines remain unsent", numUnsentMessages())

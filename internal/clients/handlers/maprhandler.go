@@ -44,7 +44,7 @@ func (h *MaprHandler) Write(p []byte) (n int, err error) {
 			if message[0] == 'A' {
 				h.handleAggregateMessage(message)
 			} else {
-				h.baseHandler.handleMessageType(message)
+				h.baseHandler.handleMessage(message)
 			}
 			h.baseHandler.receiveBuf.Reset()
 		default:

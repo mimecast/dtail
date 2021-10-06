@@ -3,8 +3,8 @@ package config
 import "github.com/mimecast/dtail/internal/source"
 
 const (
-	// ControlUser is used for various DTail specific operations.
-	ControlUser string = "DTAIL-CONTROL"
+	// HealthUser is used for the health check
+	HealthUser string = "DTAIL-HEALTH"
 	// ScheduleUser is used for non-interactive scheduled mapreduce queries.
 	ScheduleUser string = "DTAIL-SCHEDULE"
 	// ContinuousUser is used for non-interactive continuous mapreduce queries.

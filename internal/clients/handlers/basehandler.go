@@ -69,7 +69,7 @@ func (h *baseHandler) Write(p []byte) (n int, err error) {
 		*/
 		case '\n', protocol.MessageDelimiter:
 			message := h.receiveBuf.String()
-			h.handleMessageType(message)
+			h.handleMessage(message)
 			h.receiveBuf.Reset()
 		default:
 			h.receiveBuf.WriteByte(b)
@@ -90,9 +90,7 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 	return
 }
 
-// Handle various message types.
-func (h *baseHandler) handleMessageType(message string) {
-	// Hidden server commands starti with a dot "."
+func (h *baseHandler) handleMessage(message string) {
 	if len(message) > 0 && message[0] == '.' {
 		h.handleHiddenMessage(message)
 		return
@@ -106,7 +104,7 @@ func (h *baseHandler) handleMessageType(message string) {
 func (h *baseHandler) handleHiddenMessage(message string) {
 	switch {
 	case strings.HasPrefix(message, ".syn close connection"):
-		h.SendMessage(".ack close connection")
+		go h.SendMessage(".ack close connection")
 		h.Shutdown()
 	}
 }
