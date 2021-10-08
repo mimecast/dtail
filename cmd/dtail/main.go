@@ -31,7 +31,6 @@ func main() {
 	var displayVersion bool
 	var grep string
 	var pprof int
-	var queryStr string
 	var shutdownAfter int
 
 	userName := user.Name()
@@ -53,14 +52,15 @@ func main() {
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&args.LogDir, "logDir", "~/log", "Log dir")
+	flag.StringVar(&args.Logger, "logger", config.DefaultClientLogger, "Logger name")
 	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
 	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
+	flag.StringVar(&args.QueryStr, "query", "", "Map reduce query")
 	flag.StringVar(&args.RegexStr, "regex", ".", "Regular expression")
 	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&args.UserName, "user", userName, "Your system user name")
 	flag.StringVar(&args.What, "files", "", "File(s) to read")
 	flag.StringVar(&grep, "grep", "", "Alias for -regex")
-	flag.StringVar(&queryStr, "query", "", "Map reduce query")
 
 	flag.Parse()
 	if grep != "" {
@@ -71,14 +71,14 @@ func main() {
 		version.PrintAndExit()
 	}
 	if !args.Spartan {
-		if !checkHealth {
-			version.Print()
-		}
 		if displayWideColorTable {
 			color.TablePrintAndExit(true)
 		}
 		if displayColorTable {
 			color.TablePrintAndExit(false)
+		}
+		if !checkHealth {
+			version.Print()
 		}
 	}
 
@@ -90,7 +90,7 @@ func main() {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	dlog.Start(ctx, &wg, source.Client, config.Common.LogLevel)
+	dlog.Start(ctx, &wg, source.Client)
 
 	if checkHealth {
 		fmt.Println("WARN: DTail health check has moved to separate binary dtailhealtcheck - please adjust the monitoring scripts!")
@@ -109,13 +109,13 @@ func main() {
 	var err error
 	args.Mode = omode.TailClient
 
-	switch queryStr {
+	switch args.QueryStr {
 	case "":
 		if client, err = clients.NewTailClient(args); err != nil {
 			panic(err)
 		}
 	default:
-		if client, err = clients.NewMaprClient(args, queryStr, clients.DefaultMode); err != nil {
+		if client, err = clients.NewMaprClient(args, clients.DefaultMode); err != nil {
 			panic(err)
 		}
 	}

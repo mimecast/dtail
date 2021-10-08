@@ -17,10 +17,12 @@ type Args struct {
 	ConnectionsPerCPU  int
 	Discovery          string
 	LogDir             string
+	Logger             string
 	LogLevel           string
 	Mode               omode.Mode
 	NoColor            bool
 	PrivateKeyPathFile string
+	QueryStr           string
 	Quiet              bool
 	RegexInvert        bool
 	RegexStr           string
@@ -42,6 +44,7 @@ func (a *Args) String() string {
 	sb.WriteString("Args(")
 
 	sb.WriteString(fmt.Sprintf("%s:%s,", "LogDir", a.LogDir))
+	sb.WriteString(fmt.Sprintf("%s:%s,", "Logger", a.Logger))
 	sb.WriteString(fmt.Sprintf("%s:%s,", "LogLevel", a.LogLevel))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Arguments", a.Arguments))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "ConfigFile", a.ConfigFile))
@@ -50,6 +53,7 @@ func (a *Args) String() string {
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Mode", a.Mode))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "NoColor", a.NoColor))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "PrivateKeyPathFile", a.PrivateKeyPathFile))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "QueryStr", a.QueryStr))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Quiet", a.Quiet))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "RegexInvert", a.RegexInvert))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "RegexStr", a.RegexStr))

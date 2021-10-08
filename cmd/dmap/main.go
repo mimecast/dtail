@@ -19,7 +19,6 @@ import (
 // The evil begins here.
 func main() {
 	var displayVersion bool
-	var queryStr string
 
 	args := config.Args{
 		Mode: omode.MapClient,
@@ -38,12 +37,13 @@ func main() {
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&args.LogDir, "logDir", "~/log", "Log dir")
+	flag.StringVar(&args.Logger, "logger", config.DefaultClientLogger, "Logger name")
 	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
 	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
+	flag.StringVar(&args.QueryStr, "query", "", "Map reduce query")
 	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&args.UserName, "user", userName, "Your system user name")
 	flag.StringVar(&args.What, "files", "", "File(s) to read")
-	flag.StringVar(&queryStr, "query", "", "Map reduce query")
 
 	flag.Parse()
 	config.Setup(source.Client, &args, flag.Args())
@@ -58,9 +58,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Add(1)
-	dlog.Start(ctx, &wg, source.Client, config.Common.LogLevel)
+	dlog.Start(ctx, &wg, source.Client)
 
-	client, err := clients.NewMaprClient(args, queryStr, clients.DefaultMode)
+	client, err := clients.NewMaprClient(args, clients.DefaultMode)
 	if err != nil {
 		dlog.Client.FatalPanic(err)
 	}

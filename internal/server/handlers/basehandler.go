@@ -252,7 +252,7 @@ func (h *baseHandler) flush() {
 
 	for i := 0; i < 10; i++ {
 		if numUnsentMessages() == 0 {
-			dlog.Server.Debug(h.user, "All lines sent", fmt.Sprintf("%p", h))
+			dlog.Server.Debug(h.user, "ALL lines sent", fmt.Sprintf("%p", h))
 			return
 		}
 		dlog.Server.Debug(h.user, "Still lines to be sent")

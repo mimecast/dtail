@@ -39,6 +39,7 @@ func main() {
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&args.LogDir, "logDir", "~/log", "Log dir")
+	flag.StringVar(&args.Logger, "logger", config.DefaultClientLogger, "Logger name")
 	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
 	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
 	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")
@@ -58,7 +59,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Add(1)
-	dlog.Start(ctx, &wg, source.Client, config.Common.LogLevel)
+	dlog.Start(ctx, &wg, source.Client)
 
 	if pprof > -1 {
 		// For debugging purposes only

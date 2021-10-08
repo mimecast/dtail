@@ -32,7 +32,7 @@ func TestDefaultLogFormat(t *testing.T) {
 		if val, ok := fields["$severity"]; !ok {
 			t.Errorf("Expected field '$severity', but no such field there in '%s'\n", input)
 		} else if val != "INFO" {
-			t.Errorf("Expected 'INFO' stored in field '$severity', but got '%s' in '%s'\n", val, input)
+			t.Errorf("Expected 'Info' stored in field '$severity', but got '%s' in '%s'\n", val, input)
 		}
 
 		if val, ok := fields["$time"]; !ok {

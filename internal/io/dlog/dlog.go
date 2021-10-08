@@ -33,7 +33,7 @@ var mutex sync.Mutex
 var started bool
 
 // Start logger(s).
-func Start(ctx context.Context, wg *sync.WaitGroup, sourceProcess source.Source, logLevel string) {
+func Start(ctx context.Context, wg *sync.WaitGroup, sourceProcess source.Source) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -41,27 +41,18 @@ func Start(ctx context.Context, wg *sync.WaitGroup, sourceProcess source.Source,
 		Common.FatalPanic("Logger already started")
 	}
 
-	strategy := loggers.GetStrategy(config.Common.LogStrategy)
-	level := newLevel(logLevel)
-
 	switch sourceProcess {
 	case source.Client:
-		// This is a DTail client process running.
-		impl := loggers.FOUT
-		Client = New(source.Client, source.Client, level, impl, strategy)
-		Server = New(source.Client, source.Server, level, impl, strategy)
+		Client = New(source.Client, source.Client)
+		Server = New(source.Client, source.Server)
 		Common = Client
 	case source.Server:
-		// This is a DTail server process running.
-		impl := loggers.FILE
-		Client = New(source.Server, source.Client, level, impl, strategy)
-		Server = New(source.Server, source.Server, level, impl, strategy)
+		Client = New(source.Server, source.Client)
+		Server = New(source.Server, source.Server)
 		Common = Server
 	case source.HealthCheck:
-		// Health check isn't logging anything.
-		impl := loggers.NONE
-		Client = New(source.HealthCheck, source.Client, level, impl, strategy)
-		Server = New(source.HealthCheck, source.Server, level, impl, strategy)
+		Client = New(source.HealthCheck, source.Client)
+		Server = New(source.HealthCheck, source.Server)
 		Common = Client
 	}
 
@@ -93,16 +84,20 @@ type DLog struct {
 }
 
 // New creates a new DTail logger.
-func New(sourceProcess, sourcePackage source.Source, maxLevel level, impl loggers.Impl, strategy loggers.Strategy) *DLog {
+func New(sourceProcess, sourcePackage source.Source) *DLog {
 	hostname, err := os.Hostname()
 	if err != nil {
 		panic(err)
 	}
+	strategy := loggers.GetStrategy(config.Common.LogStrategy)
+	loggerName := config.Common.Logger
+	level := newLevel(config.Common.LogLevel)
+
 	return &DLog{
-		logger:        loggers.Factory(sourceProcess.String(), impl, strategy),
+		logger:        loggers.Factory(sourceProcess.String(), loggerName, strategy),
 		sourceProcess: sourceProcess,
 		sourcePackage: sourcePackage,
-		maxLevel:      maxLevel,
+		maxLevel:      level,
 		hostname:      hostname,
 	}
 }
@@ -168,7 +163,7 @@ func (d *DLog) writeArgStrings(sb *strings.Builder, args []interface{}) {
 }
 
 func (d *DLog) FatalPanic(args ...interface{}) {
-	d.log(FATAL, args)
+	d.log(Fatal, args)
 	d.Flush()
 
 	var sb strings.Builder
@@ -177,37 +172,37 @@ func (d *DLog) FatalPanic(args ...interface{}) {
 }
 
 func (d *DLog) Fatal(args ...interface{}) string {
-	return d.log(FATAL, args)
+	return d.log(Fatal, args)
 }
 
 func (d *DLog) Error(args ...interface{}) string {
-	return d.log(ERROR, args)
+	return d.log(Error, args)
 }
 
 func (d *DLog) Warn(args ...interface{}) string {
-	return d.log(WARN, args)
+	return d.log(Warn, args)
 }
 
 func (d *DLog) Info(args ...interface{}) string {
-	return d.log(INFO, args)
+	return d.log(Info, args)
 }
 
 func (d *DLog) Verbose(args ...interface{}) string {
-	return d.log(VERBOSE, args)
+	return d.log(Verbose, args)
 }
 
 func (d *DLog) Debug(args ...interface{}) string {
-	return d.log(DEBUG, args)
+	return d.log(Debug, args)
 }
 
 func (d *DLog) Trace(args ...interface{}) string {
 	_, file, line, _ := runtime.Caller(1)
 	args = append(args, fmt.Sprintf("at %s:%d", file, line))
-	return d.log(TRACE, args)
+	return d.log(Trace, args)
 }
 
 func (d *DLog) Devel(args ...interface{}) string {
-	return d.log(DEVEL, args)
+	return d.log(Devel, args)
 }
 
 func (d *DLog) Raw(message string) string {
@@ -260,7 +255,7 @@ func (d *DLog) Mapreduce(table string, data map[string]interface{}) string {
 		args[i] = fmt.Sprintf("%s=%v", k, v)
 		i++
 	}
-	return d.log(INFO, args)
+	return d.log(Info, args)
 }
 
 func (d *DLog) Flush()  { d.logger.Flush() }

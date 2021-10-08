@@ -18,14 +18,15 @@ type initializer struct {
 	Client *ClientConfig
 }
 
-func (c *initializer) parseConfig(args *Args) {
+type transformCb func(*initializer, *Args, []string) error
+
+func (c *initializer) parseConfig(args *Args) error {
 	if strings.ToUpper(args.ConfigFile) == "NONE" {
-		return
+		return nil
 	}
 
 	if args.ConfigFile != "" {
-		c.parseSpecificConfig(args.ConfigFile)
-		return
+		return c.parseSpecificConfig(args.ConfigFile)
 	}
 
 	if homeDir, err := os.UserHomeDir(); err != nil {
@@ -38,85 +39,119 @@ func (c *initializer) parseConfig(args *Args) {
 			}
 		}
 	}
+
+	return nil
 }
 
-func (c *initializer) parseSpecificConfig(configFile string) {
+func (c *initializer) parseSpecificConfig(configFile string) error {
 	fd, err := os.Open(configFile)
 	if err != nil {
-		panic(fmt.Sprintf("Unable to read config file: %v", err))
+		return fmt.Errorf("Unable to read config file: %v", err)
 	}
 	defer fd.Close()
 
 	cfgBytes, err := ioutil.ReadAll(fd)
 	if err != nil {
-		panic(fmt.Sprintf("Unable to read config file %s: %v", configFile, err))
+		return fmt.Errorf("Unable to read config file %s: %v", configFile, err)
 	}
 
-	err = json.Unmarshal([]byte(cfgBytes), c)
-	if err != nil {
-		panic(fmt.Sprintf("Unable to parse config file %s: %v", configFile, err))
+	if err := json.Unmarshal([]byte(cfgBytes), c); err != nil {
+		return fmt.Errorf("Unable to parse config file %s: %v", configFile, err)
+	}
+
+	return nil
+}
+
+func (i *initializer) transformConfig(sourceProcess source.Source, args *Args, additionalArgs []string) error {
+
+	switch sourceProcess {
+	case source.Server:
+		return i.optimusPrime(transformServer, args, additionalArgs)
+	case source.Client:
+		return i.optimusPrime(transformClient, args, additionalArgs)
+	case source.HealthCheck:
+		return i.optimusPrime(transformHealthCheck, args, additionalArgs)
+	default:
+		return fmt.Errorf("Unable to transform config, unknown source '%s'", sourceProcess)
 	}
 }
 
-func (c *initializer) transformConfig(sourceProcess source.Source, args *Args, additionalArgs []string,
-	client *ClientConfig, server *ServerConfig, common *CommonConfig) (*ClientConfig, *ServerConfig, *CommonConfig) {
-	if args.LogDir != "" {
-		common.LogDir = args.LogDir
+func (i *initializer) optimusPrime(sourceCb transformCb, args *Args, additionalArgs []string) error {
+	// Copy args to config objects.
+	if args.SSHPort != DefaultSSHPort {
+		i.Common.SSHPort = args.SSHPort
 	}
-	if strings.Contains(common.LogDir, "~/") {
+	if args.LogLevel != DefaultLogLevel {
+		i.Common.LogLevel = args.LogLevel
+	}
+	if args.NoColor {
+		i.Client.TermColorsEnable = false
+	}
+	if args.LogDir != "" {
+		i.Common.LogDir = args.LogDir
+	}
+	if args.Logger != "" {
+		i.Common.Logger = args.Logger
+	}
+
+	// Setup log directory.
+	if strings.Contains(i.Common.LogDir, "~/") {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			panic(err)
 		}
-		common.LogDir = strings.ReplaceAll(common.LogDir, "~/", fmt.Sprintf("%s/", homeDir))
-	}
-	if common.LogStrategy == "" {
-		common.LogStrategy = "daily"
+		i.Common.LogDir = strings.ReplaceAll(i.Common.LogDir, "~/", fmt.Sprintf("%s/", homeDir))
 	}
 
-	if args.Spartan {
-		args.Quiet = true
-		args.NoColor = true
-		if args.LogLevel == "" {
-			args.LogLevel = "ERROR"
-		}
-	}
-	if args.NoColor {
-		client.TermColorsEnable = false
-	}
-
-	if args.LogLevel != "" {
-		common.LogLevel = args.LogLevel
-	} else if sourceProcess == source.Client && args.ServersStr == "" && args.Discovery == "" {
-		// We are in serverless mode. Default log level is WARN.
-		common.LogLevel = "WARN"
-	}
-
-	if args.SSHPort != DefaultSSHPort {
-		common.SSHPort = args.SSHPort
-	}
-
+	// Serverless mode.
 	if args.Discovery == "" && (args.ServersStr == "" ||
 		strings.ToLower(args.ServersStr) == "serverless") {
 		// We are not connecting to any servers.
 		args.Serverless = true
+		i.Common.LogLevel = "WARN"
 	}
 
-	if sourceProcess == source.HealthCheck {
-		args.TrustAllHosts = true
-		if !args.Serverless && strings.ToLower(args.ServersStr) == "" {
-			args.ServersStr = fmt.Sprintf("localhost:%d", DefaultSSHPort)
+	// Source type specific transormations.
+	sourceCb(i, args, additionalArgs)
+
+	// Spartan mode.
+	if args.Spartan {
+		args.Quiet = true
+		args.NoColor = true
+		i.Client.TermColorsEnable = false
+		if args.LogLevel == "" {
+			args.LogLevel = "ERROR"
+			i.Common.LogLevel = "ERROR"
 		}
 	}
-
-	// Interpret additional args as file list.
+	// Interpret additional args as file list or as query.
 	if args.What == "" {
 		var files []string
-		for _, file := range flag.Args() {
-			files = append(files, file)
+		for _, arg := range flag.Args() {
+			if args.QueryStr == "" && strings.Contains(strings.ToLower(arg), "select ") {
+				args.QueryStr = arg
+				continue
+			}
+			files = append(files, arg)
 		}
 		args.What = strings.Join(files, ",")
 	}
 
-	return client, server, common
+	return nil
+}
+
+func transformClient(i *initializer, args *Args, additionalArgs []string) error {
+	return nil
+}
+
+func transformServer(i *initializer, args *Args, additionalArgs []string) error {
+	return nil
+}
+
+func transformHealthCheck(i *initializer, args *Args, additionalArgs []string) error {
+	args.TrustAllHosts = true
+	if !args.Serverless && args.ServersStr == "" {
+		args.ServersStr = fmt.Sprintf("localhost:%d", DefaultSSHPort)
+	}
+	return nil
 }

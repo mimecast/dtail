@@ -8,80 +8,69 @@ import (
 type level int
 
 const (
-	FATAL   level = iota
-	ERROR   level = iota
-	WARN    level = iota
-	INFO    level = iota
-	DEFAULT level = iota
-	VERBOSE level = iota
-	DEBUG   level = iota
-	DEVEL   level = iota
-	TRACE   level = iota
-	ALL     level = iota
+	Fatal   level = iota
+	Error   level = iota
+	Warn    level = iota
+	Info    level = iota
+	Default level = iota
+	Verbose level = iota
+	Debug   level = iota
+	Devel   level = iota
+	Trace   level = iota
+	All     level = iota
 )
 
-var allLevels = []level{
-	FATAL,
-	ERROR,
-	WARN,
-	INFO,
-	DEFAULT,
-	VERBOSE,
-	DEBUG,
-	DEVEL,
-	TRACE,
-	ALL,
-}
+var allLevels = []level{Fatal, Error, Warn, Info, Default, Verbose, Debug, Devel, Trace, All}
 
 func newLevel(l string) level {
-	switch strings.ToUpper(l) {
-	case "FATAL":
-		return FATAL
-	case "ERROR":
-		return ERROR
-	case "WARN":
-		return WARN
-	case "INFO":
-		return INFO
+	switch strings.ToLower(l) {
+	case "fatal":
+		return Fatal
+	case "error":
+		return Error
+	case "warn":
+		return Warn
+	case "info":
+		return Info
 	case "":
 		fallthrough
-	case "DEFAULT":
-		return DEFAULT
-	case "VERBOSE":
-		return VERBOSE
-	case "DEBUG":
-		return DEBUG
-	case "DEVEL":
-		return DEVEL
-	case "TRACE":
-		return TRACE
-	case "ALL":
-		return ALL
+	case "default":
+		return Default
+	case "verbose":
+		return Verbose
+	case "debug":
+		return Debug
+	case "devel":
+		return Devel
+	case "trace":
+		return Trace
+	case "all":
+		return All
 	}
 	panic(fmt.Sprintf("Unknown log level %s, must be one of: %v", l, allLevels))
 }
 
 func (l level) String() string {
 	switch l {
-	case FATAL:
+	case Fatal:
 		return "FATAL"
-	case ERROR:
+	case Error:
 		return "ERROR"
-	case WARN:
+	case Warn:
 		return "WARN"
-	case INFO:
+	case Info:
 		return "INFO"
-	case DEFAULT:
+	case Default:
 		return "DEFAULT"
-	case VERBOSE:
+	case Verbose:
 		return "VERBOSE"
-	case DEBUG:
+	case Debug:
 		return "DEBUG"
-	case DEVEL:
+	case Devel:
 		return "DEVEL"
-	case TRACE:
+	case Trace:
 		return "TRACE"
-	case ALL:
+	case All:
 		return "ALL"
 	}
 

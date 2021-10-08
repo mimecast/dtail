@@ -39,6 +39,7 @@ func main() {
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Shutdown after so many seconds")
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.LogDir, "logDir", "", "Log dir")
+	flag.StringVar(&args.Logger, "logger", config.DefaultServerLogger, "Logger name")
 	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
 
 	flag.Parse()
@@ -68,7 +69,7 @@ func main() {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	dlog.Start(ctx, &wg, source.Server, config.Common.LogLevel)
+	dlog.Start(ctx, &wg, source.Server)
 
 	if config.ServerRelaxedAuthEnable {
 		dlog.Server.Fatal("SSH relaxed-auth mode enabled")

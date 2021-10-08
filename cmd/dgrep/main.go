@@ -34,6 +34,7 @@ func main() {
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&args.LogDir, "logDir", "~/log", "Log dir")
+	flag.StringVar(&args.Logger, "logger", config.DefaultClientLogger, "Logger name")
 	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
 	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
 	flag.StringVar(&args.RegexStr, "regex", ".", "Regular expression")
@@ -55,7 +56,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Add(1)
-	dlog.Start(ctx, &wg, source.Client, args.LogLevel)
+	dlog.Start(ctx, &wg, source.Client)
 
 	if grep != "" {
 		args.RegexStr = grep

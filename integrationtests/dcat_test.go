@@ -6,7 +6,7 @@ import (
 )
 
 func TestDCat(t *testing.T) {
-	testdataFile := "testdata.txt"
+	testdataFile := "dcat.txt.expected"
 	stdoutFile := "dcat.out"
 
 	if err := runCommand(t, "../dcat", []string{"-spartan", testdataFile}, stdoutFile); err != nil {

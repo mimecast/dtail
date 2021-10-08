@@ -82,8 +82,8 @@ func (s *scheduler) runJobs(ctx context.Context) {
 
 		args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(job.Name))
 
-		query := fmt.Sprintf("%s outfile %s", job.Query, outfile)
-		client, err := clients.NewMaprClient(args, query, clients.CumulativeMode)
+		args.QueryStr = fmt.Sprintf("%s outfile %s", job.Query, outfile)
+		client, err := clients.NewMaprClient(args, clients.CumulativeMode)
 		if err != nil {
 			dlog.Server.Error(fmt.Sprintf("Unable to create job %s", job.Name), err)
 			continue

@@ -31,8 +31,6 @@ const (
 // MaprClient is used for running mapreduce aggregations on remote files.
 type MaprClient struct {
 	baseClient
-	// Query string for mapr aggregations
-	queryStr string
 	// Global group set for merged mapr aggregation results
 	globalGroup *mapr.GlobalGroupSet
 	// The query object (constructed from queryStr)
@@ -44,14 +42,14 @@ type MaprClient struct {
 }
 
 // NewMaprClient returns a new mapreduce client.
-func NewMaprClient(args config.Args, queryStr string, maprClientMode MaprClientMode) (*MaprClient, error) {
-	if queryStr == "" {
+func NewMaprClient(args config.Args, maprClientMode MaprClientMode) (*MaprClient, error) {
+	if args.QueryStr == "" {
 		return nil, errors.New("No mapreduce query specified, use '-query' flag")
 	}
 
-	query, err := mapr.NewQuery(queryStr)
+	query, err := mapr.NewQuery(args.QueryStr)
 	if err != nil {
-		dlog.Client.FatalPanic(queryStr, "Can't parse mapr query", err)
+		dlog.Client.FatalPanic(args.QueryStr, "Can't parse mapr query", err)
 	}
 
 	// Don't retry connection if in tail mode and no outfile specified.
@@ -77,7 +75,6 @@ func NewMaprClient(args config.Args, queryStr string, maprClientMode MaprClientM
 			retry:      retry,
 		},
 		query:      query,
-		queryStr:   queryStr,
 		cumulative: cumulative,
 	}
 

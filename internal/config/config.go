@@ -15,6 +15,14 @@ const (
 	DefaultConnectionsPerCPU int = 10
 	// DTailSSHServerDefaultPort is the default DServer port.
 	DefaultSSHPort int = 2222
+	// DefaultLogLevel specifies the default log level (obviously)
+	DefaultLogLevel string = "INFO"
+	// DefaultClientLogger specifies the default logger for the client commands.
+	DefaultClientLogger string = "fout"
+	// DefaultServerLogger specifies the default logger for dtail server.
+	DefaultServerLogger string = "file"
+	// DefaultHealthCheckLogger specifies the default logger used for health checks.
+	DefaultHealthCheckLogger string = "none"
 )
 
 // Client holds a DTail client configuration.
@@ -33,12 +41,15 @@ func Setup(sourceProcess source.Source, args *Args, additionalArgs []string) {
 		Server: newDefaultServerConfig(),
 		Client: newDefaultClientConfig(),
 	}
-	initializer.parseConfig(args)
-	Client, Server, Common = initializer.transformConfig(
-		sourceProcess,
-		args, additionalArgs,
-		initializer.Client,
-		initializer.Server,
-		initializer.Common,
-	)
+	if err := initializer.parseConfig(args); err != nil {
+		panic(err)
+	}
+	if err := initializer.transformConfig(sourceProcess, args, additionalArgs); err != nil {
+		panic(err)
+	}
+
+	// Make config accessible globally
+	Server = initializer.Server
+	Client = initializer.Client
+	Common = initializer.Common
 }
