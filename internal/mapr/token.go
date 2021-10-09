@@ -4,7 +4,8 @@ import (
 	"strings"
 )
 
-var keywords = [...]string{"select", "from", "where", "set", "group", "rorder", "order", "interval", "limit", "outfile", "logformat"}
+var keywords = [...]string{"select", "from", "where", "set", "group", "rorder",
+	"order", "interval", "limit", "outfile", "logformat"}
 
 // Represents a parsed token, used to parse the mapr query.
 type token struct {
@@ -16,13 +17,11 @@ func (t token) isKeyword() bool {
 	if !t.isBareword {
 		return false
 	}
-
 	for _, keyword := range keywords {
 		if strings.ToLower(t.str) == keyword {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -32,7 +31,6 @@ func (t token) String() string {
 
 func tokenize(queryStr string) []token {
 	var tokens []token
-
 	for i, part := range strings.Split(queryStr, "\"") {
 		// Even i, means that it is not a quoted string
 		if i%2 == 0 {
@@ -53,14 +51,12 @@ func tokenize(queryStr string) []token {
 		}
 		tokens = append(tokens, token)
 	}
-
 	return tokens
 }
 
 func tokensConsume(tokens []token) ([]token, []token) {
 	//dlog.Common.Trace("=====================")
 	var consumed []token
-
 	for i, t := range tokens {
 		if t.isKeyword() {
 			//dlog.Common.Trace("keyword", t)
@@ -84,7 +80,6 @@ func tokensConsume(tokens []token) ([]token, []token) {
 		//dlog.Common.Trace("bare", token)
 		consumed = append(consumed, t)
 	}
-
 	//dlog.Common.Trace("result", consumed)
 	return nil, consumed
 }
@@ -95,7 +90,6 @@ func tokensConsumeStr(tokens []token) ([]token, []string) {
 	for _, token := range found {
 		strings = append(strings, token.str)
 	}
-
 	return tokens, strings
 }
 
@@ -106,6 +100,5 @@ func tokensConsumeOptional(tokens []token, optional string) []token {
 	if strings.ToLower(tokens[0].str) == strings.ToLower(optional) {
 		return tokens[1:]
 	}
-
 	return tokens
 }

@@ -32,7 +32,8 @@ func main() {
 	user.NoRootCheck()
 
 	flag.BoolVar(&color, "color", false, "Enable ANSII terminal colors")
-	flag.BoolVar(&config.ServerRelaxedAuthEnable, "relaxedAuth", false, "Enable relaxced SSH auth mode (don't use in production!)")
+	flag.BoolVar(&config.ServerRelaxedAuthEnable, "relaxedAuth", false,
+		"Enable relaxced SSH auth mode (don't use in production!)")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")

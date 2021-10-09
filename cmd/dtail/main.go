@@ -44,7 +44,8 @@ func main() {
 	flag.BoolVar(&displayColorTable, "colorTable", false, "Show color table")
 	flag.BoolVar(&displayWideColorTable, "wideColorTable", false, "Show a large color table")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
-	flag.IntVar(&args.ConnectionsPerCPU, "cpc", config.DefaultConnectionsPerCPU, "How many connections established per CPU core concurrently")
+	flag.IntVar(&args.ConnectionsPerCPU, "cpc", config.DefaultConnectionsPerCPU,
+		"How many connections established per CPU core concurrently")
 	flag.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
 	flag.IntVar(&args.Timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
@@ -93,7 +94,8 @@ func main() {
 	dlog.Start(ctx, &wg, source.Client)
 
 	if checkHealth {
-		fmt.Println("WARN: DTail health check has moved to separate binary dtailhealtcheck - please adjust the monitoring scripts!")
+		fmt.Println("WARN: DTail health check has moved to separate binary dtailhealtcheck" +
+			" - please adjust the monitoring scripts!")
 		cancel()
 		os.Exit(1)
 	}

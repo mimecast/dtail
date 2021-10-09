@@ -10,7 +10,6 @@ import (
 func (q *Query) WhereClause(fields map[string]string) bool {
 	for _, wc := range q.Where {
 		var ok bool
-
 		if wc.Operation > FloatOperation {
 			var lValue, rValue float64
 			if lValue, ok = whereClauseFloatValue(fields, wc.lString, wc.lFloat, wc.lType); !ok {
@@ -36,11 +35,12 @@ func (q *Query) WhereClause(fields map[string]string) bool {
 			return false
 		}
 	}
-
 	return true
 }
 
-func whereClauseFloatValue(fields map[string]string, str string, float float64, t fieldType) (float64, bool) {
+func whereClauseFloatValue(fields map[string]string, str string, float float64,
+	t fieldType) (float64, bool) {
+
 	switch t {
 	case Float:
 		return float, true
@@ -60,7 +60,9 @@ func whereClauseFloatValue(fields map[string]string, str string, float float64, 
 	}
 }
 
-func whereClauseStringValue(fields map[string]string, str string, t fieldType) (string, bool) {
+func whereClauseStringValue(fields map[string]string, str string,
+	t fieldType) (string, bool) {
+
 	switch t {
 	case Field:
 		value, ok := fields[str]

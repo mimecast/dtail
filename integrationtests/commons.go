@@ -15,10 +15,12 @@ import (
 )
 
 func runCommand(t *testing.T, cmd string, args []string, stdoutFile string) (int, error) {
-	return runCommandContext(t, context.TODO(), cmd, args, stdoutFile)
+	return runCommandContext(context.TODO(), t, cmd, args, stdoutFile)
 }
 
-func runCommandContext(t *testing.T, ctx context.Context, cmd string, args []string, stdoutFile string) (int, error) {
+func runCommandContext(ctx context.Context, t *testing.T, cmd string, args []string,
+	stdoutFile string) (int, error) {
+
 	if _, err := os.Stat(cmd); err != nil {
 		return -1, fmt.Errorf("No such binary %s, please compile first (%v)", cmd, err)
 	}
@@ -76,7 +78,8 @@ func compareFilesContents(t *testing.T, fileA, fileB string) error {
 				return fmt.Errorf("Files differ, line '%s' is missing in one of them", line)
 			}
 			if countA != countB {
-				return fmt.Errorf("Files differ, count of line '%s' is %d in one but %d in another", line, countA, countB)
+				return fmt.Errorf("Files differ, count of line '%s' is %d in one but %d in another",
+					line, countA, countB)
 			}
 		}
 		return nil
@@ -92,11 +95,13 @@ func compareFilesContents(t *testing.T, fileA, fileB string) error {
 	}
 
 	// The mapreduce result can be in a different order each time (Golang maps are not sorted).
-	t.Log(fmt.Sprintf("Checking whether %s has same lines as file %s (ignoring line order)", fileA, fileB))
+	t.Log(fmt.Sprintf("Checking whether %s has same lines as file %s (ignoring line order)",
+		fileA, fileB))
 	if err := compareMaps(a, b); err != nil {
 		return err
 	}
-	t.Log(fmt.Sprintf("Checking whether %s has same lines as file %s (ignoring line order)", fileB, fileA))
+	t.Log(fmt.Sprintf("Checking whether %s has same lines as file %s (ignoring line order)",
+		fileB, fileA))
 	if err := compareMaps(b, a); err != nil {
 		return err
 	}

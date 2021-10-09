@@ -18,8 +18,10 @@ type Serverless struct {
 	userName string
 }
 
-// NewServerConnection returns a new connection.
-func NewServerless(userName string, handler handlers.Handler, commands []string) *Serverless {
+// NewServerless starts a new serverless session.
+func NewServerless(userName string, handler handlers.Handler,
+	commands []string) *Serverless {
+
 	dlog.Client.Debug("Creating new serverless connector", handler, commands)
 	return &Serverless{
 		userName: userName,
@@ -28,15 +30,20 @@ func NewServerless(userName string, handler handlers.Handler, commands []string)
 	}
 }
 
+// Server returns serverless server indicator.
 func (s *Serverless) Server() string {
 	return "local(serverless)"
 }
 
+// Handler returns the handler used for the serverless connection.
 func (s *Serverless) Handler() handlers.Handler {
 	return s.handler
 }
 
-func (s *Serverless) Start(ctx context.Context, cancel context.CancelFunc, throttleCh, statsCh chan struct{}) {
+// Start the serverless connection.
+func (s *Serverless) Start(ctx context.Context, cancel context.CancelFunc,
+	throttleCh, statsCh chan struct{}) {
+
 	dlog.Client.Debug("Starting serverless connector")
 	go func() {
 		defer cancel()
@@ -81,13 +88,11 @@ func (s *Serverless) handle(ctx context.Context, cancel context.CancelFunc) erro
 		dlog.Client.Trace("io.Copy(serverHandler, s.handler) => done")
 		terminate()
 	}()
-
 	go func() {
 		io.Copy(s.handler, serverHandler)
 		dlog.Client.Trace("io.Copy(s.handler, serverHandler) => done")
 		terminate()
 	}()
-
 	go func() {
 		select {
 		case <-s.handler.Done():
@@ -107,6 +112,5 @@ func (s *Serverless) handle(ctx context.Context, cancel context.CancelFunc) erro
 	<-ctx.Done()
 	dlog.Client.Trace("s.handler.Shutdown()")
 	s.handler.Shutdown()
-
 	return nil
 }

@@ -19,7 +19,6 @@ type TailClient struct {
 // NewTailClient returns a new TailClient.
 func NewTailClient(args config.Args) (*TailClient, error) {
 	args.Mode = omode.TailClient
-
 	c := TailClient{
 		baseClient: baseClient{
 			Args:       args,
@@ -30,7 +29,6 @@ func NewTailClient(args config.Args) (*TailClient, error) {
 
 	c.init()
 	c.makeConnections(c)
-
 	return &c, nil
 }
 
@@ -48,6 +46,5 @@ func (c TailClient) makeCommands() (commands []string) {
 			c.Mode.String(), c.Args.SerializeOptions(), file, regex))
 	}
 	dlog.Client.Debug(commands)
-
 	return
 }

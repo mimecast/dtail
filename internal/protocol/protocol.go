@@ -13,7 +13,6 @@ const (
 	AggregateKVDelimiter string = "≔"
 	// AggregateDelimiter delimits parts of an aggregation message.
 	AggregateDelimiter string = "∥"
-	// AggregateDelimiter string = "⦀"
 	// AggregateGroupKeyCombinator combines the group set keys.
 	AggregateGroupKeyCombinator string = ","
 )

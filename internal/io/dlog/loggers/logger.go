@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// Logger is there to plug in your own log implementation.
 type Logger interface {
 	Log(now time.Time, message string)
 	LogWithColors(now time.Time, message, messageWithColors string)

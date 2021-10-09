@@ -64,7 +64,8 @@ func (c *baseClient) makeConnections(maker maker) {
 
 	discoveryService := discovery.New(c.Discovery, c.ServersStr, discovery.Shuffle)
 	for _, server := range discoveryService.ServerList() {
-		c.connections = append(c.connections, c.makeConnection(server, c.sshAuthMethods, c.hostKeyCallback))
+		c.connections = append(c.connections, c.makeConnection(server,
+			c.sshAuthMethods, c.hostKeyCallback))
 	}
 
 	c.stats = newTailStats(len(c.connections))
@@ -100,7 +101,9 @@ func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status i
 	return
 }
 
-func (c *baseClient) startConnection(ctx context.Context, i int, conn connectors.Connector) (status int) {
+func (c *baseClient) startConnection(ctx context.Context, i int,
+	conn connectors.Connector) (status int) {
+
 	for {
 		connCtx, cancel := context.WithCancel(ctx)
 		defer cancel()

@@ -26,25 +26,30 @@ func newReadCommand(server *ServerHandler, mode omode.Mode) *readCommand {
 	}
 }
 
-func (r *readCommand) Start(ctx context.Context, argc int, args []string, retries int) {
-	re := regex.NewNoop()
+func (r *readCommand) Start(ctx context.Context, argc int, args []string,
+	retries int) {
 
+	re := regex.NewNoop()
 	if argc >= 4 {
 		deserializedRegex, err := regex.Deserialize(strings.Join(args[2:], " "))
 		if err != nil {
-			r.server.send(r.server.serverMessages, dlog.Server.Error(r.server.user, "Unable to parse command", err))
+			r.server.send(r.server.serverMessages, dlog.Server.Error(r.server.user,
+				"Unable to parse command", err))
 			return
 		}
 		re = deserializedRegex
 	}
 	if argc < 3 {
-		r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user, "Unable to parse command", args, argc))
+		r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user,
+			"Unable to parse command", args, argc))
 		return
 	}
 	r.readGlob(ctx, args[1], re, retries)
 }
 
-func (r *readCommand) readGlob(ctx context.Context, glob string, re regex.Regex, retries int) {
+func (r *readCommand) readGlob(ctx context.Context, glob string, re regex.Regex,
+	retries int) {
+
 	retryInterval := time.Second * 5
 	glob = filepath.Clean(glob)
 
@@ -58,7 +63,8 @@ func (r *readCommand) readGlob(ctx context.Context, glob string, re regex.Regex,
 
 		if numPaths := len(paths); numPaths == 0 {
 			dlog.Server.Error(r.server.user, "No such file(s) to read", glob)
-			r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user, "Unable to read file(s), check server logs"))
+			r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user,
+				"Unable to read file(s), check server logs"))
 			select {
 			case <-ctx.Done():
 				return
@@ -72,31 +78,33 @@ func (r *readCommand) readGlob(ctx context.Context, glob string, re regex.Regex,
 		return
 	}
 
-	r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user, "Giving up to read file(s)"))
+	r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user,
+		"Giving up to read file(s)"))
 	return
 }
 
-func (r *readCommand) readFiles(ctx context.Context, paths []string, glob string, re regex.Regex, retryInterval time.Duration) {
+func (r *readCommand) readFiles(ctx context.Context, paths []string, glob string,
+	re regex.Regex, retryInterval time.Duration) {
+
 	var wg sync.WaitGroup
 	wg.Add(len(paths))
-
 	for _, path := range paths {
 		go r.readFileIfPermissions(ctx, &wg, path, glob, re)
 	}
-
 	wg.Wait()
 }
 
-func (r *readCommand) readFileIfPermissions(ctx context.Context, wg *sync.WaitGroup, path, glob string, re regex.Regex) {
+func (r *readCommand) readFileIfPermissions(ctx context.Context,
+	wg *sync.WaitGroup, path, glob string, re regex.Regex) {
+
 	defer wg.Done()
 	globID := r.makeGlobID(path, glob)
-
 	if !r.server.user.HasFilePermission(path, "readfiles") {
 		dlog.Server.Error(r.server.user, "No permission to read file", path, globID)
-		r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user, "Unable to read file(s), check server logs"))
+		r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user,
+			"Unable to read file(s), check server logs"))
 		return
 	}
-
 	r.readFile(ctx, path, globID, re)
 }
 
@@ -137,7 +145,6 @@ func (r *readCommand) readFile(ctx context.Context, path, globID string, re rege
 				return
 			}
 		}
-
 		time.Sleep(time.Second * 2)
 		dlog.Server.Info(path, globID, "Reading file again")
 	}
@@ -156,11 +163,11 @@ func (r *readCommand) makeGlobID(path, glob string) string {
 	if len(idParts) > 0 {
 		return strings.Join(idParts, "/")
 	}
-
 	if len(pathParts) > 0 {
 		return pathParts[len(pathParts)-1]
 	}
 
-	r.server.send(r.server.serverMessages, dlog.Server.Warn("Empty file path given?", path, glob))
+	r.server.send(r.server.serverMessages,
+		dlog.Server.Warn("Empty file path given?", path, glob))
 	return ""
 }

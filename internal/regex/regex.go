@@ -48,9 +48,7 @@ func new(regexStr string, flags []Flag) (Regex, error) {
 		regexStr: regexStr,
 		flags:    flags,
 	}
-
 	re, err := regexp.Compile(regexStr)
-
 	if err != nil {
 		return r, err
 	}
@@ -94,11 +92,9 @@ func (r Regex) Serialize() (string, error) {
 	for _, flag := range r.flags {
 		flags = append(flags, flag.String())
 	}
-
 	if !r.initialized {
 		return "", fmt.Errorf("Unable to serialize regex as not initialized properly: %v", r)
 	}
-
 	return fmt.Sprintf("regex:%s %s", strings.Join(flags, ","), r.regexStr), nil
 }
 
@@ -109,12 +105,12 @@ func Deserialize(str string) (Regex, error) {
 	if len(s) < 2 {
 		return NewNoop(), nil
 	}
-
 	flagsStr := s[0]
 	regexStr := s[1]
 
 	if !strings.HasPrefix(flagsStr, "regex") {
-		return Regex{}, fmt.Errorf("unable to deserialize regex '%s': should start with string 'regex'", str)
+		return Regex{}, fmt.Errorf("unable to deserialize regex '%s': should start "+
+			"with string 'regex'", str)
 	}
 
 	// Parse regex flags, e.g. "regex:flag1,flag2,flag3..."
@@ -129,6 +125,5 @@ func Deserialize(str string) (Regex, error) {
 			flags = append(flags, flag)
 		}
 	}
-
 	return new(regexStr, flags)
 }

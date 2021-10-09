@@ -32,7 +32,6 @@ func NewHealthClient(args config.Args) (*HealthClient, error) {
 	c.init()
 	c.sshAuthMethods = append(c.sshAuthMethods, gossh.Password(config.HealthUser))
 	c.makeConnections(c)
-
 	return &c, nil
 }
 
@@ -45,28 +44,34 @@ func (c HealthClient) makeCommands() (commands []string) {
 	return
 }
 
+// Start the health client.
 func (c *HealthClient) Start(ctx context.Context, statsCh <-chan string) int {
 	status := c.baseClient.Start(ctx, statsCh)
 
 	switch status {
 	case 0:
 		if c.Serverless {
-			fmt.Printf("WARNING: All seems fine but the check only run in serverless mode, please specify a remote server via --server hostname:port\n")
+			fmt.Printf("WARNING: All seems fine but the check only run in serverless mode" +
+				", please specify a remote server via --server hostname:port\n")
 			return 1
 		}
 		fmt.Printf("OK: All fine at %s :-)\n", c.ServersStr)
 	case 2:
 		if c.Serverless {
-			fmt.Printf("CRITICAL: DTail server not operating properly (using serverless connction)!\n")
+			fmt.Printf("CRITICAL: DTail server not operating properly (using " +
+				"serverless connction)!\n")
 			return 2
 		}
-		fmt.Printf("CRITICAL: DTail server not operating properly at %s!\n", c.ServersStr)
+		fmt.Printf("CRITICAL: DTail server not operating properly at %s!\n",
+			c.ServersStr)
 	default:
 		if c.Serverless {
-			fmt.Printf("UNKNOWN: Received unknown status code %d (using serverless connection)\n", status)
+			fmt.Printf("UNKNOWN: Received unknown status code %d (using serverless "+
+				"connection)\n", status)
 			return status
 		}
-		fmt.Printf("UNKNOWN: Received unknown status code %d from %s!\n", status, c.ServersStr)
+		fmt.Printf("UNKNOWN: Received unknown status code %d from %s!\n",
+			status, c.ServersStr)
 	}
 
 	return status

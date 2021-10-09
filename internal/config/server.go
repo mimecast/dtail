@@ -4,8 +4,8 @@ import (
 	"errors"
 )
 
-// Permissions map. Each SSH user has a list of permissions which
-// log files it is allowed to follow and which ones not.
+// Permissions map. Each SSH user has a list of permissions which log files it
+// is allowed to follow and which ones not.
 type Permissions struct {
 	// The default user permissions.
 	Default []string
@@ -68,7 +68,6 @@ var ServerRelaxedAuthEnable bool
 func newDefaultServerConfig() *ServerConfig {
 	defaultPermissions := []string{"^/.*"}
 	defaultBindAddress := "0.0.0.0"
-
 	return &ServerConfig{
 		SSHBindAddress:     defaultBindAddress,
 		MaxConnections:     10,
@@ -89,10 +88,8 @@ func ServerUserPermissions(userName string) (permissions []string, err error) {
 	if p, ok := Server.Permissions.Users[userName]; ok {
 		permissions = p
 	}
-
 	if len(permissions) == 0 {
 		err = errors.New("Empty set of permission, user won't be able to open any files")
 	}
-
 	return
 }

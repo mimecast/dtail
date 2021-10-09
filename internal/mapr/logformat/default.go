@@ -11,9 +11,10 @@ import (
 func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 	splitted := strings.Split(maprLine, protocol.FieldDelimiter)
 
-	if len(splitted) < 11 || !strings.HasPrefix(splitted[9], "MAPREDUCE:") || !strings.HasPrefix(splitted[0], "INFO") {
+	if len(splitted) < 11 || !strings.HasPrefix(splitted[9], "MAPREDUCE:") ||
+		!strings.HasPrefix(splitted[0], "INFO") {
 		// Not a DTail mapreduce log line.
-		return nil, IgnoreFieldsErr
+		return nil, ErrIgnoreFields
 	}
 
 	fields := make(map[string]string, len(splitted)+8)

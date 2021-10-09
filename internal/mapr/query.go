@@ -32,7 +32,9 @@ type Query struct {
 }
 
 func (q Query) String() string {
-	return fmt.Sprintf("Query(Select:%v,Table:%s,Where:%v,Set:%vGroupBy:%v,GroupKey:%s,OrderBy:%v,ReverseOrder:%v,Interval:%v,Limit:%d,Outfile:%s,RawQuery:%s,tokens:%v,LogFormat:%s)",
+	return fmt.Sprintf("Query(Select:%v,Table:%s,Where:%v,Set:%vGroupBy:%v,"+
+		"GroupKey:%s,OrderBy:%v,ReverseOrder:%v,Interval:%v,Limit:%d,Outfile:%s,"+
+		"RawQuery:%s,tokens:%v,LogFormat:%s)",
 		q.Select,
 		q.Table,
 		q.Where,
@@ -54,18 +56,14 @@ func NewQuery(queryStr string) (*Query, error) {
 	if queryStr == "" {
 		return nil, nil
 	}
-
 	tokens := tokenize(queryStr)
-
 	q := Query{
 		RawQuery: queryStr,
 		tokens:   tokens,
 		Interval: time.Second * 5,
 		Limit:    -1,
 	}
-
-	err := q.parse(tokens)
-	return &q, err
+	return &q, q.parse(tokens)
 }
 
 // HasOutfile returns true if query result will be written to a CVS output file.
@@ -174,13 +172,13 @@ func (q *Query) parse(tokens []token) error {
 	}
 
 	if len(q.Select) < 1 {
-		return errors.New(invalidQuery + "Expected at least one field in 'select' clause but got none")
+		return errors.New(invalidQuery + "Expected at least one field in 'select' " +
+			"clause but got none")
 	}
 	if len(q.GroupBy) == 0 {
 		field := q.Select[0].Field
 		q.GroupBy = append(q.GroupBy, field)
 	}
-
 	if q.OrderBy != "" {
 		var orderFieldIsValid bool
 		for _, sc := range q.Select {
@@ -190,7 +188,8 @@ func (q *Query) parse(tokens []token) error {
 			}
 		}
 		if !orderFieldIsValid {
-			return errors.New(invalidQuery + fmt.Sprintf("Can not '(r)order by' '%s', must be present in 'select' clause", q.OrderBy))
+			return errors.New(invalidQuery + fmt.Sprintf("Can not '(r)order by' '%s',"+
+				"must be present in 'select' clause", q.OrderBy))
 		}
 	}
 

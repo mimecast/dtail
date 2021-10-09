@@ -107,15 +107,14 @@ func (c *MaprClient) Start(ctx context.Context, statsCh <-chan string) (status i
 	return
 }
 
-// NEXT: Make this a callback function rather trying to use polymorphism to call this.
-// This applies to all clients.
+// NEXT: Make this a callback function rather trying to use polymorphism to call
+// this. This applies to all clients.
 func (c MaprClient) makeHandler(server string) handlers.Handler {
 	return handlers.NewMaprHandler(server, c.query, c.globalGroup)
 }
 
 func (c MaprClient) makeCommands() (commands []string) {
 	commands = append(commands, fmt.Sprintf("map %s", c.query.RawQuery))
-
 	modeStr := "cat"
 	if c.Mode == omode.TailClient {
 		modeStr = "tail"
@@ -134,7 +133,6 @@ func (c MaprClient) makeCommands() (commands []string) {
 		commands = append(commands, fmt.Sprintf("%s:%s %s %s",
 			modeStr, c.Args.SerializeOptions(), file, regex))
 	}
-
 	return
 }
 
@@ -155,7 +153,6 @@ func (c *MaprClient) reportResults() {
 		c.writeResultsToOutfile()
 		return
 	}
-
 	c.printResults()
 }
 
@@ -176,7 +173,6 @@ func (c *MaprClient) printResults() {
 	} else {
 		result, numRows, err = c.globalGroup.SwapOut().Result(c.query, rowsLimit)
 	}
-
 	if err != nil {
 		dlog.Client.FatalPanic(err)
 	}
@@ -202,8 +198,8 @@ func (c *MaprClient) printResults() {
 	dlog.Client.Raw(rawQuery)
 
 	if rowsLimit > 0 && numRows > rowsLimit {
-		dlog.Client.Warn(fmt.Sprintf("Got %d results but limited terminal output to %d rows! Use 'limit' clause to override!",
-			numRows, rowsLimit))
+		dlog.Client.Warn(fmt.Sprintf("Got %d results but limited terminal output "+
+			"to %d rows! Use 'limit' clause to override!", numRows, rowsLimit))
 	}
 	dlog.Client.Raw(result)
 }
@@ -215,7 +211,6 @@ func (c *MaprClient) writeResultsToOutfile() {
 		}
 		return
 	}
-
 	if err := c.globalGroup.SwapOut().WriteResult(c.query); err != nil {
 		dlog.Client.FatalPanic(err)
 	}

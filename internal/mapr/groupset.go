@@ -73,7 +73,6 @@ func (g *GroupSet) Result(query *Query, rowsLimit int) (string, int, error) {
 	if err != nil {
 		return "", 0, err
 	}
-
 	if query.Limit != -1 {
 		rowsLimit = query.Limit
 	}
@@ -91,12 +90,14 @@ func (g *GroupSet) Result(query *Query, rowsLimit int) (string, int, error) {
 			if sc.FieldStorage == query.OrderBy {
 				attrs = append(attrs, config.Client.TermColors.MaprTable.HeaderSortKeyAttr)
 			}
+
 			for _, groupBy := range query.GroupBy {
 				if sc.FieldStorage == groupBy {
 					attrs = append(attrs, config.Client.TermColors.MaprTable.HeaderGroupKeyAttr)
 					break
 				}
 			}
+
 			color.PaintWithAttrs(sb, str,
 				config.Client.TermColors.MaprTable.HeaderFg,
 				config.Client.TermColors.MaprTable.HeaderBg,
@@ -191,7 +192,6 @@ func (*GroupSet) writeQueryFile(query *Query) error {
 
 	fd.WriteString(query.RawQuery)
 	os.Rename(tmpQueryFile, queryFile)
-
 	return nil
 }
 
@@ -256,7 +256,6 @@ func (g *GroupSet) WriteResult(query *Query) error {
 func (g *GroupSet) result(query *Query, gatherWidths bool) ([]result, []int, error) {
 	var rows []result
 	widths := make([]int, len(query.Select))
-
 	var valueStr string
 	var value float64
 
@@ -284,7 +283,8 @@ func (g *GroupSet) result(query *Query, gatherWidths bool) ([]result, []int, err
 				value = set.FValues[sc.FieldStorage] / float64(set.Samples)
 				valueStr = fmt.Sprintf("%f", value)
 			default:
-				return rows, widths, fmt.Errorf("Unknown aggregation method '%v'", sc.Operation)
+				return rows, widths, fmt.Errorf("Unknown aggregation method '%v'",
+					sc.Operation)
 			}
 
 			if sc.FieldStorage == query.OrderBy {
@@ -302,7 +302,6 @@ func (g *GroupSet) result(query *Query, gatherWidths bool) ([]result, []int, err
 				widths[i] = len(valueStr)
 			}
 		}
-
 		rows = append(rows, r)
 	}
 

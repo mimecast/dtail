@@ -15,5 +15,5 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [ ] Manual test/adjust dtail colors
 [ ] More integration test colors (via dcat?)
 [ ] Integration test for dtail in serverless mode
-[ ] Integration test for health check serverless mode
-[ ] Rewrite + test health client (copy catclient)
+[ ] Go through the whole source and change indentation (try not to exceed 80char line lengths by too much)
+[ ] Fix the sync.Pools (they aren't concurrent as it seems and can cause a panic)

@@ -42,7 +42,8 @@ type readFile struct {
 
 // String returns the string representation of the readFile
 func (f readFile) String() string {
-	return fmt.Sprintf("readFile(filePath:%s,globID:%s,retry:%v,canSkipLines:%v,seekEOF:%v)",
+	return fmt.Sprintf(
+		"readFile(filePath:%s,globID:%s,retry:%v,canSkipLines:%v,seekEOF:%v)",
 		f.filePath,
 		f.globID,
 		f.retry,
@@ -61,7 +62,9 @@ func (f readFile) Retry() bool {
 }
 
 // Start tailing a log file.
-func (f readFile) Start(ctx context.Context, lines chan<- line.Line, re regex.Regex) error {
+func (f readFile) Start(ctx context.Context, lines chan<- line.Line,
+	re regex.Regex) error {
+
 	dlog.Common.Debug("readFile", f)
 	defer func() {
 		select {
@@ -74,7 +77,8 @@ func (f readFile) Start(ctx context.Context, lines chan<- line.Line, re regex.Re
 	case f.limiter <- struct{}{}:
 	default:
 		select {
-		case f.serverMessages <- dlog.Common.Warn(f.filePath, f.globID, "Server limit reached. Queuing file..."):
+		case f.serverMessages <- dlog.Common.Warn(f.filePath, f.globID,
+			"Server limit reached. Queuing file..."):
 		case <-ctx.Done():
 			return nil
 		}
@@ -139,13 +143,11 @@ func (f readFile) makeReader(fd *os.File) (reader *bufio.Reader, err error) {
 	default:
 		reader = bufio.NewReader(fd)
 	}
-
 	return
 }
 
 func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Buffer, truncate <-chan struct{}) error {
 	var offset uint64
-
 	reader, err := f.makeReader(fd)
 	if err != nil {
 		return err
@@ -193,7 +195,8 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Bu
 		default:
 			if message.Len() >= lineLengthThreshold {
 				if !warnedAboutLongLine {
-					f.serverMessages <- dlog.Common.Warn(f.filePath, "Long log line, splitting into multiple lines")
+					f.serverMessages <- dlog.Common.Warn(f.filePath,
+						"Long log line, splitting into multiple lines")
 					warnedAboutLongLine = true
 				}
 				message.WriteString("\n")
@@ -210,9 +213,10 @@ func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Bu
 }
 
 // Filter log lines matching a given regular expression.
-func (f readFile) filter(ctx context.Context, wg *sync.WaitGroup, rawLines <-chan *bytes.Buffer, lines chan<- line.Line, re regex.Regex) {
-	defer wg.Done()
+func (f readFile) filter(ctx context.Context, wg *sync.WaitGroup,
+	rawLines <-chan *bytes.Buffer, lines chan<- line.Line, re regex.Regex) {
 
+	defer wg.Done()
 	for {
 		select {
 		case line, ok := <-rawLines:
@@ -231,9 +235,10 @@ func (f readFile) filter(ctx context.Context, wg *sync.WaitGroup, rawLines <-cha
 	}
 }
 
-func (f readFile) transmittable(lineBytes *bytes.Buffer, length, capacity int, re regex.Regex) (line.Line, bool) {
-	var read line.Line
+func (f readFile) transmittable(lineBytes *bytes.Buffer, length, capacity int,
+	re regex.Regex) (line.Line, bool) {
 
+	var read line.Line
 	if !re.Match(lineBytes.Bytes()) {
 		f.updateLineNotMatched()
 		f.updateLineNotTransmitted()
@@ -254,7 +259,6 @@ func (f readFile) transmittable(lineBytes *bytes.Buffer, length, capacity int, r
 		Count:           f.totalLineCount(),
 		TransmittedPerc: f.transmittedPerc(),
 	}
-
 	return read, true
 }
 
@@ -267,7 +271,6 @@ func (f readFile) truncated(fd *os.File) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-
 	// Can not open file at original path.
 	pathFd, err := os.Open(f.filePath)
 	if err != nil {
@@ -280,10 +283,8 @@ func (f readFile) truncated(fd *os.File) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-
 	if curPos > pathPos {
 		return true, errors.New("File got truncated")
 	}
-
 	return false, nil
 }

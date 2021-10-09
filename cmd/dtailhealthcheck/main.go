@@ -35,7 +35,6 @@ func main() {
 	defer cancel()
 	var wg sync.WaitGroup
 	wg.Add(1)
-
 	dlog.Start(ctx, &wg, source.HealthCheck)
 
 	if pprof > -1 {

@@ -15,9 +15,9 @@ type remoteTermColors struct {
 	HostnameAttr  color.Attribute
 	HostnameBg    color.BgColor
 	HostnameFg    color.FgColor
-	IdAttr        color.Attribute
-	IdBg          color.BgColor
-	IdFg          color.FgColor
+	IDAttr        color.Attribute
+	IDBg          color.BgColor
+	IDFg          color.FgColor
 	StatsOkAttr   color.Attribute
 	StatsOkBg     color.BgColor
 	StatsOkFg     color.FgColor
@@ -124,9 +124,9 @@ func newDefaultClientConfig() *ClientConfig {
 				HostnameAttr:  color.AttrBold,
 				HostnameBg:    color.BgBlue,
 				HostnameFg:    color.FgWhite,
-				IdAttr:        color.AttrDim,
-				IdBg:          color.BgBlue,
-				IdFg:          color.FgWhite,
+				IDAttr:        color.AttrDim,
+				IDBg:          color.BgBlue,
+				IDFg:          color.FgWhite,
 				StatsOkAttr:   color.AttrNone,
 				StatsOkBg:     color.BgGreen,
 				StatsOkFg:     color.FgBlack,

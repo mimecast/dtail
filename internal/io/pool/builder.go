@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+// BuilderBuffer is there to optimize memory allocations (DTail allocates a lot
+// of memory while reading log data otherwise)
 var BuilderBuffer = sync.Pool{
 	New: func() interface{} {
 		sb := strings.Builder{}
@@ -12,6 +14,7 @@ var BuilderBuffer = sync.Pool{
 	},
 }
 
+// RecycleBuilderBuffer recycles the buffer again.
 func RecycleBuilderBuffer(sb *strings.Builder) {
 	sb.Reset()
 	BuilderBuffer.Put(sb)

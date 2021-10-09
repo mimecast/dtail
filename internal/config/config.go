@@ -9,11 +9,11 @@ const (
 	ScheduleUser string = "DTAIL-SCHEDULE"
 	// ContinuousUser is used for non-interactive continuous mapreduce queries.
 	ContinuousUser string = "DTAIL-CONTINUOUS"
-	// InterruptTimeoutS is used to terminate DTail when Ctrl+C was pressed twice within a given interval.
+	// InterruptTimeoutS specifies the Ctrl+C log pause interval.
 	InterruptTimeoutS int = 3
-	// ConnectionsPerCPU controls how many connections are established concurrently as a start (slow start)
+	// DefaultConnectionsPerCPU controls how many connections are established concurrently.
 	DefaultConnectionsPerCPU int = 10
-	// DTailSSHServerDefaultPort is the default DServer port.
+	// DefaultSSHPort is the default DServer port.
 	DefaultSSHPort int = 2222
 	// DefaultLogLevel specifies the default log level (obviously)
 	DefaultLogLevel string = "INFO"

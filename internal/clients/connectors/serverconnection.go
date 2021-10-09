@@ -16,7 +16,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ServerConnection represents a connection to a single remote dtail server via SSH protocol.
+// ServerConnection represents a connection to a single remote dtail server via
+// SSH protocol.
 type ServerConnection struct {
 	server          string
 	port            int
@@ -28,9 +29,11 @@ type ServerConnection struct {
 }
 
 // NewServerConnection returns a new DTail SSH server connection.
-func NewServerConnection(server string, userName string, authMethods []ssh.AuthMethod, hostKeyCallback client.HostKeyCallback, handler handlers.Handler, commands []string) *ServerConnection {
-	dlog.Client.Debug(server, "Creating new connection", server, handler, commands)
+func NewServerConnection(server string, userName string,
+	authMethods []ssh.AuthMethod, hostKeyCallback client.HostKeyCallback,
+	handler handlers.Handler, commands []string) *ServerConnection {
 
+	dlog.Client.Debug(server, "Creating new connection", server, handler, commands)
 	c := ServerConnection{
 		hostKeyCallback: hostKeyCallback,
 		server:          server,
@@ -48,10 +51,12 @@ func NewServerConnection(server string, userName string, authMethods []ssh.AuthM
 	return &c
 }
 
+// Server returns the server hostname connected to.
 func (c *ServerConnection) Server() string {
 	return c.server
 }
 
+// Handler returns the handler used for the connection.
 func (c *ServerConnection) Handler() handlers.Handler {
 	return c.handler
 }
@@ -72,23 +77,29 @@ func (c *ServerConnection) initServerPort() {
 	}
 }
 
-func (c *ServerConnection) Start(ctx context.Context, cancel context.CancelFunc, throttleCh, statsCh chan struct{}) {
+// Start the connection to the server.
+func (c *ServerConnection) Start(ctx context.Context, cancel context.CancelFunc,
+	throttleCh, statsCh chan struct{}) {
+
 	// Throttle how many connections can be established concurrently (based on ch length)
 	dlog.Client.Debug(c.server, "Throttling connection", len(throttleCh), cap(throttleCh))
 
 	select {
 	case throttleCh <- struct{}{}:
 	case <-ctx.Done():
-		dlog.Client.Debug(c.server, "Not establishing connection as context is done", len(throttleCh), cap(throttleCh))
+		dlog.Client.Debug(c.server, "Not establishing connection as context is done",
+			len(throttleCh), cap(throttleCh))
 		return
 	}
 
-	dlog.Client.Debug(c.server, "Throttling says that the connection can be established", len(throttleCh), cap(throttleCh))
+	dlog.Client.Debug(c.server, "Throttling says that the connection can be established",
+		len(throttleCh), cap(throttleCh))
 
 	go func() {
 		defer func() {
 			if !c.throttlingDone {
-				dlog.Client.Debug(c.server, "Unthrottling connection (1)", len(throttleCh), cap(throttleCh))
+				dlog.Client.Debug(c.server, "Unthrottling connection (1)",
+					len(throttleCh), cap(throttleCh))
 				c.throttlingDone = true
 				<-throttleCh
 			}
@@ -107,7 +118,9 @@ func (c *ServerConnection) Start(ctx context.Context, cancel context.CancelFunc,
 }
 
 // Dail into a new SSH connection. Close connection in case of an error.
-func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc, throttleCh, statsCh chan struct{}) error {
+func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc,
+	throttleCh, statsCh chan struct{}) error {
+
 	dlog.Client.Debug(c.server, "Incrementing connection stats")
 	statsCh <- struct{}{}
 	defer func() {
@@ -128,31 +141,30 @@ func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc, 
 }
 
 // Create the SSH session. Close the session in case of an error.
-func (c *ServerConnection) session(ctx context.Context, cancel context.CancelFunc, client *ssh.Client, throttleCh chan struct{}) error {
-	dlog.Client.Debug(c.server, "Creating SSH session")
+func (c *ServerConnection) session(ctx context.Context, cancel context.CancelFunc,
+	client *ssh.Client, throttleCh chan struct{}) error {
 
+	dlog.Client.Debug(c.server, "Creating SSH session")
 	session, err := client.NewSession()
 	if err != nil {
 		return err
 	}
 	defer session.Close()
-
 	return c.handle(ctx, cancel, session, throttleCh)
 }
 
-func (c *ServerConnection) handle(ctx context.Context, cancel context.CancelFunc, session *ssh.Session, throttleCh chan struct{}) error {
-	dlog.Client.Debug(c.server, "Creating handler for SSH session")
+func (c *ServerConnection) handle(ctx context.Context, cancel context.CancelFunc,
+	session *ssh.Session, throttleCh chan struct{}) error {
 
+	dlog.Client.Debug(c.server, "Creating handler for SSH session")
 	stdinPipe, err := session.StdinPipe()
 	if err != nil {
 		return err
 	}
-
 	stdoutPipe, err := session.StdoutPipe()
 	if err != nil {
 		return err
 	}
-
 	if err := session.Shell(); err != nil {
 		return err
 	}
@@ -161,12 +173,10 @@ func (c *ServerConnection) handle(ctx context.Context, cancel context.CancelFunc
 		io.Copy(stdinPipe, c.handler)
 		cancel()
 	}()
-
 	go func() {
 		io.Copy(c.handler, stdoutPipe)
 		cancel()
 	}()
-
 	go func() {
 		select {
 		case <-c.handler.Done():
@@ -182,13 +192,13 @@ func (c *ServerConnection) handle(ctx context.Context, cancel context.CancelFunc
 	}
 
 	if !c.throttlingDone {
-		dlog.Client.Debug(c.server, "Unthrottling connection (2)", len(throttleCh), cap(throttleCh))
+		dlog.Client.Debug(c.server, "Unthrottling connection (2)",
+			len(throttleCh), cap(throttleCh))
 		c.throttlingDone = true
 		<-throttleCh
 	}
 
 	<-ctx.Done()
 	c.handler.Shutdown()
-
 	return nil
 }

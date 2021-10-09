@@ -10,12 +10,14 @@ func PaintStr(text string, fg FgColor, bg BgColor) string {
 	return fmt.Sprintf("%s%s%s%s%s", fg, bg, text, BgDefault, FgDefault)
 }
 
-// PaintStrWithAttr paints a given text in a given foreground/background/attribute combination
+// PaintStrWithAttr paints a given text in a given foreground/background/attribute
+// combination
 func PaintStrWithAttr(text string, fg FgColor, bg BgColor, attr Attribute) string {
 	if attr == AttrNone {
 		return PaintStr(text, fg, bg)
 	}
-	return fmt.Sprintf("%s%s%s%s%s%s%s", fg, bg, attr, text, AttrReset, BgDefault, FgDefault)
+	return fmt.Sprintf("%s%s%s%s%s%s%s", fg, bg, attr, text, AttrReset,
+		BgDefault, FgDefault)
 }
 
 // PaintStrFg paints a given text in a given foreground color.
@@ -48,8 +50,11 @@ func Reset(sb *strings.Builder) {
 	sb.WriteString(string(FgDefault))
 }
 
-// PaintWithAttr starts painting a given text in a given foreground/background/attribute combination.
-func PaintWithAttr(sb *strings.Builder, text string, fg FgColor, bg BgColor, attr Attribute) {
+// PaintWithAttr starts painting a given text in a given foreground/background/
+// attribute combination.
+func PaintWithAttr(sb *strings.Builder, text string, fg FgColor, bg BgColor,
+	attr Attribute) {
+
 	if attr == AttrNone {
 		Paint(sb, text, fg, bg)
 		return
@@ -63,8 +68,10 @@ func PaintWithAttr(sb *strings.Builder, text string, fg FgColor, bg BgColor, att
 	sb.WriteString(string(FgDefault))
 }
 
-// PaintWithAttrs is similar to PaintWithAttr, but it takes multiple text attributes.
-func PaintWithAttrs(sb *strings.Builder, text string, fg FgColor, bg BgColor, attrs []Attribute) {
+// PaintWithAttrs is similar to PaintWithAttr, but it takes multiple attributes.
+func PaintWithAttrs(sb *strings.Builder, text string, fg FgColor, bg BgColor,
+	attrs []Attribute) {
+
 	sb.WriteString(string(fg))
 	sb.WriteString(string(bg))
 	for _, attr := range attrs {

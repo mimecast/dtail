@@ -24,7 +24,8 @@ func PrivateHostKey() []byte {
 
 		pem := ssh.EncodePrivateKeyToPEM(privateKey)
 		if err := ioutil.WriteFile(hostKeyFile, pem, 0600); err != nil {
-			dlog.Common.Error("Unable to write private server RSA host key to file", hostKeyFile, err)
+			dlog.Common.Error("Unable to write private server RSA host key to file",
+				hostKeyFile, err)
 		}
 		return pem
 	}

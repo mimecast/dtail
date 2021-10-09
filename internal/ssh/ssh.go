@@ -24,12 +24,10 @@ func GeneratePrivateRSAKey(size int) (*rsa.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	err = privateKey.Validate()
 	if err != nil {
 		return nil, err
 	}
-
 	return privateKey, nil
 }
 
@@ -42,7 +40,6 @@ func EncodePrivateKeyToPEM(privateKey *rsa.PrivateKey) []byte {
 		Headers: nil,
 		Bytes:   derFormat,
 	}
-
 	return pem.EncodeToMemory(&block)
 }
 
@@ -80,7 +77,6 @@ func KeyFile(keyFile string) (gossh.AuthMethod, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	key, err := gossh.ParsePrivateKey(buffer)
 	if err != nil {
 		return nil, err

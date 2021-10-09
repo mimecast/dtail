@@ -38,7 +38,6 @@ func (s *AggregateSet) String() string {
 func (s *AggregateSet) Merge(query *Query, set *AggregateSet) error {
 	s.Samples += set.Samples
 	//dlog.Common.Trace("Merge", set)
-
 	for _, sc := range query.Select {
 		storage := sc.FieldStorage
 		switch sc.Operation {
@@ -115,7 +114,6 @@ func (s *AggregateSet) addFloatMin(key string, value float64) {
 		s.FValues[key] = value
 		return
 	}
-
 	if f > value {
 		s.FValues[key] = value
 	}
@@ -128,7 +126,6 @@ func (s *AggregateSet) addFloatMax(key string, value float64) {
 		s.FValues[key] = value
 		return
 	}
-
 	if f < value {
 		s.FValues[key] = value
 	}
@@ -147,7 +144,6 @@ func (s *AggregateSet) setFloat(key string, value float64) {
 // Aggregate data to the aggregate set.
 func (s *AggregateSet) Aggregate(key string, agg AggregateOperation, value string, clientAggregation bool) (err error) {
 	var f float64
-
 	// First check if we can aggregate anything without converting value to float.
 	switch agg {
 	case Count:

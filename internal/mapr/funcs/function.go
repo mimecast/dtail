@@ -19,13 +19,12 @@ type Function struct {
 // FunctionStack is a list of functions stacked each other
 type FunctionStack []Function
 
-// NewFunctionStack parses the input string, e.g. foo(bar("arg")) and returns a corresponding function stack.
+// NewFunctionStack parses the input string, e.g. foo(bar("arg")) and returns
+// a corresponding function stack.
 func NewFunctionStack(in string) (FunctionStack, string, error) {
 	var fs FunctionStack
-
 	getCallback := func(name string) (CallbackFunc, error) {
 		var cb CallbackFunc
-
 		switch name {
 		case "md5sum":
 			return Md5Sum, nil
@@ -51,7 +50,6 @@ func NewFunctionStack(in string) (FunctionStack, string, error) {
 		fs = append(fs, Function{name, call})
 		aux = aux[index+1 : len(aux)-1]
 	}
-
 	return fs, aux, nil
 }
 
@@ -62,6 +60,5 @@ func (fs FunctionStack) Call(str string) string {
 		str = fs[i].call(str)
 		//dlog.Common.Debug("Call.result", fs[i].Name, str)
 	}
-
 	return str
 }

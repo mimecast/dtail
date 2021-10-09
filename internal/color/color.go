@@ -52,15 +52,19 @@ const (
 	AttrHidden     Attribute = escape + "[8m"
 )
 
+// ColorNames is the list of all supported terminal colors.
 var ColorNames = []string{
 	"Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White", "Default",
 }
 
+// AttributeNames is the list of all supported terminal text attributes.
 var AttributeNames = []string{
-	"Bold", "Dim", "Italic", "Underline", "Blink", "SlowBlink", "RapidBlink", "Reverse", "Hidden", "None",
+	"Bold", "Dim", "Italic", "Underline", "Blink", "SlowBlink", "RapidBlink",
+	"Reverse", "Hidden", "None",
 }
 
-// ToFgColor converts a given string (e.g. from a config file) into a foreground color code.
+// ToFgColor converts a given string (e.g. from a config file) into a foreground
+// color code.
 func ToFgColor(s string) (FgColor, error) {
 	switch strings.ToLower(s) {
 	case "black":
@@ -86,7 +90,8 @@ func ToFgColor(s string) (FgColor, error) {
 	}
 }
 
-// ToBgColor converts a given string (e.g. from a config file) into a background color code.
+// ToBgColor converts a given string (e.g. from a config file) into a background
+// color code.
 func ToBgColor(s string) (BgColor, error) {
 	switch strings.ToLower(s) {
 	case "black":

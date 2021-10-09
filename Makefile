@@ -1,5 +1,5 @@
 GO ?= go
-all: build test
+all: build
 build: dserver dcat dgrep dmap dtail dtailhealthcheck
 dserver:
 ifndef USE_ACL
@@ -43,7 +43,7 @@ lint:
 	find . -type d | while read dir; do \
 	  echo golint $$dir; \
 	  golint $$dir; \
-	done
+	done | grep -F .go:
 test:
 	${GO} clean -testcache
 ifndef USE_ACL

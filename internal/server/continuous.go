@@ -13,8 +13,7 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
-type continuous struct {
-}
+type continuous struct{}
 
 func newContinuous() *continuous {
 	return &continuous{}
@@ -23,7 +22,6 @@ func newContinuous() *continuous {
 func (c *continuous) start(ctx context.Context) {
 	dlog.Server.Info("Starting continuous job runner after 10s")
 	time.Sleep(time.Second * 10)
-
 	c.runJobs(ctx)
 }
 
@@ -33,7 +31,6 @@ func (c *continuous) runJobs(ctx context.Context) {
 			dlog.Server.Debug(job.Name, "Not running job as not enabled")
 			continue
 		}
-
 		go func(job config.Continuous) {
 			c.runJob(ctx, job)
 			for {
@@ -54,7 +51,6 @@ func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
 
 	files := fillDates(job.Files)
 	outfile := fillDates(job.Outfile)
-
 	servers := strings.Join(job.Servers, ",")
 	if servers == "" {
 		servers = config.Server.SSHBindAddress
@@ -70,7 +66,6 @@ func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
 	}
 
 	args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(job.Name))
-
 	args.QueryStr = fmt.Sprintf("%s outfile %s", job.Query, outfile)
 	client, err := clients.NewMaprClient(args, clients.NonCumulativeMode)
 	if err != nil {
@@ -80,7 +75,6 @@ func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
 
 	jobCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-
 	if job.RestartOnDayChange {
 		go func() {
 			if c.waitForDayChange(ctx) {
@@ -93,7 +87,6 @@ func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
 	dlog.Server.Info(fmt.Sprintf("Starting job %s", job.Name))
 	status := client.Start(jobCtx, make(chan string))
 	logMessage := fmt.Sprintf("Job exited with status %d", status)
-
 	if status != 0 {
 		dlog.Server.Warn(logMessage)
 		return

@@ -12,8 +12,7 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 )
 
-type fileWriter struct {
-}
+type fileWriter struct{}
 
 type fileMessageBuf struct {
 	now     time.Time
@@ -35,7 +34,7 @@ type file struct {
 }
 
 func newFile(strategy Strategy) *file {
-	f := file{
+	return &file{
 		bufferCh: make(chan *fileMessageBuf, runtime.NumCPU()*100),
 		pauseCh:  make(chan struct{}),
 		resumeCh: make(chan struct{}),
@@ -43,16 +42,17 @@ func newFile(strategy Strategy) *file {
 		flushCh:  make(chan struct{}),
 		strategy: strategy,
 	}
-
-	return &f
 }
 
 func (f *file) Start(ctx context.Context, wg *sync.WaitGroup) {
 	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	defer func() {
+		f.started = true
+		f.mutex.Unlock()
+	}()
 
-	// Logger already started from another Goroutine.
 	if f.started {
+		// Logger already started from another Goroutine.
 		wg.Done()
 		return
 	}
@@ -68,7 +68,6 @@ func (f *file) Start(ctx context.Context, wg *sync.WaitGroup) {
 
 	go func() {
 		defer wg.Done()
-
 		for {
 			select {
 			case m := <-f.bufferCh:
@@ -84,8 +83,6 @@ func (f *file) Start(ctx context.Context, wg *sync.WaitGroup) {
 			}
 		}
 	}()
-
-	f.started = true
 }
 
 func (f *file) Log(now time.Time, message string) {

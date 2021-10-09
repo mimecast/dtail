@@ -82,7 +82,7 @@ func new(sourceProcess, sourcePackage source.Source) *DLog {
 	if err != nil {
 		panic(err)
 	}
-	strategy := loggers.GetStrategy(config.Common.LogStrategy)
+	strategy := loggers.NewStrategy(config.Common.LogStrategy)
 	loggerName := config.Common.Logger
 	level := newLevel(config.Common.LogLevel)
 
@@ -153,6 +153,7 @@ func (d *DLog) writeArgStrings(sb *strings.Builder, args []interface{}) {
 	}
 }
 
+// FatalPanic terminates the process with a fatal error.
 func (d *DLog) FatalPanic(args ...interface{}) {
 	d.log(Fatal, args)
 	d.Flush()
@@ -162,42 +163,51 @@ func (d *DLog) FatalPanic(args ...interface{}) {
 	panic(sb.String())
 }
 
+// Fatal logs a fatal error.
 func (d *DLog) Fatal(args ...interface{}) string {
 	return d.log(Fatal, args)
 }
 
+// Error logging.
 func (d *DLog) Error(args ...interface{}) string {
 	return d.log(Error, args)
 }
 
+// Warn logs a warning message.
 func (d *DLog) Warn(args ...interface{}) string {
 	return d.log(Warn, args)
 }
 
+// Info logging.
 func (d *DLog) Info(args ...interface{}) string {
 	return d.log(Info, args)
 }
 
+// Verbose logging.
 func (d *DLog) Verbose(args ...interface{}) string {
 	return d.log(Verbose, args)
 }
 
+// Debug logging.
 func (d *DLog) Debug(args ...interface{}) string {
 	return d.log(Debug, args)
 }
 
+// Trace logging.
 func (d *DLog) Trace(args ...interface{}) string {
 	_, file, line, _ := runtime.Caller(1)
 	args = append(args, fmt.Sprintf("at %s:%d", file, line))
 	return d.log(Trace, args)
 }
 
+// Devel used for development purpose only logging (e.g. "print" debugging).
 func (d *DLog) Devel(args ...interface{}) string {
 	_, file, line, _ := runtime.Caller(1)
 	args = append(args, fmt.Sprintf("at %s:%d", file, line))
 	return d.log(Devel, args)
 }
 
+// Raw message logging.
 func (d *DLog) Raw(message string) string {
 	if !config.Client.TermColorsEnable || !d.logger.SupportsColors() {
 		d.logger.Log(time.Now(), message)
@@ -207,6 +217,7 @@ func (d *DLog) Raw(message string) string {
 	return message
 }
 
+// Mapreduce logging.
 func (d *DLog) Mapreduce(table string, data map[string]interface{}) string {
 	args := make([]interface{}, len(data)+1)
 
@@ -251,6 +262,11 @@ func (d *DLog) Mapreduce(table string, data map[string]interface{}) string {
 	return d.log(Info, args)
 }
 
-func (d *DLog) Flush()  { d.logger.Flush() }
-func (d *DLog) Pause()  { d.logger.Pause() }
+// Flush the log buffers.
+func (d *DLog) Flush() { d.logger.Flush() }
+
+// Pause the logging.
+func (d *DLog) Pause() { d.logger.Pause() }
+
+// Resume the logging.
 func (d *DLog) Resume() { d.logger.Resume() }

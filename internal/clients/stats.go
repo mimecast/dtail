@@ -36,9 +36,10 @@ func newTailStats(servers int) *stats {
 
 // Start starts printing client connection stats every time a signal is recieved or
 // connection count has changed.
-func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{}, statsCh <-chan string, quiet bool) {
-	var connectedLast int
+func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{},
+	statsCh <-chan string, quiet bool) {
 
+	var connectedLast int
 	for {
 		var force bool
 		var messages []string
@@ -94,7 +95,9 @@ func (s *stats) printStatsDueInterrupt(messages []string) {
 	dlog.Client.Resume()
 }
 
-func (s *stats) statsData(connected, newConnections int, throttle int) map[string]interface{} {
+func (s *stats) statsData(connected, newConnections int,
+	throttle int) map[string]interface{} {
+
 	percConnected := percentOf(float64(s.servers), float64(connected))
 
 	data := make(map[string]interface{})
@@ -112,7 +115,6 @@ func (s *stats) statsData(connected, newConnections int, throttle int) map[strin
 
 func (s *stats) statsLine(connected, newConnections int, throttle int) string {
 	sb := strings.Builder{}
-
 	i := 0
 	for k, v := range s.statsData(connected, newConnections, throttle) {
 		if i > 0 {
@@ -123,7 +125,6 @@ func (s *stats) statsLine(connected, newConnections int, throttle int) string {
 		sb.WriteString(fmt.Sprintf("%v", v))
 		i++
 	}
-
 	return sb.String()
 }
 

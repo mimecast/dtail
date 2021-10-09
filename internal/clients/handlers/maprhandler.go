@@ -10,7 +10,8 @@ import (
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
-// MaprHandler is the handler used on the client side for running mapreduce aggregations.
+// MaprHandler is the handler used on the client side for running mapreduce
+// aggregations.
 type MaprHandler struct {
 	baseHandler
 	aggregate *client.Aggregate
@@ -18,7 +19,9 @@ type MaprHandler struct {
 }
 
 // NewMaprHandler returns a new mapreduce client handler.
-func NewMaprHandler(server string, query *mapr.Query, globalGroup *mapr.GlobalGroupSet) *MaprHandler {
+func NewMaprHandler(server string, query *mapr.Query,
+	globalGroup *mapr.GlobalGroupSet) *MaprHandler {
+
 	return &MaprHandler{
 		baseHandler: baseHandler{
 			server:       server,
@@ -55,12 +58,12 @@ func (h *MaprHandler) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// Handle a message received from server including mapr aggregation
-// related data.
+// Handle a message received from server including mapr aggregation related data.
 func (h *MaprHandler) handleAggregateMessage(message string) {
 	parts := strings.SplitN(message, protocol.FieldDelimiter, 3)
 	if len(parts) != 3 {
-		dlog.Client.Error("Unable to aggregate data", h.server, message, parts, len(parts), "expected 3 parts")
+		dlog.Client.Error("Unable to aggregate data", h.server, message, parts,
+			len(parts), "expected 3 parts")
 		return
 	}
 	if err := h.aggregate.Aggregate(parts[2]); err != nil {

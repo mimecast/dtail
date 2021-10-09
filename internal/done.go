@@ -35,7 +35,6 @@ func (d *Done) Done() <-chan struct{} {
 func (d *Done) Shutdown() {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
-
 	select {
 	case <-d.ch:
 		return

@@ -35,24 +35,23 @@ func NewHealthHandler(user *user.User) *HealthHandler {
 	if err != nil {
 		dlog.Server.FatalPanic(err)
 	}
-
 	s := strings.Split(fqdn, ".")
 	h.hostname = s[0]
-
 	return &h
 }
 
-func (h *HealthHandler) handleHealthCommand(ctx context.Context, argc int, args []string,
-	commandName string, options map[string]string) {
-	dlog.Server.Debug(h.user, "Handling health command", argc, args)
+func (h *HealthHandler) handleHealthCommand(ctx context.Context, argc int,
+	args []string, commandName string, options map[string]string) {
 
+	dlog.Server.Debug(h.user, "Handling health command", argc, args)
 	switch commandName {
 	case "health":
 		h.send(h.serverMessages, "OK")
 	case ".ack":
 		h.handleAckCommand(argc, args)
 	default:
-		h.send(h.serverMessages, dlog.Server.Error(h.user, "Received unknown health command", commandName, argc, args))
+		h.send(h.serverMessages, dlog.Server.Error(h.user,
+			"Received unknown health command", commandName, argc, args))
 	}
 	h.shutdown()
 }

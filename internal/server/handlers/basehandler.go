@@ -37,7 +37,7 @@ type baseHandler struct {
 	activeCommands   int32
 	quiet            bool
 	spartan          bool
-	serverless       bool
+	serverless       int32
 	readBuf          bytes.Buffer
 	writeBuf         bytes.Buffer
 }
@@ -59,16 +59,14 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 	select {
 	case message := <-h.serverMessages:
 		if message[0] == '.' {
-			// Handle hidden message (don't display to the user, interpreted by dtail client)
+			// Handle hidden message (don't display to the user)
 			h.readBuf.WriteString(message)
 			h.readBuf.WriteByte(protocol.MessageDelimiter)
 			n = copy(p, h.readBuf.Bytes())
 			return
 		}
 
-		if h.serverless {
-			// In serverless mode we have logged the server message already via the
-			// dlog logger, no need to send the message again to the client part.
+		if h.serverless > 0 {
 			return
 		}
 
@@ -132,7 +130,6 @@ func (h *baseHandler) Write(p []byte) (n int, err error) {
 			h.writeBuf.WriteByte(b)
 		}
 	}
-
 	n = len(p)
 	return
 }
@@ -145,13 +142,11 @@ func (h *baseHandler) handleCommand(commandStr string) {
 		h.send(h.serverMessages, dlog.Server.Error(h.user, err)+add)
 		return
 	}
-
 	args, argc, err = h.handleBase64(args, argc)
 	if err != nil {
 		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
 		return
 	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		<-h.done.Done()
@@ -160,7 +155,6 @@ func (h *baseHandler) handleCommand(commandStr string) {
 
 	splitted := strings.Split(args[0], ":")
 	commandName := splitted[0]
-
 	options, err := config.DeserializeOptions(splitted[1:])
 	if err != nil {
 		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
@@ -191,8 +185,8 @@ func (h *baseHandler) handleProtocolVersion(args []string) ([]string, int, strin
 		if clientCompat > serverCompat {
 			toUpdate = "server"
 		}
-
-		err := fmt.Errorf("DTail server protocol version '%s' does not match client protocol version '%s', please update DTail %s!",
+		err := fmt.Errorf("the DTail server protocol version '%s' does not match "+
+			"client protocol version '%s', please update DTail %s",
 			protocol.ProtocolCompat, args[1], toUpdate)
 		return args, argc, add, err
 	}
@@ -201,8 +195,8 @@ func (h *baseHandler) handleProtocolVersion(args []string) ([]string, int, strin
 }
 
 func (h *baseHandler) handleBase64(args []string, argc int) ([]string, int, error) {
-	err := errors.New("Unable to decode client message, DTail server and client versions may not be compatible")
-
+	err := errors.New("unable to decode client message, DTail server and client " +
+		"versions may not be compatible")
 	if argc != 2 || args[0] != "base64" {
 		return args, argc, err
 	}
@@ -215,7 +209,8 @@ func (h *baseHandler) handleBase64(args []string, argc int) ([]string, int, erro
 
 	args = strings.Split(decodedStr, " ")
 	argc = len(decodedStr)
-	dlog.Server.Trace(h.user, "Base64 decoded received command", decodedStr, argc, args)
+	dlog.Server.Trace(h.user, "Base64 decoded received command",
+		decodedStr, argc, args)
 
 	return args, argc, nil
 }
@@ -223,7 +218,8 @@ func (h *baseHandler) handleBase64(args []string, argc int) ([]string, int, erro
 func (h *baseHandler) handleAckCommand(argc int, args []string) {
 	if argc < 3 {
 		if !h.quiet {
-			h.send(h.serverMessages, dlog.Server.Warn(h.user, "Unable to parse command", args, argc))
+			h.send(h.serverMessages, dlog.Server.Warn(h.user,
+				"Unable to parse command", args, argc))
 		}
 		return
 	}
@@ -245,11 +241,9 @@ func (h *baseHandler) send(ch chan<- string, message string) {
 
 func (h *baseHandler) flush() {
 	dlog.Server.Trace(h.user, "flush()")
-
 	numUnsentMessages := func() int {
 		return len(h.lines) + len(h.serverMessages) + len(h.maprMessages)
 	}
-
 	for i := 0; i < 10; i++ {
 		if numUnsentMessages() == 0 {
 			dlog.Server.Debug(h.user, "ALL lines sent", fmt.Sprintf("%p", h))
@@ -258,7 +252,6 @@ func (h *baseHandler) flush() {
 		dlog.Server.Debug(h.user, "Still lines to be sent")
 		time.Sleep(time.Millisecond * 10)
 	}
-
 	dlog.Server.Warn(h.user, "Some lines remain unsent", numUnsentMessages())
 }
 
@@ -279,7 +272,6 @@ func (h *baseHandler) shutdown() {
 		dlog.Server.Debug(h.user, "Shutdown timeout reached, enforcing shutdown")
 	case <-h.done.Done():
 	}
-
 	h.done.Shutdown()
 }
 

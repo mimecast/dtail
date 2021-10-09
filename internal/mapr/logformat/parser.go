@@ -11,7 +11,8 @@ import (
 	"github.com/mimecast/dtail/internal/mapr"
 )
 
-var IgnoreFieldsErr error = errors.New("Ignore this field set")
+// ErrIgnoreFields indicates that the fields should be ignored.
+var ErrIgnoreFields error = errors.New("Ignore this field set")
 
 // Parser is used to parse the mapreduce information from the server log files.
 type Parser struct {
@@ -26,11 +27,9 @@ type Parser struct {
 // NewParser returns a new log parser.
 func NewParser(logFormatName string, query *mapr.Query) (*Parser, error) {
 	hostname, err := os.Hostname()
-
 	if err != nil {
 		return nil, err
 	}
-
 	now := time.Now()
 	zone, offset := now.Zone()
 
@@ -44,7 +43,6 @@ func NewParser(logFormatName string, query *mapr.Query) (*Parser, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return &p, nil
 }
 
@@ -53,7 +51,6 @@ func NewParser(logFormatName string, query *mapr.Query) (*Parser, error) {
 // Parser. Whereas MODULENAME must be a upeprcase string.
 func (p *Parser) reflectLogFormat(logFormatName string) error {
 	methodName := fmt.Sprintf("MakeFields%s", strings.ToUpper(logFormatName))
-
 	rt := reflect.TypeOf(p)
 	method, ok := rt.MethodByName(methodName)
 	if !ok {
@@ -62,7 +59,6 @@ func (p *Parser) reflectLogFormat(logFormatName string) error {
 
 	p.makeFieldsFunc = method.Func
 	p.makeFieldsReceiver = reflect.ValueOf(p)
-
 	return nil
 }
 
@@ -70,15 +66,11 @@ func (p *Parser) reflectLogFormat(logFormatName string) error {
 func (p *Parser) MakeFields(maprLine string) (fields map[string]string, err error) {
 	inputValues := []reflect.Value{p.makeFieldsReceiver, reflect.ValueOf(maprLine)}
 	returnValues := p.makeFieldsFunc.Call(inputValues)
-
 	errInterface := returnValues[1].Interface()
-
 	if errInterface == nil {
 		fields, err = returnValues[0].Interface().(map[string]string), nil
 		return
 	}
-
 	fields, err = returnValues[0].Interface().(map[string]string), errInterface.(error)
-
 	return
 }

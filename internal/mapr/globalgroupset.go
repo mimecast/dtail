@@ -17,7 +17,6 @@ func NewGlobalGroupSet() *GlobalGroupSet {
 		semaphore: make(chan struct{}, 1),
 	}
 	g.InitSet()
-
 	return &g
 }
 
@@ -30,7 +29,6 @@ func (g *GlobalGroupSet) String() string {
 func (g *GlobalGroupSet) Merge(query *Query, group *GroupSet) error {
 	g.semaphore <- struct{}{}
 	defer func() { <-g.semaphore }()
-
 	return g.merge(query, group)
 }
 
@@ -48,14 +46,12 @@ func (g *GlobalGroupSet) MergeNoblock(query *Query, group *GroupSet) (bool, erro
 
 // Merge a group set into the global group set.
 func (g *GlobalGroupSet) merge(query *Query, group *GroupSet) error {
-
 	for groupKey, set := range group.sets {
 		s := g.GetSet(groupKey)
 		if err := s.Merge(query, set); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -68,7 +64,6 @@ func (g *GlobalGroupSet) IsEmpty() bool {
 func (g *GlobalGroupSet) NumSets() int {
 	g.semaphore <- struct{}{}
 	defer func() { <-g.semaphore }()
-
 	return len(g.sets)
 }
 
@@ -80,7 +75,6 @@ func (g *GlobalGroupSet) SwapOut() *GroupSet {
 
 	set := &GroupSet{sets: g.sets}
 	g.InitSet()
-
 	return set
 }
 
@@ -88,7 +82,6 @@ func (g *GlobalGroupSet) SwapOut() *GroupSet {
 func (g *GlobalGroupSet) WriteResult(query *Query) error {
 	g.semaphore <- struct{}{}
 	defer func() { <-g.semaphore }()
-
 	return g.GroupSet.WriteResult(query)
 }
 
@@ -96,6 +89,5 @@ func (g *GlobalGroupSet) WriteResult(query *Query) error {
 func (g *GlobalGroupSet) Result(query *Query, rowsLimit int) (string, int, error) {
 	g.semaphore <- struct{}{}
 	defer func() { <-g.semaphore }()
-
 	return g.GroupSet.Result(query, rowsLimit)
 }

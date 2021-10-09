@@ -30,9 +30,10 @@ func TestDTailHealthCheck(t *testing.T) {
 func TestDTailHealthCheck2(t *testing.T) {
 	stdoutFile := "dtailhealthcheck2.stdout.tmp"
 	expectedStdoutFile := "dtailhealthcheck2.expected"
+	args := []string{"--server", "example:1"}
 
 	t.Log("Negative test, is supposed to exit with a critical state.")
-	exitCode, err := runCommand(t, "../dtailhealthcheck", []string{"--server", "example:1"}, stdoutFile)
+	exitCode, err := runCommand(t, "../dtailhealthcheck", args, stdoutFile)
 	if exitCode != 2 {
 		t.Error(fmt.Sprintf("Expected exit code '2' but got '%d': %v", exitCode, err))
 		return
@@ -55,16 +56,17 @@ func TestDTailHealthCheck3(t *testing.T) {
 	defer cancel()
 
 	go func() {
-		serverArgs := []string{"--logger", "stdout", "--logLevel", "trace", "--port", "4242"}
-		runCommandContext(t, ctx, "../dserver", serverArgs, serverStdoutFile)
+		args := []string{"--logger", "stdout", "--logLevel", "trace", "--port", "4242"}
+		runCommandContext(ctx, t, "../dserver", args, serverStdoutFile)
 	}()
 
 	var err error
+	args := []string{"--server", "localhost:4242"}
 	for i := 0; i < 30; i++ {
 		t.Log("Waiting for dserver to start", i)
 		time.Sleep(time.Second)
 		var exitCode int
-		if exitCode, err = runCommand(t, "../dtailhealthcheck", []string{"--server", "localhost:4242"}, stdoutFile); exitCode == 0 {
+		if exitCode, err = runCommand(t, "../dtailhealthcheck", args, stdoutFile); exitCode == 0 {
 			break
 		}
 	}

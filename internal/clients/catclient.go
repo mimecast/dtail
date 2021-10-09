@@ -22,7 +22,6 @@ func NewCatClient(args config.Args) (*CatClient, error) {
 	if args.RegexStr != "" {
 		return nil, errors.New("Can't use regex with 'cat' operating mode")
 	}
-
 	args.Mode = omode.CatClient
 
 	c := CatClient{
@@ -35,7 +34,6 @@ func NewCatClient(args config.Args) (*CatClient, error) {
 
 	c.init()
 	c.makeConnections(c)
-
 	return &c, nil
 }
 

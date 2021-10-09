@@ -9,11 +9,13 @@ import (
 var factoryMap map[string]Logger
 var factoryMutex sync.Mutex
 
+// Factory is there to retrieve a logger based on various settings.
 func Factory(sourceName, loggerName string, rotationStrategy Strategy) Logger {
 	factoryMutex.Lock()
 	defer factoryMutex.Unlock()
 
-	id := fmt.Sprintf("sourceName:%s,fileBase:%s,loggerName:%s", sourceName, rotationStrategy.FileBase, loggerName)
+	id := fmt.Sprintf("sourceName:%s,fileBase:%s,loggerName:%s", sourceName,
+		rotationStrategy.FileBase, loggerName)
 	if factoryMap == nil {
 		factoryMap = make(map[string]Logger)
 	}
@@ -36,10 +38,10 @@ func Factory(sourceName, loggerName string, rotationStrategy Strategy) Logger {
 			panic(fmt.Sprintf("Unsupported logger type '%s'", loggerName))
 		}
 	}
-
 	return singleton
 }
 
+// FactoryRotate invokes a log rotation of all loggers.
 func FactoryRotate() {
 	factoryMutex.Lock()
 	defer factoryMutex.Unlock()

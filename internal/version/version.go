@@ -20,7 +20,8 @@ const (
 
 // String representation of the DTail version.
 func String() string {
-	return fmt.Sprintf("%s %v Protocol %s %s", Name, Version, protocol.ProtocolCompat, Additional)
+	return fmt.Sprintf("%s %v Protocol %s %s", Name, Version,
+		protocol.ProtocolCompat, Additional)
 }
 
 // PaintedString is a prettier string representation of the DTail version.
@@ -31,13 +32,10 @@ func PaintedString() string {
 
 	name := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Name),
 		color.FgYellow, color.BgBlue, color.AttrBold)
-
 	version := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Version),
 		color.FgBlue, color.BgYellow, color.AttrBold)
-
 	protocol := color.PaintStr(fmt.Sprintf(" Protocol %s ", protocol.ProtocolCompat),
 		color.FgBlack, color.BgGreen)
-
 	additional := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Additional),
 		color.FgWhite, color.BgMagenta, color.AttrUnderline)
 

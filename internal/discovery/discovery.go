@@ -73,7 +73,6 @@ func (d *Discovery) initRegex() {
 
 	regexStr := string(runes)
 	dlog.Common.Debug("Using filter regex", regexStr)
-
 	regex, err := regexp.Compile(regexStr)
 	if err != nil {
 		dlog.Common.FatalPanic("Could not compile regex", regexStr, err)
@@ -90,9 +89,7 @@ func (d *Discovery) ServerList() []string {
 	if d.regex != nil {
 		servers = d.filterList(servers)
 	}
-
 	servers = d.dedupList(servers)
-
 	if d.order == Shuffle {
 		servers = d.shuffleList(servers)
 	}
@@ -105,12 +102,10 @@ func (d *Discovery) serverListFromModule() []string {
 	if d.module != "" {
 		return d.serverListFromReflectedModule()
 	}
-
 	if _, err := os.Stat(d.server); err == nil {
 		// Appears to be a file name, now try to read from that file.
 		return d.ServerListFromFILE()
 	}
-
 	// Appears to be a list of FQDNs (or a single FQDN)
 	return d.ServerListFromCOMMA()
 }
@@ -120,18 +115,16 @@ func (d *Discovery) serverListFromModule() []string {
 // Discovery. Whereas MODULENAME must be a upeprcase string.
 func (d *Discovery) serverListFromReflectedModule() []string {
 	methodName := fmt.Sprintf("ServerListFrom%s", d.module)
-
+	// Now we are reflecting the serve discovery function by it's name.
 	rt := reflect.TypeOf(d)
 	reflectedMethod, ok := rt.MethodByName(methodName)
 	if !ok {
 		dlog.Common.FatalPanic("No such server discovery module", d.module, methodName)
 	}
-
 	inputValues := make([]reflect.Value, 1)
 	// Thist input value is method receiver.
 	inputValues[0] = reflect.ValueOf(d)
 	returnValues := reflectedMethod.Func.Call(inputValues)
-
 	// First return value is server list.
 	return returnValues[0].Interface().([]string)
 }
@@ -139,27 +132,23 @@ func (d *Discovery) serverListFromReflectedModule() []string {
 // Filter server list based on a regexp.
 func (d *Discovery) filterList(servers []string) (filtered []string) {
 	dlog.Common.Debug("Filtering server list")
-
 	for _, server := range servers {
 		if d.regex.MatchString(server) {
 			filtered = append(filtered, server)
 		}
 	}
-
 	return
 }
 
 // Deduplicate the server list.
 func (d *Discovery) dedupList(servers []string) (deduped []string) {
 	serverMap := make(map[string]struct{}, len(servers))
-
 	for _, server := range servers {
 		if _, ok := serverMap[server]; !ok {
 			serverMap[server] = struct{}{}
 			deduped = append(deduped, server)
 		}
 	}
-
 	dlog.Common.Debug("Deduped server list", len(servers), len(deduped))
 	return
 }

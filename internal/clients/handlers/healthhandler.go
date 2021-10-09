@@ -8,7 +8,8 @@ import (
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
-// HealthHandler is the handler used on the client side for running mapreduce aggregations.
+// HealthHandler is the handler used on the client side for running mapreduce
+// aggregations.
 type HealthHandler struct {
 	baseHandler
 }

@@ -23,7 +23,9 @@ type Aggregate struct {
 }
 
 // NewAggregate create new client aggregator.
-func NewAggregate(server string, query *mapr.Query, globalGroup *mapr.GlobalGroupSet) *Aggregate {
+func NewAggregate(server string, query *mapr.Query,
+	globalGroup *mapr.GlobalGroupSet) *Aggregate {
+
 	return &Aggregate{
 		query:       query,
 		group:       mapr.NewGroupSet(),
@@ -47,8 +49,8 @@ func (a *Aggregate) Aggregate(message string) error {
 
 	fields := a.makeFields(parts[2:])
 	set := a.group.GetSet(groupKey)
-
 	var addedSamples bool
+
 	for _, sc := range a.query.Select {
 		if val, ok := fields[sc.FieldStorage]; ok {
 			if err := set.Aggregate(sc.FieldStorage, sc.Operation, val, true); err != nil {
@@ -71,14 +73,12 @@ func (a *Aggregate) Aggregate(message string) error {
 		// Re-init local group (make it empty again).
 		a.group.InitSet()
 	}
-
 	return nil
 }
 
 // Create a map of key-value pairs from a part list such as ["foo=bar",  "bar=baz"].
 func (a *Aggregate) makeFields(parts []string) map[string]string {
 	fields := make(map[string]string, len(parts))
-
 	for _, part := range parts {
 		kv := strings.SplitN(part, protocol.AggregateKVDelimiter, 2)
 		if len(kv) != 2 {
@@ -86,6 +86,5 @@ func (a *Aggregate) makeFields(parts []string) map[string]string {
 		}
 		fields[kv[0]] = kv[1]
 	}
-
 	return fields
 }

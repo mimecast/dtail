@@ -32,7 +32,6 @@ func paintSeverity(sb *strings.Builder, text string) bool {
 	default:
 		return false
 	}
-
 	return true
 }
 
@@ -87,9 +86,9 @@ func paintRemote(sb *strings.Builder, line string) {
 		config.Client.TermColors.Remote.DelimiterAttr)
 
 	color.PaintWithAttr(sb, splitted[4],
-		config.Client.TermColors.Remote.IdFg,
-		config.Client.TermColors.Remote.IdBg,
-		config.Client.TermColors.Remote.IdAttr)
+		config.Client.TermColors.Remote.IDFg,
+		config.Client.TermColors.Remote.IDBg,
+		config.Client.TermColors.Remote.IDAttr)
 	color.PaintWithAttr(sb, protocol.FieldDelimiter,
 		config.Client.TermColors.Remote.DelimiterFg,
 		config.Client.TermColors.Remote.DelimiterBg,
@@ -191,6 +190,5 @@ func Colorfy(line string) string {
 			color.BgDefault,
 			color.AttrNone)
 	}
-
 	return sb.String()
 }

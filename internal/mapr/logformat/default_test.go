@@ -32,49 +32,57 @@ func TestDefaultLogFormat(t *testing.T) {
 		if val, ok := fields["$severity"]; !ok {
 			t.Errorf("Expected field '$severity', but no such field there in '%s'\n", input)
 		} else if val != "INFO" {
-			t.Errorf("Expected 'Info' stored in field '$severity', but got '%s' in '%s'\n", val, input)
+			t.Errorf("Expected 'Info' stored in field '$severity', but got '%s' in '%s'\n",
+				val, input)
 		}
 
 		if val, ok := fields["$time"]; !ok {
 			t.Errorf("Expected field '$time', but no such field there in '%s'\n", input)
 		} else if val != time {
-			t.Errorf("Expected '%s' stored in field '$time', but got '%s' in '%s'\n", time, val, input)
+			t.Errorf("Expected '%s' stored in field '$time', but got '%s' in '%s'\n",
+				time, val, input)
 		}
 
 		if val, ok := fields["$date"]; !ok {
 			t.Errorf("Expected field '$date', but no such field there in '%s'\n", input)
 		} else if val != date {
-			t.Errorf("Expected '%s' stored in field '$date', but got '%s' in '%s'\n", date, val, input)
+			t.Errorf("Expected '%s' stored in field '$date', but got '%s' in '%s'\n",
+				date, val, input)
 		}
 
 		if val, ok := fields["$hour"]; !ok {
 			t.Errorf("Expected field '$hour', but no such field there in '%s'\n", input)
 		} else if val != hour {
-			t.Errorf("Expected '%s' stored in field '$hour', but got '%s' in '%s'\n", hour, val, input)
+			t.Errorf("Expected '%s' stored in field '$hour', but got '%s' in '%s'\n",
+				hour, val, input)
 		}
 
 		if val, ok := fields["$minute"]; !ok {
 			t.Errorf("Expected field '$minute', but no such field there in '%s'\n", input)
 		} else if val != minute {
-			t.Errorf("Expected '%s' stored in field '$minute', but got '%s' in '%s'\n", minute, val, input)
+			t.Errorf("Expected '%s' stored in field '$minute', but got '%s' in '%s'\n",
+				minute, val, input)
 		}
 
 		if val, ok := fields["$second"]; !ok {
 			t.Errorf("Expected field '$second', but no such field there in '%s'\n", input)
 		} else if val != second {
-			t.Errorf("Expected '%s' stored in field '$second', but got '%s' in '%s'\n", second, val, input)
+			t.Errorf("Expected '%s' stored in field '$second', but got '%s' in '%s'\n",
+				second, val, input)
 		}
 
 		if val, ok := fields["foo"]; !ok {
 			t.Errorf("Expected field 'foo', but no such field there in '%s'\n", input)
 		} else if val != "bar" {
-			t.Errorf("Expected 'bar' stored in field 'foo', but got '%s' in '%s'\n", val, input)
+			t.Errorf("Expected 'bar' stored in field 'foo', but got '%s' in '%s'\n",
+				val, input)
 		}
 
 		if val, ok := fields["bar"]; !ok {
 			t.Errorf("Expected field 'bar', but no such field there in '%s'\n", input)
 		} else if val != "foo" {
-			t.Errorf("Expected 'foo' stored in field 'bar', but got '%s' in '%s'\n", val, input)
+			t.Errorf("Expected 'foo' stored in field 'bar', but got '%s' in '%s'\n",
+				val, input)
 		}
 	}
 

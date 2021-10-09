@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/io/dlog"
@@ -23,7 +24,9 @@ type ServerHandler struct {
 }
 
 // NewServerHandler returns the server handler.
-func NewServerHandler(user *user.User, catLimiter, tailLimiter chan struct{}) *ServerHandler {
+func NewServerHandler(user *user.User, catLimiter,
+	tailLimiter chan struct{}) *ServerHandler {
+
 	dlog.Server.Debug(user, "Creating new server handler")
 	h := ServerHandler{
 		baseHandler: baseHandler{
@@ -51,11 +54,10 @@ func NewServerHandler(user *user.User, catLimiter, tailLimiter chan struct{}) *S
 	return &h
 }
 
-func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []string,
-	commandName string, options map[string]string) {
+func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int,
+	args []string, commandName string, options map[string]string) {
 
 	dlog.Server.Debug(h.user, "Handling user command", argc, args)
-
 	h.incrementActiveCommands()
 	commandFinished := func() {
 		if h.decrementActiveCommands() == 0 {
@@ -73,7 +75,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 	}
 	if serverless, _ := options["serverless"]; serverless == "true" {
 		dlog.Server.Debug(h.user, "Enabling serverless mode")
-		h.serverless = true
+		atomic.AddInt32(&h.serverless, 1)
 	}
 
 	switch commandName {
@@ -83,14 +85,12 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 			command.Start(ctx, argc, args, 1)
 			commandFinished()
 		}()
-
 	case "tail":
 		command := newReadCommand(h, omode.TailClient)
 		go func() {
 			command.Start(ctx, argc, args, 10)
 			commandFinished()
 		}()
-
 	case "map":
 		command, aggregate, err := newMapCommand(h, argc, args)
 		if err != nil {
@@ -99,19 +99,17 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int, args []
 			commandFinished()
 			return
 		}
-
 		h.aggregate = aggregate
 		go func() {
 			command.Start(ctx, h.maprMessages)
 			commandFinished()
 		}()
-
 	case ".ack":
 		h.handleAckCommand(argc, args)
 		commandFinished()
-
 	default:
-		h.send(h.serverMessages, dlog.Server.Error(h.user, "Received unknown user command", commandName, argc, args, options))
+		h.send(h.serverMessages, dlog.Server.Error(h.user,
+			"Received unknown user command", commandName, argc, args, options))
 		commandFinished()
 	}
 }

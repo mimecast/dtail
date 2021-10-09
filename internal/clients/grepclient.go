@@ -12,7 +12,8 @@ import (
 	"github.com/mimecast/dtail/internal/omode"
 )
 
-// GrepClient searches a remote file for all lines matching a regular expression. Only the matching lines are displayed.
+// GrepClient searches a remote file for all lines matching a regular
+// expression. Only the matching lines are displayed.
 type GrepClient struct {
 	baseClient
 }
@@ -34,7 +35,6 @@ func NewGrepClient(args config.Args) (*GrepClient, error) {
 
 	c.init()
 	c.makeConnections(c)
-
 	return &c, nil
 }
 
@@ -51,6 +51,5 @@ func (c GrepClient) makeCommands() (commands []string) {
 		commands = append(commands, fmt.Sprintf("%s:%s %s %s",
 			c.Mode.String(), c.Args.SerializeOptions(), file, regex))
 	}
-
 	return
 }

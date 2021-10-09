@@ -19,7 +19,8 @@ type Answer struct {
 	Callback func()
 	// Runs after Callback and after logging resumes
 	EndCallback func()
-	AskAgain    bool
+	// AskAgain can be used to not to ask again about the question.
+	AskAgain bool
 }
 
 // Prompt used for interactive user input.
@@ -30,7 +31,6 @@ type Prompt struct {
 
 func (p *Prompt) askString() string {
 	var sb strings.Builder
-
 	sb.WriteString(p.question)
 	sb.WriteString("? (")
 
@@ -41,7 +41,6 @@ func (p *Prompt) askString() string {
 
 	sb.WriteString(strings.Join(ax, ","))
 	sb.WriteString("): ")
-
 	return sb.String()
 }
 
@@ -68,7 +67,6 @@ func (p *Prompt) Ask() {
 			if a.Callback != nil {
 				a.Callback()
 			}
-
 			if !a.AskAgain {
 				dlog.Common.Resume()
 				if a.EndCallback != nil {
@@ -90,6 +88,5 @@ func (p *Prompt) answer(answerStr string) (*Answer, bool) {
 		default:
 		}
 	}
-
 	return nil, false
 }

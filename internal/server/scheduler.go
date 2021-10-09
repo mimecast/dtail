@@ -16,8 +16,7 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
-type scheduler struct {
-}
+type scheduler struct{}
 
 func newScheduler() *scheduler {
 	return &scheduler{}
@@ -28,7 +27,6 @@ func (s *scheduler) start(ctx context.Context) {
 	// First run after just 10s!
 	time.Sleep(time.Second * 10)
 	s.runJobs(ctx)
-
 	for {
 		select {
 		case <-time.After(time.Minute):
@@ -45,13 +43,11 @@ func (s *scheduler) runJobs(ctx context.Context) {
 			dlog.Server.Debug(job.Name, "Not running job as not enabled")
 			continue
 		}
-
 		hour, err := strconv.Atoi(time.Now().Format("15"))
 		if err != nil {
 			dlog.Server.Error(job.Name, "Unable to create job", err)
 			continue
 		}
-
 		if hour < job.TimeRange[0] || hour >= job.TimeRange[1] {
 			dlog.Server.Debug(job.Name, "Not running job out of time range")
 			continue
@@ -59,7 +55,6 @@ func (s *scheduler) runJobs(ctx context.Context) {
 
 		files := fillDates(job.Files)
 		outfile := fillDates(job.Outfile)
-
 		_, err = os.Stat(outfile)
 		if !os.IsNotExist(err) {
 			dlog.Server.Debug(job.Name, "Not running job as outfile already exists", outfile)
@@ -70,7 +65,6 @@ func (s *scheduler) runJobs(ctx context.Context) {
 		if servers == "" {
 			servers = config.Server.SSHBindAddress
 		}
-
 		args := config.Args{
 			ConnectionsPerCPU: config.DefaultConnectionsPerCPU,
 			Discovery:         job.Discovery,
@@ -81,7 +75,6 @@ func (s *scheduler) runJobs(ctx context.Context) {
 		}
 
 		args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(job.Name))
-
 		args.QueryStr = fmt.Sprintf("%s outfile %s", job.Query, outfile)
 		client, err := clients.NewMaprClient(args, clients.CumulativeMode)
 		if err != nil {

@@ -7,6 +7,7 @@ import (
 
 type level int
 
+// Available log levels.
 const (
 	Fatal   level = iota
 	Error   level = iota
@@ -20,7 +21,8 @@ const (
 	All     level = iota
 )
 
-var allLevels = []level{Fatal, Error, Warn, Info, Default, Verbose, Debug, Devel, Trace, All}
+var allLevels = []level{Fatal, Error, Warn, Info, Default, Verbose, Debug,
+	Devel, Trace, All}
 
 func newLevel(l string) level {
 	switch strings.ToLower(l) {
@@ -73,6 +75,5 @@ func (l level) String() string {
 	case All:
 		return "ALL"
 	}
-
 	panic("Unknown log level " + fmt.Sprintf("%d", l))
 }

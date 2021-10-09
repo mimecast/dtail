@@ -49,7 +49,6 @@ func (u *User) HasFilePermission(filePath, permissionType string) (hasPermission
 		dlog.Server.Fatal(u, filePath, permissionType, "Server releaxed auth enabled")
 		return true
 	}
-
 	if u.Name == config.ScheduleUser || u.Name == config.ContinuousUser {
 		// Background user has same permissions as dtail process itself.
 		return true
@@ -57,27 +56,29 @@ func (u *User) HasFilePermission(filePath, permissionType string) (hasPermission
 
 	cleanPath, err := filepath.EvalSymlinks(filePath)
 	if err != nil {
-		dlog.Server.Error(u, filePath, permissionType, "Unable to evaluate symlinks", err)
+		dlog.Server.Error(u, filePath, permissionType,
+			"Unable to evaluate symlinks", err)
 		hasPermission = false
 		return
 	}
 
 	cleanPath, err = filepath.Abs(cleanPath)
 	if err != nil {
-		dlog.Server.Error(u, cleanPath, permissionType, "Unable to make file path absolute", err)
+		dlog.Server.Error(u, cleanPath, permissionType,
+			"Unable to make file path absolute", err)
 		hasPermission = false
 		return
 	}
 
 	if cleanPath != filePath {
-		dlog.Server.Info(u, filePath, cleanPath, permissionType, "Calculated new clean path from original file path (possibly symlink)")
+		dlog.Server.Info(u, filePath, cleanPath, permissionType,
+			"Calculated new clean path from original file path (possibly symlink)")
 	}
 
 	hasPermission, err = u.hasFilePermission(cleanPath, permissionType)
 	if err != nil {
 		dlog.Server.Warn(u, cleanPath, err)
 	}
-
 	return
 }
 
@@ -86,18 +87,17 @@ func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error)
 	if _, err := permissions.ToRead(u.Name, cleanPath); err != nil {
 		return false, fmt.Errorf("User without OS file system permissions to read path: '%v'", err)
 	}
-	dlog.Server.Info(u, cleanPath, permissionType, "User with OS file system permissions to path")
+	dlog.Server.Info(u, cleanPath, permissionType,
+		"User with OS file system permissions to path")
 
 	// Only allow to follow regular files or symlinks.
 	info, err := os.Lstat(cleanPath)
 	if err != nil {
 		return false, fmt.Errorf("Unable to determine file type: '%v'", err)
 	}
-
 	if !info.Mode().IsRegular() {
 		return false, fmt.Errorf("Can only open regular files or follow symlinks")
 	}
-
 	hasPermission, err := u.iteratePaths(cleanPath, permissionType)
 	if err != nil {
 		return false, err
@@ -109,10 +109,8 @@ func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error)
 func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 	// By default assume no permissions
 	hasPermission := false
-
 	for _, permission := range u.permissions {
 		typeStr := "readfiles" // Assume ReadFiles by default.
-
 		var regexStr string
 		var negate bool
 
@@ -123,7 +121,6 @@ func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 		}
 
 		dlog.Server.Debug(u, cleanPath, typeStr, permission)
-
 		if typeStr != permissionType {
 			continue
 		}
@@ -136,16 +133,17 @@ func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 
 		re, err := regexp.Compile(regexStr)
 		if err != nil {
-			return false, fmt.Errorf("Permission test failed, can't compile regex '%s': '%v'", regexStr, err)
+			return false, fmt.Errorf("Permission test failed, can't compile regex "+
+				"'%s': '%v'", regexStr, err)
 		}
-
 		if negate && re.MatchString(cleanPath) {
-			dlog.Server.Info(u, cleanPath, "Permission test failed partially, matching negative pattern '%s'", permission)
+			dlog.Server.Info(u, cleanPath, "Permission test failed partially, "+
+				"matching negative pattern '%s'", permission)
 			hasPermission = false
 		}
-
 		if !negate && re.MatchString(cleanPath) {
-			dlog.Server.Info(u, cleanPath, "Permission test passed partially, matching positive pattern", permission)
+			dlog.Server.Info(u, cleanPath, "Permission test passed partially, "+
+				"matching positive pattern", permission)
 			hasPermission = true
 		}
 	}
