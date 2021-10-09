@@ -9,7 +9,7 @@ func TestDTailColorTable(t *testing.T) {
 	stdoutFile := "dtailcolortable.stdout.tmp"
 	expectedStdoutFile := "dtailcolortable.expected"
 
-	if err := runCommand(t, "../dtail", []string{"-colorTable"}, stdoutFile); err != nil {
+	if _, err := runCommand(t, "../dtail", []string{"-colorTable"}, stdoutFile); err != nil {
 		t.Error(err)
 		return
 	}

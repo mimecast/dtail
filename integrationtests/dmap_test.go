@@ -16,7 +16,7 @@ func TestDMap(t *testing.T) {
 
 	query := fmt.Sprintf("from STATS select count($line),last($time),avg($goroutines),min(concurrentConnections),max(lifetimeConnections) group by $hostname outfile %s", csvFile)
 
-	if err := runCommand(t, "../dmap", []string{"-query", query, inFile}, stdoutFile); err != nil {
+	if _, err := runCommand(t, "../dmap", []string{"-query", query, inFile}, stdoutFile); err != nil {
 		t.Error(err)
 		return
 	}
@@ -44,7 +44,7 @@ func TestDMap2(t *testing.T) {
 
 	query := fmt.Sprintf("from STATS select count($time),$time,max($goroutines),avg($goroutines),min($goroutines) group by $time order by count($time) outfile %s", csvFile)
 
-	if err := runCommand(t, "../dmap", []string{"-query", query, inFile}, stdoutFile); err != nil {
+	if _, err := runCommand(t, "../dmap", []string{"-query", query, inFile}, stdoutFile); err != nil {
 		t.Error(err)
 		return
 	}

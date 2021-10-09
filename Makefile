@@ -45,6 +45,7 @@ lint:
 	  golint $$dir; \
 	done
 test:
+	${GO} clean -testcache
 ifndef USE_ACL
 	${GO} test -race ./... -v
 else

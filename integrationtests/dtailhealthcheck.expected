@@ -1,0 +1,1 @@
+WARNING: All seems fine but the check only run in serverless mode, please specify a remote server via --server hostname:port

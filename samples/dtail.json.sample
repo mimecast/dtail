@@ -68,9 +68,10 @@
     "LogDir": "log",
     "CacheDir": "cache",
     "TmpDir": "tmp",
-    "LogStrategy": "stdout",
+    "Logger": "fout",
+    "LogStrategy": "daily",
     "SSHPort": 2222,
-    "LogLevel": "INFO",
+    "LogLevel": "info",
     "ExperimentalFeaturesEnable": false
   }
 }

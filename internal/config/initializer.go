@@ -93,6 +93,9 @@ func (i *initializer) optimusPrime(sourceCb transformCb, args *Args, additionalA
 	if args.Logger != "" {
 		i.Common.Logger = args.Logger
 	}
+	if args.ConnectionsPerCPU == 0 {
+		args.ConnectionsPerCPU = DefaultConnectionsPerCPU
+	}
 
 	// Setup log directory.
 	if strings.Contains(i.Common.LogDir, "~/") {
@@ -101,14 +104,6 @@ func (i *initializer) optimusPrime(sourceCb transformCb, args *Args, additionalA
 			panic(err)
 		}
 		i.Common.LogDir = strings.ReplaceAll(i.Common.LogDir, "~/", fmt.Sprintf("%s/", homeDir))
-	}
-
-	// Serverless mode.
-	if args.Discovery == "" && (args.ServersStr == "" ||
-		strings.ToLower(args.ServersStr) == "serverless") {
-		// We are not connecting to any servers.
-		args.Serverless = true
-		i.Common.LogLevel = "WARN"
 	}
 
 	// Source type specific transormations.
@@ -141,6 +136,14 @@ func (i *initializer) optimusPrime(sourceCb transformCb, args *Args, additionalA
 }
 
 func transformClient(i *initializer, args *Args, additionalArgs []string) error {
+	// Serverless mode.
+	if args.Discovery == "" && (args.ServersStr == "" ||
+		strings.ToLower(args.ServersStr) == "serverless") {
+		// We are not connecting to any servers.
+		args.Serverless = true
+		i.Common.LogLevel = "warn"
+	}
+
 	return nil
 }
 
@@ -149,9 +152,13 @@ func transformServer(i *initializer, args *Args, additionalArgs []string) error 
 }
 
 func transformHealthCheck(i *initializer, args *Args, additionalArgs []string) error {
-	args.TrustAllHosts = true
-	if !args.Serverless && args.ServersStr == "" {
-		args.ServersStr = fmt.Sprintf("localhost:%d", DefaultSSHPort)
+	// Serverless mode.
+	if args.Discovery == "" && (args.ServersStr == "" ||
+		strings.ToLower(args.ServersStr) == "serverless") {
+		// We are not connecting to any servers.
+		args.Serverless = true
+		i.Common.LogLevel = "warn"
 	}
+	args.TrustAllHosts = true
 	return nil
 }

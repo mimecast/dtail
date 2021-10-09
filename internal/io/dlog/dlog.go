@@ -41,32 +41,25 @@ func Start(ctx context.Context, wg *sync.WaitGroup, sourceProcess source.Source)
 		Common.FatalPanic("Logger already started")
 	}
 
-	switch sourceProcess {
-	case source.Client:
-		Client = New(source.Client, source.Client)
-		Server = New(source.Client, source.Server)
-		Common = Client
-	case source.Server:
-		Client = New(source.Server, source.Client)
-		Server = New(source.Server, source.Server)
+	Client = new(sourceProcess, source.Client)
+	Server = new(sourceProcess, source.Server)
+	Common = Client
+	if sourceProcess == source.Server {
 		Common = Server
-	case source.HealthCheck:
-		Client = New(source.HealthCheck, source.Client)
-		Server = New(source.HealthCheck, source.Server)
-		Common = Client
 	}
 
 	var wg2 sync.WaitGroup
 	wg2.Add(2)
-	Client.start(ctx, &wg2)
-	Server.start(ctx, &wg2)
-	started = true
+	go Client.start(ctx, &wg2)
+	go Server.start(ctx, &wg2)
 
 	go rotation(ctx)
 	go func() {
 		wg2.Wait()
 		wg.Done()
 	}()
+
+	started = true
 }
 
 // DLog is the DTail logger.
@@ -83,8 +76,8 @@ type DLog struct {
 	hostname string
 }
 
-// New creates a new DTail logger.
-func New(sourceProcess, sourcePackage source.Source) *DLog {
+// new creates a new DTail logger.
+func new(sourceProcess, sourcePackage source.Source) *DLog {
 	hostname, err := os.Hostname()
 	if err != nil {
 		panic(err)
@@ -103,14 +96,12 @@ func New(sourceProcess, sourcePackage source.Source) *DLog {
 }
 
 func (d *DLog) start(ctx context.Context, wg *sync.WaitGroup) {
-	go func() {
-		defer wg.Done()
-		var wg2 sync.WaitGroup
-		wg2.Add(1)
-		d.logger.Start(ctx, &wg2)
-		<-ctx.Done()
-		wg2.Wait()
-	}()
+	defer wg.Done()
+	var wg2 sync.WaitGroup
+	wg2.Add(1)
+	d.logger.Start(ctx, &wg2)
+	<-ctx.Done()
+	wg2.Wait()
 }
 
 func (d *DLog) log(level level, args []interface{}) string {
@@ -202,6 +193,8 @@ func (d *DLog) Trace(args ...interface{}) string {
 }
 
 func (d *DLog) Devel(args ...interface{}) string {
+	_, file, line, _ := runtime.Caller(1)
+	args = append(args, fmt.Sprintf("at %s:%d", file, line))
 	return d.log(Devel, args)
 }
 

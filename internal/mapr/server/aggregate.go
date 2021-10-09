@@ -8,9 +8,8 @@ import (
 
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/dlog"
-	"github.com/mimecast/dtail/internal/io/pool"
+	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/mapr/logformat"
 	"github.com/mimecast/dtail/internal/protocol"
@@ -148,7 +147,8 @@ func (a *Aggregate) fieldsFromLines(ctx context.Context) <-chan map[string]strin
 
 				maprLine := strings.TrimSpace(line.Content.String())
 				fields, err := a.parser.MakeFields(maprLine)
-				pool.RecycleBytesBuffer(line.Content)
+				// Can not recycle here for some rason.
+				//pool.RecycleBytesBuffer(line.Content)
 
 				if err != nil {
 					// Should fields be ignored anyway?

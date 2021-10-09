@@ -126,7 +126,6 @@ func (f *file) getWriter(name string) *bufio.Writer {
 	if f.lastFileName == name {
 		return f.writer
 	}
-
 	if _, err := os.Stat(config.Common.LogDir); os.IsNotExist(err) {
 		if err = os.MkdirAll(config.Common.LogDir, 0755); err != nil {
 			panic(err)
@@ -144,7 +143,7 @@ func (f *file) getWriter(name string) *bufio.Writer {
 		f.writer.Flush()
 		f.fd.Close()
 	}
-
+	// Set new writer.
 	f.fd = newFd
 	f.writer = bufio.NewWriterSize(f.fd, 1)
 	f.lastFileName = name
@@ -153,8 +152,11 @@ func (f *file) getWriter(name string) *bufio.Writer {
 }
 
 func (f *file) flush() {
-	defer f.writer.Flush()
-
+	defer func() {
+		if f.writer != nil {
+			f.writer.Flush()
+		}
+	}()
 	for {
 		select {
 		case m := <-f.bufferCh:

@@ -28,12 +28,13 @@
     }
   },
   "Common": {
-    "LogDir" : "/var/log/dserver",
-    "CacheDir" : "cache",
-    "TmpDir" : "tmp",
+    "LogDir": "/var/log/dserver",
+    "Logger": "fout",
+    "CacheDir": "cache",
+    "TmpDir": "tmp",
     "LogStrategy": "daily",
     "SSHPort": 2222,
-    "LogLevel": "DEVEL",
+    "LogLevel": "trace",
     "ExperimentalFeaturesEnable": false
   }
 }

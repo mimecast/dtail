@@ -36,6 +36,8 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
+	dlog.Start(ctx, &wg, source.HealthCheck)
+
 	if pprof > -1 {
 		// For debugging purposes only
 		pprofArgs := fmt.Sprintf("0.0.0.0:%d", pprof)
@@ -43,7 +45,6 @@ func main() {
 		dlog.Client.Info("Started PProf", pprofArgs)
 	}
 
-	dlog.Start(ctx, &wg, source.HealthCheck)
 	healthClient, _ := clients.NewHealthClient(args)
 	os.Exit(healthClient.Start(ctx, signal.NoCh(ctx)))
 }

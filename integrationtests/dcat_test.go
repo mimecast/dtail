@@ -9,7 +9,7 @@ func TestDCat(t *testing.T) {
 	testdataFile := "dcat.txt.expected"
 	stdoutFile := "dcat.out"
 
-	if err := runCommand(t, "../dcat", []string{"-spartan", testdataFile}, stdoutFile); err != nil {
+	if _, err := runCommand(t, "../dcat", []string{"-spartan", testdataFile}, stdoutFile); err != nil {
 		t.Error(err)
 		return
 	}
