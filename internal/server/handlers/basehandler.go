@@ -9,6 +9,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 	user "github.com/mimecast/dtail/internal/user/server"
 )
 
-type handleCommandCb func(context.Context, int, []string, string, map[string]string)
+type handleCommandCb func(context.Context, int, []string, string)
 
 type baseHandler struct {
 	done             *internal.Done
@@ -35,11 +36,15 @@ type baseHandler struct {
 	user             *user.User
 	ackCloseReceived chan struct{}
 	activeCommands   int32
-	quiet            bool
-	spartan          bool
-	serverless       int32
 	readBuf          bytes.Buffer
 	writeBuf         bytes.Buffer
+
+	// Some global options + sync primitives required.
+	once       sync.Once
+	mutex      sync.Mutex
+	quiet      bool
+	spartan    bool
+	serverless bool
 }
 
 // Shutdown the handler.
@@ -66,7 +71,7 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 			return
 		}
 
-		if h.serverless > 0 {
+		if h.serverless {
 			return
 		}
 
@@ -160,8 +165,9 @@ func (h *baseHandler) handleCommand(commandStr string) {
 		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
 		return
 	}
+	h.setOptions(options)
 
-	h.handleCommandCb(ctx, argc, args, commandName, options)
+	h.handleCommandCb(ctx, argc, args, commandName)
 }
 
 func (h *baseHandler) handleProtocolVersion(args []string) ([]string, int, string, error) {
@@ -230,6 +236,28 @@ func (h *baseHandler) handleAckCommand(argc int, args []string) {
 			close(h.ackCloseReceived)
 		}
 	}
+}
+
+func (h *baseHandler) setOptions(options map[string]string) {
+	// We have to make sure that this block is executed only once.
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	// We can read the options only once, will cause a data race otherwise if
+	// changed multiple times for multiple incoming commands.
+	h.once.Do(func() {
+		if quiet, _ := options["quiet"]; quiet == "true" {
+			dlog.Server.Debug(h.user, "Enabling quiet mode")
+			h.quiet = true
+		}
+		if spartan, _ := options["spartan"]; spartan == "true" {
+			dlog.Server.Debug(h.user, "Enabling spartan mode")
+			h.spartan = true
+		}
+		if serverless, _ := options["serverless"]; serverless == "true" {
+			dlog.Server.Debug(h.user, "Enabling serverless mode")
+			h.serverless = true
+		}
+	})
 }
 
 func (h *baseHandler) send(ch chan<- string, message string) {

@@ -12,7 +12,7 @@ spinup:
 spindown:
 	./spindown.sh 10
 spinup1:
-		docker run -p 2222:2222 dserver:develop
+	docker run -p 2222:2222 dserver:develop
 dtail:
 	../dtail --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts --logLevel DEBUG
 dtail2:

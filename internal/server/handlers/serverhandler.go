@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"strings"
-	"sync/atomic"
 
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/io/dlog"
@@ -55,7 +54,7 @@ func NewServerHandler(user *user.User, catLimiter,
 }
 
 func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int,
-	args []string, commandName string, options map[string]string) {
+	args []string, commandName string) {
 
 	dlog.Server.Debug(h.user, "Handling user command", argc, args)
 	h.incrementActiveCommands()
@@ -63,19 +62,6 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int,
 		if h.decrementActiveCommands() == 0 {
 			h.shutdown()
 		}
-	}
-
-	if quiet, _ := options["quiet"]; quiet == "true" {
-		dlog.Server.Debug(h.user, "Enabling quiet mode")
-		h.quiet = true
-	}
-	if spartan, _ := options["spartan"]; spartan == "true" {
-		dlog.Server.Debug(h.user, "Enabling spartan mode")
-		h.spartan = true
-	}
-	if serverless, _ := options["serverless"]; serverless == "true" {
-		dlog.Server.Debug(h.user, "Enabling serverless mode")
-		atomic.AddInt32(&h.serverless, 1)
 	}
 
 	switch commandName {
@@ -109,7 +95,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int,
 		commandFinished()
 	default:
 		h.send(h.serverMessages, dlog.Server.Error(h.user,
-			"Received unknown user command", commandName, argc, args, options))
+			"Received unknown user command", commandName, argc, args))
 		commandFinished()
 	}
 }

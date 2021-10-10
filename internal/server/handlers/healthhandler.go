@@ -41,7 +41,7 @@ func NewHealthHandler(user *user.User) *HealthHandler {
 }
 
 func (h *HealthHandler) handleHealthCommand(ctx context.Context, argc int,
-	args []string, commandName string, options map[string]string) {
+	args []string, commandName string) {
 
 	dlog.Server.Debug(h.user, "Handling health command", argc, args)
 	switch commandName {

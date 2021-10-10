@@ -147,7 +147,9 @@ func transformClient(in *initializer, args *Args, additionalArgs []string) error
 		strings.ToLower(args.ServersStr) == "serverless") {
 		// We are not connecting to any servers.
 		args.Serverless = true
-		in.Common.LogLevel = "warn"
+		if args.LogLevel == DefaultLogLevel {
+			in.Common.LogLevel = "warn"
+		}
 	}
 	return nil
 }

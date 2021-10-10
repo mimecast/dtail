@@ -25,7 +25,7 @@ func main() {
 
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.StringVar(&args.Logger, "logger", config.DefaultHealthCheckLogger, "Logger name")
-	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
+	flag.StringVar(&args.LogLevel, "logLevel", "none", "Log level")
 	flag.StringVar(&args.ServersStr, "server", "", "Remote server to connect")
 	flag.Parse()
 

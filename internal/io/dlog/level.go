@@ -9,6 +9,7 @@ type level int
 
 // Available log levels.
 const (
+	None    level = iota
 	Fatal   level = iota
 	Error   level = iota
 	Warn    level = iota
@@ -26,6 +27,8 @@ var allLevels = []level{Fatal, Error, Warn, Info, Default, Verbose, Debug,
 
 func newLevel(l string) level {
 	switch strings.ToLower(l) {
+	case "none":
+		return None
 	case "fatal":
 		return Fatal
 	case "error":
@@ -54,6 +57,8 @@ func newLevel(l string) level {
 
 func (l level) String() string {
 	switch l {
+	case None:
+		return "NONE"
 	case Fatal:
 		return "FATAL"
 	case Error:

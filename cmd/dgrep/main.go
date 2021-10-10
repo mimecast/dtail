@@ -35,7 +35,7 @@ func main() {
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&args.LogDir, "logDir", "~/log", "Log dir")
 	flag.StringVar(&args.Logger, "logger", config.DefaultClientLogger, "Logger name")
-	flag.StringVar(&args.LogLevel, "logLevel", "", "Log level")
+	flag.StringVar(&args.LogLevel, "logLevel", config.DefaultLogLevel, "Log level")
 	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
 	flag.StringVar(&args.RegexStr, "regex", ".", "Regular expression")
 	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")

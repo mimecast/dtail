@@ -16,7 +16,7 @@ const (
 	// DefaultSSHPort is the default DServer port.
 	DefaultSSHPort int = 2222
 	// DefaultLogLevel specifies the default log level (obviously)
-	DefaultLogLevel string = "INFO"
+	DefaultLogLevel string = "info"
 	// DefaultClientLogger specifies the default logger for the client commands.
 	DefaultClientLogger string = "fout"
 	// DefaultServerLogger specifies the default logger for dtail server.
