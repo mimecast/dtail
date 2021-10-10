@@ -2,52 +2,14 @@ package integrationtests
 
 import (
 	"bufio"
-	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"strings"
-	"syscall"
 	"testing"
 )
-
-func runCommand(t *testing.T, cmd string, args []string, stdoutFile string) (int, error) {
-	return runCommandContext(context.TODO(), t, cmd, args, stdoutFile)
-}
-
-func runCommandContext(ctx context.Context, t *testing.T, cmd string, args []string,
-	stdoutFile string) (int, error) {
-
-	if _, err := os.Stat(cmd); err != nil {
-		return -1, fmt.Errorf("No such binary %s, please compile first (%v)", cmd, err)
-	}
-
-	t.Log("Running command:", cmd, strings.Join(args, " "))
-	bytes, cmdErr := exec.CommandContext(ctx, cmd, args...).Output()
-
-	t.Log("Writing stdout to file", stdoutFile)
-	fd, err := os.Create(stdoutFile)
-	if err != nil {
-		return -1, err
-	}
-	defer fd.Close()
-	fd.Write(bytes)
-
-	return exitCodeFromError(cmdErr), err
-}
-
-func exitCodeFromError(err error) int {
-	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			ws := exitError.Sys().(syscall.WaitStatus)
-			return ws.ExitStatus()
-		}
-	}
-	return 0
-}
 
 // Checks whether both files have the same lines (order doesn't matter)
 func compareFilesContents(t *testing.T, fileA, fileB string) error {

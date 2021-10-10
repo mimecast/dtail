@@ -1,6 +1,7 @@
 package integrationtests
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -17,12 +18,15 @@ func TestDMap(t *testing.T) {
 	query := fmt.Sprintf("from STATS select count($line),last($time),"+
 		"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) "+
 		"group by $hostname outfile %s", csvFile)
-	args := []string{"-query", query, inFile}
 
-	if _, err := runCommand(t, "../dmap", args, stdoutFile); err != nil {
+	_, err := runCommand(context.TODO(), stdoutFile,
+		"../dmap", "--query", query, inFile)
+
+	if err != nil {
 		t.Error(err)
 		return
 	}
+
 	if err := compareFiles(t, csvFile, expectedCsvFile); err != nil {
 		t.Error(err)
 		return
@@ -49,11 +53,13 @@ func TestDMap2(t *testing.T) {
 		"avg($goroutines),min($goroutines) group by $time order by count($time) "+
 		"outfile %s", csvFile)
 
-	args := []string{"-query", query, inFile}
-	if _, err := runCommand(t, "../dmap", args, stdoutFile); err != nil {
+	_, err := runCommand(context.TODO(), stdoutFile,
+		"../dmap", "--query", query, inFile)
+	if err != nil {
 		t.Error(err)
 		return
 	}
+
 	if err := compareFilesContents(t, csvFile, expectedCsvFile); err != nil {
 		t.Error(err)
 		return
@@ -86,7 +92,7 @@ func TestDMap3(t *testing.T) {
 		args = append(args, inFile)
 	}
 
-	if _, err := runCommand(t, "../dmap", args, stdoutFile); err != nil {
+	if _, err := runCommand(context.TODO(), stdoutFile, "../dmap", args...); err != nil {
 		t.Error(err)
 		return
 	}

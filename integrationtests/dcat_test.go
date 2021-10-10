@@ -1,6 +1,7 @@
 package integrationtests
 
 import (
+	"context"
 	"os"
 	"testing"
 )
@@ -8,15 +9,19 @@ import (
 func TestDCat(t *testing.T) {
 	testdataFile := "dcat.txt.expected"
 	stdoutFile := "dcat.out"
-	args := []string{"-spartan", testdataFile}
 
-	if _, err := runCommand(t, "../dcat", args, stdoutFile); err != nil {
+	_, err := runCommand(context.TODO(), stdoutFile,
+		"../dcat", "--spartan", testdataFile)
+
+	if err != nil {
 		t.Error(err)
 		return
 	}
+
 	if err := compareFiles(t, stdoutFile, testdataFile); err != nil {
 		t.Error(err)
 		return
 	}
+
 	os.Remove(stdoutFile)
 }

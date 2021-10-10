@@ -37,6 +37,7 @@ func NewServerConnection(server string, userName string,
 	c := ServerConnection{
 		hostKeyCallback: hostKeyCallback,
 		server:          server,
+		port:            config.Common.SSHPort,
 		handler:         handler,
 		commands:        commands,
 		config: &ssh.ClientConfig{
@@ -47,25 +48,20 @@ func NewServerConnection(server string, userName string,
 		},
 	}
 
+	// TODO: After reconnecting the port is wrong! Due to string slicing?
 	c.initServerPort()
 	return &c
 }
 
 // Server returns the server hostname connected to.
-func (c *ServerConnection) Server() string {
-	return c.server
-}
+func (c *ServerConnection) Server() string { return c.server }
 
 // Handler returns the handler used for the connection.
-func (c *ServerConnection) Handler() handlers.Handler {
-	return c.handler
-}
+func (c *ServerConnection) Handler() handlers.Handler { return c.handler }
 
 // Attempt to parse the server port address from the provided server FQDN.
 func (c *ServerConnection) initServerPort() {
-	c.port = config.Common.SSHPort
 	parts := strings.Split(c.server, ":")
-
 	if len(parts) == 2 {
 		dlog.Client.Debug("Parsing port from hostname", parts)
 		port, err := strconv.Atoi(parts[1])

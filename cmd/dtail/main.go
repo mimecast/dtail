@@ -85,6 +85,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if shutdownAfter > 0 {
+		// TODO: This does not work (auto shutdown)
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(shutdownAfter)*time.Second)
 		defer cancel()
 	}

@@ -16,4 +16,3 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [ ] More integration test colors (via dcat?)
 [ ] Integration test for dtail in serverless mode
 [ ] Integration test for dtail normal mode
-[ ] Fix the sync.Pools (they aren't concurrent as it seems and can cause a panic)
