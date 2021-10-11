@@ -47,7 +47,7 @@ type ServerConfig struct {
 	MaxConcurrentCats int
 	// The max amount of concurrent tails per server.
 	MaxConcurrentTails int
-	// The user permissions.
+	// The user permissions. TODO: Add to JSON schema
 	Permissions Permissions `json:",omitempty"`
 	// The mapr log format
 	MapreduceLogFormat string `json:",omitempty"`

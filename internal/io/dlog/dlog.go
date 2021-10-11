@@ -82,12 +82,12 @@ func new(sourceProcess, sourcePackage source.Source) *DLog {
 	if err != nil {
 		panic(err)
 	}
-	strategy := loggers.NewStrategy(config.Common.LogStrategy)
+	logRotation := loggers.NewStrategy(config.Common.LogRotation)
 	loggerName := config.Common.Logger
 	level := newLevel(config.Common.LogLevel)
 
 	return &DLog{
-		logger:        loggers.Factory(sourceProcess.String(), loggerName, strategy),
+		logger:        loggers.Factory(sourceProcess.String(), loggerName, logRotation),
 		sourceProcess: sourceProcess,
 		sourcePackage: sourcePackage,
 		maxLevel:      level,

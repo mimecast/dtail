@@ -12,12 +12,10 @@ type CommonConfig struct {
 	Logger string
 	// LogLevel defines how much is logged.
 	LogLevel string `json:",omitempty"`
-	// LogStrategy defines the log rotation strategy.
-	LogStrategy string
+	// LogRotation strategy to be used.
+	LogRotation string
 	// The cache directory
 	CacheDir string
-	// The temp directory
-	TmpDir string `json:",omitempty"`
 }
 
 // Create a new default configuration.
@@ -28,8 +26,7 @@ func newDefaultCommonConfig() *CommonConfig {
 		LogDir:                     "log",
 		Logger:                     "stdout",
 		LogLevel:                   DefaultLogLevel,
-		LogStrategy:                "daily",
+		LogRotation:                "daily",
 		CacheDir:                   "cache",
-		TmpDir:                     "/tmp",
 	}
 }
