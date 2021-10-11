@@ -19,7 +19,11 @@ import (
 // ServerConnection represents a connection to a single remote dtail server via
 // SSH protocol.
 type ServerConnection struct {
-	server          string
+	// The full server string as received from the server discovery (can be with port number)
+	server string
+	// Only the hostname or FQDN (without the port number)
+	hostname string
+	// Only the port number.
 	port            int
 	config          *ssh.ClientConfig
 	handler         handlers.Handler
@@ -37,7 +41,6 @@ func NewServerConnection(server string, userName string,
 	c := ServerConnection{
 		hostKeyCallback: hostKeyCallback,
 		server:          server,
-		port:            config.Common.SSHPort,
 		handler:         handler,
 		commands:        commands,
 		config: &ssh.ClientConfig{
@@ -48,7 +51,6 @@ func NewServerConnection(server string, userName string,
 		},
 	}
 
-	// TODO: After reconnecting the port is wrong! Due to string slicing?
 	c.initServerPort()
 	return &c
 }
@@ -61,6 +63,7 @@ func (c *ServerConnection) Handler() handlers.Handler { return c.handler }
 
 // Attempt to parse the server port address from the provided server FQDN.
 func (c *ServerConnection) initServerPort() {
+	c.port = config.Common.SSHPort
 	parts := strings.Split(c.server, ":")
 	if len(parts) == 2 {
 		dlog.Client.Debug("Parsing port from hostname", parts)
@@ -68,7 +71,7 @@ func (c *ServerConnection) initServerPort() {
 		if err != nil {
 			dlog.Client.FatalPanic("Unable to parse client port", c.server, parts, err)
 		}
-		c.server = parts[0]
+		c.hostname = parts[0]
 		c.port = port
 	}
 }
@@ -103,8 +106,8 @@ func (c *ServerConnection) Start(ctx context.Context, cancel context.CancelFunc,
 		}()
 
 		if err := c.dial(ctx, cancel, throttleCh, statsCh); err != nil {
-			dlog.Client.Warn(c.server, c.port, err)
-			if c.hostKeyCallback.Untrusted(fmt.Sprintf("%s:%d", c.server, c.port)) {
+			dlog.Client.Warn(c.server, err)
+			if c.hostKeyCallback.Untrusted(c.server) {
 				dlog.Client.Debug(c.server, "Not trusting host")
 			}
 		}
@@ -125,7 +128,7 @@ func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc,
 	}()
 
 	dlog.Client.Debug(c.server, "Dialing into the connection")
-	address := fmt.Sprintf("%s:%d", c.server, c.port)
+	address := fmt.Sprintf("%s:%d", c.hostname, c.port)
 
 	client, err := ssh.Dial("tcp", address, c.config)
 	if err != nil {

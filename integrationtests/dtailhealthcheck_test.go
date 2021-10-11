@@ -53,14 +53,18 @@ func TestDTailHealthCheck3(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	startCommand(ctx,
+	_, _, _, err := startCommand(ctx,
 		"../dserver",
 		"--logger", "stdout",
 		"--logLevel", "trace",
 		"--port", "4242",
 	)
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
-	_, err := runCommandRetry(ctx, 10, stdoutFile,
+	_, err = runCommandRetry(ctx, 10, stdoutFile,
 		"../dtailhealthcheck", "--server", "localhost:4242")
 	if err != nil {
 		t.Error(err)
