@@ -3,8 +3,10 @@ package config
 import (
 	"encoding/base64"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/omode"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -12,6 +14,7 @@ import (
 
 // Args is a helper struct to summarize common client arguments.
 type Args struct {
+	lcontext.LContext
 	Arguments          []string
 	ConfigFile         string
 	ConnectionsPerCPU  int
@@ -74,17 +77,50 @@ func (a *Args) String() string {
 
 // SerializeOptions returns a string ready to be sent over the wire to the server.
 func (a *Args) SerializeOptions() string {
-	return fmt.Sprintf("quiet=%v:spartan=%v:serverless=%v", a.Quiet, a.Spartan,
-		a.Serverless)
+	options := make(map[string]string)
+
+	if a.Quiet {
+		options["quiet"] = fmt.Sprintf("%v", a.Quiet)
+	}
+	if a.Spartan {
+		options["spartan"] = fmt.Sprintf("%v", a.Spartan)
+	}
+	if a.Serverless {
+		options["serverless"] = fmt.Sprintf("%v", a.Serverless)
+	}
+	if a.LContext.MaxCount != 0 {
+		options["max"] = fmt.Sprintf("%d", a.LContext.MaxCount)
+	}
+	if a.LContext.BeforeContext != 0 {
+		options["before"] = fmt.Sprintf("%d", a.LContext.BeforeContext)
+	}
+	if a.LContext.AfterContext != 0 {
+		options["after"] = fmt.Sprintf("%d", a.LContext.AfterContext)
+	}
+
+	var sb strings.Builder
+	var i int
+	for k, v := range options {
+		if i > 0 {
+			sb.WriteString(":")
+		}
+		sb.WriteString(k)
+		sb.WriteString("=")
+		sb.WriteString(v)
+		i++
+	}
+	return sb.String()
 }
 
 // DeserializeOptions deserializes the options, but into a map.
-func DeserializeOptions(opts []string) (map[string]string, error) {
+func DeserializeOptions(opts []string) (map[string]string, lcontext.LContext, error) {
 	options := make(map[string]string, len(opts))
+	var ltx lcontext.LContext
+
 	for _, o := range opts {
 		kv := strings.SplitN(o, "=", 2)
 		if len(kv) != 2 {
-			return options, fmt.Errorf("Unable to parse options: %v", kv)
+			return options, ltx, fmt.Errorf("Unable to parse options: %v", kv)
 		}
 		key := kv[0]
 		val := kv[1]
@@ -93,11 +129,34 @@ func DeserializeOptions(opts []string) (map[string]string, error) {
 			s := strings.SplitN(val, "%", 2)
 			decoded, err := base64.StdEncoding.DecodeString(s[1])
 			if err != nil {
-				return options, err
+				return options, ltx, err
 			}
 			val = string(decoded)
 		}
-		options[key] = val
+
+		switch key {
+		case "before":
+			iVal, err := strconv.Atoi(val)
+			if err != nil {
+				return options, ltx, err
+			}
+			ltx.BeforeContext = iVal
+		case "after":
+			iVal, err := strconv.Atoi(val)
+			if err != nil {
+				return options, ltx, err
+			}
+			ltx.AfterContext = iVal
+		case "max":
+			iVal, err := strconv.Atoi(val)
+			if err != nil {
+				return options, ltx, err
+			}
+			ltx.MaxCount = iVal
+		default:
+			options[key] = val
+		}
 	}
-	return options, nil
+
+	return options, ltx, nil
 }

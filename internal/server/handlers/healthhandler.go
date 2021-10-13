@@ -8,6 +8,7 @@ import (
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/line"
+	"github.com/mimecast/dtail/internal/lcontext"
 	user "github.com/mimecast/dtail/internal/user/server"
 )
 
@@ -40,8 +41,8 @@ func NewHealthHandler(user *user.User) *HealthHandler {
 	return &h
 }
 
-func (h *HealthHandler) handleHealthCommand(ctx context.Context, argc int,
-	args []string, commandName string) {
+func (h *HealthHandler) handleHealthCommand(ctx context.Context,
+	ltx lcontext.LContext, argc int, args []string, commandName string) {
 
 	dlog.Server.Debug(h.user, "Handling health command", argc, args)
 	switch commandName {

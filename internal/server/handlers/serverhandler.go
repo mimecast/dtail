@@ -8,6 +8,7 @@ import (
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/line"
+	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/omode"
 	user "github.com/mimecast/dtail/internal/user/server"
 )
@@ -53,8 +54,8 @@ func NewServerHandler(user *user.User, catLimiter,
 	return &h
 }
 
-func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int,
-	args []string, commandName string) {
+func (h *ServerHandler) handleUserCommand(ctx context.Context, ltx lcontext.LContext,
+	argc int, args []string, commandName string) {
 
 	dlog.Server.Debug(h.user, "Handling user command", argc, args)
 	h.incrementActiveCommands()
@@ -68,13 +69,13 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, argc int,
 	case "grep", "cat":
 		command := newReadCommand(h, omode.CatClient)
 		go func() {
-			command.Start(ctx, argc, args, 1)
+			command.Start(ctx, ltx, argc, args, 1)
 			commandFinished()
 		}()
 	case "tail":
 		command := newReadCommand(h, omode.TailClient)
 		go func() {
-			command.Start(ctx, argc, args, 10)
+			command.Start(ctx, ltx, argc, args, 10)
 			commandFinished()
 		}()
 	case "map":

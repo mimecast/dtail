@@ -18,12 +18,13 @@ import (
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/pool"
+	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/mapr/server"
 	"github.com/mimecast/dtail/internal/protocol"
 	user "github.com/mimecast/dtail/internal/user/server"
 )
 
-type handleCommandCb func(context.Context, int, []string, string)
+type handleCommandCb func(context.Context, lcontext.LContext, int, []string, string)
 
 type baseHandler struct {
 	done             *internal.Done
@@ -160,14 +161,13 @@ func (h *baseHandler) handleCommand(commandStr string) {
 
 	splitted := strings.Split(args[0], ":")
 	commandName := splitted[0]
-	options, err := config.DeserializeOptions(splitted[1:])
+	options, ltx, err := config.DeserializeOptions(splitted[1:])
 	if err != nil {
 		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
 		return
 	}
-	h.setOptions(options)
-
-	h.handleCommandCb(ctx, argc, args, commandName)
+	h.handleOptions(options)
+	h.handleCommandCb(ctx, ltx, argc, args, commandName)
 }
 
 func (h *baseHandler) handleProtocolVersion(args []string) ([]string, int, string, error) {
@@ -238,7 +238,7 @@ func (h *baseHandler) handleAckCommand(argc int, args []string) {
 	}
 }
 
-func (h *baseHandler) setOptions(options map[string]string) {
+func (h *baseHandler) handleOptions(options map[string]string) {
 	// We have to make sure that this block is executed only once.
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
