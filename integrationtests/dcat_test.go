@@ -7,10 +7,10 @@ import (
 )
 
 func TestDCat(t *testing.T) {
-	testdataFile := "dcat.txt.expected"
+	testdataFile := "dcat.txt"
 	stdoutFile := "dcat.out"
 
-	_, err := runCommand(context.TODO(), stdoutFile,
+	_, err := runCommand(context.TODO(), t, stdoutFile,
 		"../dcat", "--spartan", testdataFile)
 
 	if err != nil {
@@ -24,4 +24,30 @@ func TestDCat(t *testing.T) {
 	}
 
 	os.Remove(stdoutFile)
+}
+
+func TestDCat2(t *testing.T) {
+	testdataFile := "dcat2.txt"
+	expectedFile := "dcat2.txt.expected"
+	stdoutFile := "dcat2.out"
+
+	args := []string{"--spartan", "--logLevel", "error"}
+
+	// Cat file 100 times in one session.
+	for i := 0; i < 100; i++ {
+		args = append(args, testdataFile)
+	}
+
+	if _, err := runCommand(context.TODO(), t, stdoutFile, "../dcat", args...); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err := compareFilesContents(t, stdoutFile, expectedFile); err != nil {
+		t.Error(err)
+		return
+	}
+
+	os.Remove(stdoutFile)
+	os.Remove(expectedFile)
 }

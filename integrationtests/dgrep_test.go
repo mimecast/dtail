@@ -11,7 +11,7 @@ func TestDGrep(t *testing.T) {
 	stdoutFile := "dgrep.stdout.tmp"
 	expectedStdoutFile := "dgrep.txt.expected"
 
-	_, err := runCommand(context.TODO(), stdoutFile,
+	_, err := runCommand(context.TODO(), t, stdoutFile,
 		"../dgrep", "--spartan", "--grep", "20211002-071947", inFile)
 
 	if err != nil {
@@ -32,7 +32,7 @@ func TestDGrep2(t *testing.T) {
 	stdoutFile := "dgrep2.stdout.tmp"
 	expectedStdoutFile := "dgrep2.txt.expected"
 
-	_, err := runCommand(context.TODO(), stdoutFile,
+	_, err := runCommand(context.TODO(), t, stdoutFile,
 		"../dgrep", "-spartan", "--grep", "20211002-071947", "--invert", inFile)
 
 	if err != nil {

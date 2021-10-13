@@ -6,18 +6,20 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
+	"testing"
 	"time"
 )
 
 // The exit code and the Go error of the command terminated.
 type exitPromise func() (int, error)
 
-func runCommand(ctx context.Context, stdoutFile, cmdStr string,
+func runCommand(ctx context.Context, t *testing.T, stdoutFile, cmdStr string,
 	args ...string) (int, error) {
 
-	stdinCh, _, exit, err := startCommand(ctx, cmdStr, args...)
+	stdinCh, _, exit, err := startCommand(ctx, t, cmdStr, args...)
 	if err != nil {
 		return -1, err
 	}
@@ -43,19 +45,19 @@ func runCommand(ctx context.Context, stdoutFile, cmdStr string,
 	return exit()
 }
 
-func runCommandRetry(ctx context.Context, retries int, stdoutFile, cmd string,
-	args ...string) (exitCode int, err error) {
+func runCommandRetry(ctx context.Context, t *testing.T, retries int, stdoutFile,
+	cmd string, args ...string) (exitCode int, err error) {
 
 	for i := 0; i < retries; i++ {
 		time.Sleep(time.Second)
-		if exitCode, err = runCommand(ctx, stdoutFile, cmd, args...); exitCode == 0 {
+		if exitCode, err = runCommand(ctx, t, stdoutFile, cmd, args...); exitCode == 0 {
 			return
 		}
 	}
 	return
 }
 
-func startCommand(ctx context.Context, cmdStr string,
+func startCommand(ctx context.Context, t *testing.T, cmdStr string,
 	args ...string) (<-chan string, <-chan string, exitPromise, error) {
 
 	stdoutCh := make(chan string)
@@ -66,6 +68,7 @@ func startCommand(ctx context.Context, cmdStr string,
 			fmt.Errorf("no such executable '%s', please compile first: %v", cmdStr, err)
 	}
 
+	t.Log(cmdStr, strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, cmdStr, args...)
 
 	cmdStdout, err := cmd.StdoutPipe()
@@ -87,7 +90,7 @@ func startCommand(ctx context.Context, cmdStr string,
 		}
 	}()
 	go func() {
-		close(stderrCh)
+		defer close(stderrCh)
 		scanner := bufio.NewScanner(cmdStderr)
 		scanner.Split(bufio.ScanLines)
 		for scanner.Scan() {
@@ -102,11 +105,12 @@ func startCommand(ctx context.Context, cmdStr string,
 }
 
 func exitCodeFromError(err error) int {
-	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			ws := exitError.Sys().(syscall.WaitStatus)
-			return ws.ExitStatus()
-		}
+	if err == nil {
+		return 0
 	}
-	return 0
+	if exitError, ok := err.(*exec.ExitError); ok {
+		ws := exitError.Sys().(syscall.WaitStatus)
+		return ws.ExitStatus()
+	}
+	panic(fmt.Sprintf("Unable to get process exit code from error: %v", err))
 }

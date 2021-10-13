@@ -19,7 +19,7 @@ func TestDMap(t *testing.T) {
 		"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) "+
 		"group by $hostname outfile %s", csvFile)
 
-	_, err := runCommand(context.TODO(), stdoutFile,
+	_, err := runCommand(context.TODO(), t, stdoutFile,
 		"../dmap", "--query", query, inFile)
 
 	if err != nil {
@@ -53,7 +53,7 @@ func TestDMap2(t *testing.T) {
 		"avg($goroutines),min($goroutines) group by $time order by count($time) "+
 		"outfile %s", csvFile)
 
-	_, err := runCommand(context.TODO(), stdoutFile,
+	_, err := runCommand(context.TODO(), t, stdoutFile,
 		"../dmap", "--query", query, inFile)
 	if err != nil {
 		t.Error(err)
@@ -92,7 +92,7 @@ func TestDMap3(t *testing.T) {
 		args = append(args, inFile)
 	}
 
-	if _, err := runCommand(context.TODO(), stdoutFile, "../dmap", args...); err != nil {
+	if _, err := runCommand(context.TODO(), t, stdoutFile, "../dmap", args...); err != nil {
 		t.Error(err)
 		return
 	}

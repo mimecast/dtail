@@ -63,7 +63,7 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 
 	select {
 	case message := <-h.serverMessages:
-		if message[0] == '.' {
+		if len(message) > 0 && message[0] == '.' {
 			// Handle hidden message (don't display to the user)
 			h.readBuf.WriteString(message)
 			h.readBuf.WriteByte(protocol.MessageDelimiter)

@@ -27,7 +27,7 @@ func TestDTailWithServer(t *testing.T) {
 		}
 	}()
 
-	serverCh, _, _, err := startCommand(ctx,
+	serverCh, _, _, err := startCommand(ctx, t,
 		"../dserver",
 		"--logger", "stdout",
 		"--logLevel", "info",
@@ -39,7 +39,7 @@ func TestDTailWithServer(t *testing.T) {
 		return
 	}
 
-	clientCh, _, _, err := startCommand(ctx,
+	clientCh, _, _, err := startCommand(ctx, t,
 		"../dtail",
 		"--logger", "stdout",
 		"--logLevel", "devel",
@@ -122,7 +122,7 @@ func TestDTailColorTable(t *testing.T) {
 	stdoutFile := "dtailcolortable.stdout.tmp"
 	expectedStdoutFile := "dtailcolortable.expected"
 
-	_, err := runCommand(context.TODO(), stdoutFile, "../dtail", "--colorTable")
+	_, err := runCommand(context.TODO(), t, stdoutFile, "../dtail", "--colorTable")
 	if err != nil {
 		t.Error(err)
 		return
