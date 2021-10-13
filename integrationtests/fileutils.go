@@ -47,6 +47,7 @@ func compareFilesContents(t *testing.T, fileA, fileB string) error {
 		return nil
 	}
 
+	// Read files into maps.
 	a, err := mapFile(fileA)
 	if err != nil {
 		return err
