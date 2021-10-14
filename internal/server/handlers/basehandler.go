@@ -159,6 +159,8 @@ func (h *baseHandler) handleCommand(commandStr string) {
 		cancel()
 	}()
 
+	dlog.Server.Trace(args)
+	dlog.Server.Trace(args[0])
 	splitted := strings.Split(args[0], ":")
 	commandName := splitted[0]
 	options, ltx, err := config.DeserializeOptions(splitted[1:])

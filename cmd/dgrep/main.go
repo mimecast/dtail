@@ -3,8 +3,13 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"sync"
+
+	"net/http"
+	_ "net/http"
+	_ "net/http/pprof"
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/config"
@@ -20,6 +25,7 @@ func main() {
 	var args config.Args
 	var displayVersion bool
 	var grep string
+	var pprof int
 	userName := user.Name()
 
 	flag.BoolVar(&args.NoColor, "noColor", false, "Disable ANSII terminal colors")
@@ -34,6 +40,7 @@ func main() {
 	flag.IntVar(&args.LContext.BeforeContext, "before", 0, "Print lines of leading context before matching lines")
 	flag.IntVar(&args.LContext.MaxCount, "max", 0, "Stop reading file after NUM matching lines")
 	flag.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
+	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
 	flag.StringVar(&args.LogDir, "logDir", "~/log", "Log dir")
@@ -63,6 +70,13 @@ func main() {
 
 	if grep != "" {
 		args.RegexStr = grep
+	}
+
+	if pprof > -1 {
+		// For debugging purposes only
+		pprofArgs := fmt.Sprintf("0.0.0.0:%d", pprof)
+		go http.ListenAndServe(pprofArgs, nil)
+		dlog.Client.Info("Started PProf", pprofArgs)
 	}
 
 	client, err := clients.NewGrepClient(args)

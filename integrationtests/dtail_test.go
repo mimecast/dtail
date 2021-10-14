@@ -30,7 +30,7 @@ func TestDTailWithServer(t *testing.T) {
 	serverCh, _, _, err := startCommand(ctx, t,
 		"../dserver",
 		"--logger", "stdout",
-		"--logLevel", "info",
+		"--logLevel", "trace",
 		"--port", "4242",
 		"--relaxedAuth",
 	)
@@ -42,7 +42,7 @@ func TestDTailWithServer(t *testing.T) {
 	clientCh, _, _, err := startCommand(ctx, t,
 		"../dtail",
 		"--logger", "stdout",
-		"--logLevel", "devel",
+		"--logLevel", "trace",
 		"--servers", "localhost:4242",
 		"--files", followFile,
 		"--grep", "Hello",
