@@ -31,7 +31,7 @@ func TestDTailWithServer(t *testing.T) {
 		"../dserver",
 		"--logger", "stdout",
 		"--logLevel", "trace",
-		"--port", "4242",
+		"--port", "4243",
 		"--relaxedAuth",
 	)
 	if err != nil {
@@ -43,7 +43,7 @@ func TestDTailWithServer(t *testing.T) {
 		"../dtail",
 		"--logger", "stdout",
 		"--logLevel", "trace",
-		"--servers", "localhost:4242",
+		"--servers", "localhost:4243",
 		"--files", followFile,
 		"--grep", "Hello",
 		"--trustAllHosts",

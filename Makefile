@@ -1,6 +1,6 @@
 GO ?= go
 all: build
-build: dserver dcat dgrep dmap dtail dtailhealthcheck
+build: dserver dcat dgrep dmap dtail dtailhealth
 dserver:
 ifndef USE_ACL
 	${GO} build ${GO_FLAGS} -o dserver ./cmd/dserver/main.go
@@ -15,8 +15,8 @@ dmap:
 	${GO} build ${GO_FLAGS} -o dmap ./cmd/dmap/main.go
 dtail:
 	${GO} build ${GO_FLAGS} -o dtail ./cmd/dtail/main.go
-dtailhealthcheck:
-	${GO} build ${GO_FLAGS} -o dtailhealthcheck ./cmd/dtailhealthcheck/main.go
+dtailhealth:
+	${GO} build ${GO_FLAGS} -o dtailhealth ./cmd/dtailhealth/main.go
 install:
 ifndef USE_ACL
 	${GO} install ./cmd/dserver/main.go
@@ -27,7 +27,7 @@ endif
 	${GO} install ./cmd/dgrep/main.go
 	${GO} install ./cmd/dmap/main.go
 	${GO} install ./cmd/dtail/main.go
-	${GO} install ./cmd/dtailhealthcheck/main.go
+	${GO} install ./cmd/dtailhealth/main.go
 clean:
 	ls ./cmd/ | while read cmd; do \
 	  test -f $$cmd && rm $$cmd; \

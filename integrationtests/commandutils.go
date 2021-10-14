@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -19,30 +18,23 @@ type exitPromise func() (int, error)
 func runCommand(ctx context.Context, t *testing.T, stdoutFile, cmdStr string,
 	args ...string) (int, error) {
 
-	stdinCh, _, exit, err := startCommand(ctx, t, cmdStr, args...)
-	if err != nil {
-		return -1, err
+	if _, err := os.Stat(cmdStr); err != nil {
+		return 0, fmt.Errorf("no such executable '%s', please compile first: %v", cmdStr, err)
 	}
 
 	fd, err := os.Create(stdoutFile)
 	if err != nil {
-		return -2, err
+		return 0, nil
 	}
+	defer fd.Close()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	defer wg.Wait()
+	t.Log(cmdStr, strings.Join(args, " "))
+	cmd := exec.CommandContext(ctx, cmdStr, args...)
+	out, err := cmd.CombinedOutput()
 
-	go func() {
-		defer fd.Close()
-		defer wg.Done()
-		for line := range stdinCh {
-			fd.WriteString(line)
-			fd.WriteString("\n")
-		}
-	}()
+	fd.Write(out)
 
-	return exit()
+	return exitCodeFromError(err), err
 }
 
 func runCommandRetry(ctx context.Context, t *testing.T, retries int, stdoutFile,
@@ -82,7 +74,6 @@ func startCommand(ctx context.Context, t *testing.T, cmdStr string,
 	}
 
 	go func() {
-		defer close(stdoutCh)
 		scanner := bufio.NewScanner(cmdStdout)
 		scanner.Split(bufio.ScanLines)
 		for scanner.Scan() {
@@ -90,12 +81,12 @@ func startCommand(ctx context.Context, t *testing.T, cmdStr string,
 		}
 	}()
 	go func() {
-		defer close(stderrCh)
 		scanner := bufio.NewScanner(cmdStderr)
 		scanner.Split(bufio.ScanLines)
 		for scanner.Scan() {
 			stderrCh <- scanner.Text()
 		}
+		close(stderrCh)
 	}()
 
 	return stdoutCh, stderrCh, func() (int, error) {

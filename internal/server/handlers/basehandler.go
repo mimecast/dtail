@@ -159,11 +159,16 @@ func (h *baseHandler) handleCommand(commandStr string) {
 		cancel()
 	}()
 
-	dlog.Server.Trace(args)
-	dlog.Server.Trace(args[0])
-	splitted := strings.Split(args[0], ":")
-	commandName := splitted[0]
-	options, ltx, err := config.DeserializeOptions(splitted[1:])
+	parts := strings.Split(args[0], ":")
+	commandName := parts[0]
+
+	// Either no options or empty options provided.
+	if len(parts) == 1 || len(parts[1]) == 0 {
+		h.handleCommandCb(ctx, lcontext.LContext{}, argc, args, commandName)
+		return
+	}
+
+	options, ltx, err := config.DeserializeOptions(parts[1:])
 	if err != nil {
 		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
 		return

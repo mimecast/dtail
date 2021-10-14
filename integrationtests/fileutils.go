@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -78,10 +79,12 @@ func compareFiles(t *testing.T, fileA, fileB string) error {
 	shaFileB := shaOfFile(t, fileB)
 
 	if shaFileA != shaFileB {
-		t.Errorf("Expected SHA %s but got %s", shaFileA, shaFileB)
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Expected SHA %s but got %s:\n", shaFileA, shaFileB))
 		if bytes, err := exec.Command("diff", "-u", fileA, fileB).Output(); err != nil {
-			return fmt.Errorf(string(bytes))
+			sb.Write(bytes)
 		}
+		return fmt.Errorf(sb.String())
 	}
 
 	return nil

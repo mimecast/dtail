@@ -49,5 +49,4 @@ func TestDCat2(t *testing.T) {
 	}
 
 	os.Remove(stdoutFile)
-	os.Remove(expectedFile)
 }

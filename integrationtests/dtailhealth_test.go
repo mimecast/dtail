@@ -8,11 +8,11 @@ import (
 )
 
 func TestDTailHealthCheck(t *testing.T) {
-	stdoutFile := "dtailhealthcheck.stdout.tmp"
-	expectedStdoutFile := "dtailhealthcheck.expected"
+	stdoutFile := "dtailhealth.stdout.tmp"
+	expectedStdoutFile := "dtailhealth.expected"
 
 	t.Log("Serverless check, is supposed to exit with warning state.")
-	exitCode, err := runCommand(context.TODO(), t, stdoutFile, "../dtailhealthcheck")
+	exitCode, err := runCommand(context.TODO(), t, stdoutFile, "../dtailhealth")
 	if exitCode != 1 {
 		t.Error(fmt.Sprintf("Expected exit code '1' but got '%d': %v", exitCode, err))
 		return
@@ -26,12 +26,12 @@ func TestDTailHealthCheck(t *testing.T) {
 }
 
 func TestDTailHealthCheck2(t *testing.T) {
-	stdoutFile := "dtailhealthcheck2.stdout.tmp"
-	expectedStdoutFile := "dtailhealthcheck2.expected"
+	stdoutFile := "dtailhealth2.stdout.tmp"
+	expectedStdoutFile := "dtailhealth2.expected"
 
 	t.Log("Negative test, is supposed to exit with a critical state.")
 	exitCode, err := runCommand(context.TODO(), t, stdoutFile,
-		"../dtailhealthcheck", "--server", "example:1")
+		"../dtailhealth", "--server", "example:1")
 
 	if exitCode != 2 {
 		t.Error(fmt.Sprintf("Expected exit code '2' but got '%d': %v", exitCode, err))
@@ -47,8 +47,8 @@ func TestDTailHealthCheck2(t *testing.T) {
 }
 
 func TestDTailHealthCheck3(t *testing.T) {
-	stdoutFile := "dtailhealthcheck3.stdout.tmp"
-	expectedStdoutFile := "dtailhealthcheck3.expected"
+	stdoutFile := "dtailhealth3.stdout.tmp"
+	expectedStdoutFile := "dtailhealth3.expected"
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -65,7 +65,7 @@ func TestDTailHealthCheck3(t *testing.T) {
 	}
 
 	_, err = runCommandRetry(ctx, t, 10, stdoutFile,
-		"../dtailhealthcheck", "--server", "localhost:4242")
+		"../dtailhealth", "--server", "localhost:4242")
 	if err != nil {
 		t.Error(err)
 		return
