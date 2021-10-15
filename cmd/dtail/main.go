@@ -81,9 +81,6 @@ func main() {
 		if displayColorTable {
 			color.TablePrintAndExit(false)
 		}
-		if !checkHealth {
-			version.Print()
-		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -98,7 +95,7 @@ func main() {
 	dlog.Start(ctx, &wg, source.Client)
 
 	if checkHealth {
-		fmt.Println("WARN: DTail health check has moved to separate binary dtailhealtcheck" +
+		fmt.Println("WARN: DTail health check has moved to separate binary dtailhealth" +
 			" - please adjust the monitoring scripts!")
 		cancel()
 		os.Exit(1)

@@ -50,3 +50,24 @@ func TestDCat2(t *testing.T) {
 
 	os.Remove(stdoutFile)
 }
+
+func TestDCatColors(t *testing.T) {
+	testdataFile := "dcatcolors.txt"
+	stdoutFile := "dcatcolors.out"
+	expectedFile := "dcatcolors.expected"
+
+	_, err := runCommand(context.TODO(), t, stdoutFile,
+		"../dcat", "--logLevel", "error", testdataFile)
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err := compareFiles(t, stdoutFile, expectedFile); err != nil {
+		t.Error(err)
+		return
+	}
+
+	os.Remove(stdoutFile)
+}

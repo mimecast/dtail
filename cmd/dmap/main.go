@@ -50,9 +50,6 @@ func main() {
 	if displayVersion {
 		version.PrintAndExit()
 	}
-	if !args.Spartan {
-		version.Print()
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup

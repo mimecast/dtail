@@ -16,18 +16,25 @@ import (
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/signal"
 	"github.com/mimecast/dtail/internal/source"
+	"github.com/mimecast/dtail/internal/version"
 )
 
 // The evil begins here.
 func main() {
 	var args config.Args
+	var displayVersion bool
 	var pprof int
 
+	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.StringVar(&args.Logger, "logger", config.DefaultHealthCheckLogger, "Logger name")
 	flag.StringVar(&args.LogLevel, "logLevel", "none", "Log level")
 	flag.StringVar(&args.ServersStr, "server", "", "Remote server to connect")
 	flag.Parse()
+
+	if displayVersion {
+		version.PrintAndExit()
+	}
 
 	config.Setup(source.HealthCheck, &args, flag.Args())
 
