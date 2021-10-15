@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/prompt"
 
@@ -214,6 +215,12 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 
 func (c KnownHostsCallback) trustHosts(hosts []unknownHost) {
 	tmpKnownHostsPath := fmt.Sprintf("%s.tmp", c.knownHostsPath)
+
+	if config.Client.SSHDontAddHostsToKnownHostsFile {
+		dlog.Common.Verbose("Not adding hosts to known hosts file, as disabled by config")
+		return
+	}
+
 	newFd, err := os.OpenFile(tmpKnownHostsPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
 		panic(fmt.Sprintf("%s: %s", tmpKnownHostsPath, err.Error()))

@@ -1,4 +1,6 @@
 GO ?= go
+# This is so that all the tests don't manipulate ~/.ssh/known_hosts
+DTAIL_SSH_DONT_ADD_HOSTS_TO_KNOWNHOSTS_FILE = yes
 all: build
 build: dserver dcat dgrep dmap dtail dtailhealth
 dserver:

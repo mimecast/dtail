@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// TODO: Have a serverless variant too.
 func TestDTailWithServer(t *testing.T) {
 	followFile := "dtail.follow.tmp"
 	greetings := []string{"world!", "sol-system!", "milky-way!", "universe!", "multiverse!"}
@@ -40,6 +39,8 @@ func TestDTailWithServer(t *testing.T) {
 		return
 	}
 
+	// TODO: In testmode, the client should not try to manipulate any known_hosts files.
+	// TODO: In testmode, never read a config file (use none for all commands)
 	clientCh, _, _, err := startCommand(ctx, t,
 		"../dtail",
 		"--logger", "stdout",
@@ -91,6 +92,7 @@ func TestDTailWithServer(t *testing.T) {
 			}
 		case <-ctx.Done():
 			t.Log("Done reading client and server pipes")
+			break
 		}
 	}
 

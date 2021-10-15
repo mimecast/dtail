@@ -65,6 +65,8 @@ func (in *initializer) parseSpecificConfig(configFile string) error {
 func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 	additionalArgs []string) error {
 
+	in.readEnvironmentVars()
+
 	switch sourceProcess {
 	case source.Server:
 		return in.optimusPrime(transformServer, args, additionalArgs)
@@ -75,6 +77,14 @@ func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 	default:
 		return fmt.Errorf("Unable to transform config, unknown source '%s'",
 			sourceProcess)
+	}
+}
+
+// There are some special options which can be set by environment variable.
+func (in *initializer) readEnvironmentVars() {
+	if len(os.Getenv("DTAIL_SSH_DONT_ADD_HOSTS_TO_KNOWNHOSTS_FILE")) != 0 ||
+		len(os.Getenv("DTAIL_JENKINS")) != 0 {
+		in.Client.SSHDontAddHostsToKnownHostsFile = true
 	}
 }
 

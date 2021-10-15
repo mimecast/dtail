@@ -22,16 +22,17 @@ func runCommand(ctx context.Context, t *testing.T, stdoutFile, cmdStr string,
 		return 0, fmt.Errorf("no such executable '%s', please compile first: %v", cmdStr, err)
 	}
 
+	t.Log("Creating stdout file", stdoutFile)
 	fd, err := os.Create(stdoutFile)
 	if err != nil {
 		return 0, nil
 	}
 	defer fd.Close()
 
-	t.Log(cmdStr, strings.Join(args, " "))
+	t.Log("Running command", cmdStr, strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, cmdStr, args...)
 	out, err := cmd.CombinedOutput()
-
+	t.Log("Done running command!", err)
 	fd.Write(out)
 
 	return exitCodeFromError(err), err
