@@ -40,8 +40,9 @@ func main() {
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Shutdown after so many seconds")
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.LogDir, "logDir", "", "Log dir")
-	flag.StringVar(&args.Logger, "logger", config.DefaultServerLogger, "Logger name")
 	flag.StringVar(&args.LogLevel, "logLevel", config.DefaultLogLevel, "Log level")
+	flag.StringVar(&args.Logger, "logger", config.DefaultServerLogger, "Logger name")
+	flag.StringVar(&args.SSHBindAddress, "bindAddress", "", "The SSH bind address")
 
 	flag.Parse()
 	args.NoColor = !color

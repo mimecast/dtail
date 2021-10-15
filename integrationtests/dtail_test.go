@@ -31,6 +31,7 @@ func TestDTailWithServer(t *testing.T) {
 		"../dserver",
 		"--logger", "stdout",
 		"--logLevel", "trace",
+		"--bindAddress", "localhost",
 		"--port", "4243",
 		"--relaxedAuth",
 	)

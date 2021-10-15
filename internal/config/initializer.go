@@ -155,6 +155,9 @@ func transformClient(in *initializer, args *Args, additionalArgs []string) error
 }
 
 func transformServer(in *initializer, args *Args, additionalArgs []string) error {
+	if args.SSHBindAddress != "" {
+		in.Server.SSHBindAddress = args.SSHBindAddress
+	}
 	return nil
 }
 

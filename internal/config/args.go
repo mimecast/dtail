@@ -33,6 +33,7 @@ type Args struct {
 	ServersStr         string
 	Spartan            bool
 	SSHAuthMethods     []gossh.AuthMethod
+	SSHBindAddress     string
 	SSHHostKeyCallback gossh.HostKeyCallback
 	SSHPort            int
 	Timeout            int
@@ -46,13 +47,13 @@ func (a *Args) String() string {
 
 	sb.WriteString("Args(")
 
-	sb.WriteString(fmt.Sprintf("%s:%s,", "LogDir", a.LogDir))
-	sb.WriteString(fmt.Sprintf("%s:%s,", "Logger", a.Logger))
-	sb.WriteString(fmt.Sprintf("%s:%s,", "LogLevel", a.LogLevel))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Arguments", a.Arguments))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "ConfigFile", a.ConfigFile))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "ConnectionsPerCPU", a.ConnectionsPerCPU))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Discovery", a.Discovery))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "LogDir", a.LogDir))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "LogLevel", a.LogLevel))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "Logger", a.Logger))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Mode", a.Mode))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "NoColor", a.NoColor))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "PrivateKeyPathFile", a.PrivateKeyPathFile))
@@ -60,12 +61,13 @@ func (a *Args) String() string {
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Quiet", a.Quiet))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "RegexInvert", a.RegexInvert))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "RegexStr", a.RegexStr))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHAuthMethods", a.SSHAuthMethods))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHBindAddress", a.SSHBindAddress))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHHostKeyCallback", a.SSHHostKeyCallback))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHPort", a.SSHPort))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Serverless", a.Serverless))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "ServersStr", a.ServersStr))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Spartan", a.Spartan))
-	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHAuthMethods", a.SSHAuthMethods))
-	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHHostKeyCallback", a.SSHHostKeyCallback))
-	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHPort", a.SSHPort))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Timeout", a.Timeout))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "TrustAllHosts", a.TrustAllHosts))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "UserName", a.UserName))

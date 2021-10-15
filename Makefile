@@ -47,7 +47,9 @@ lint:
 test:
 	${GO} clean -testcache
 ifndef USE_ACL
-	${GO} test -race ./... -v
+	set -e; find . -name '*_test.go' | while read file; do dirname $$file; done | \
+		sort -u | while read dir; do ${GO} test --race -v $$dir || exit 2; done
 else
-	${GO} test -race -tags linuxacl ./... -v
+	set -e;find . -name '*_test.go' | while read file; do dirname $$file; done | \
+		sort -u | while read dir; do ${GO} test --tags linuxacl --race -v $$dir || exit 2; done
 endif

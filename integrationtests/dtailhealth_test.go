@@ -57,6 +57,7 @@ func TestDTailHealthCheck3(t *testing.T) {
 		"../dserver",
 		"--logger", "stdout",
 		"--logLevel", "trace",
+		"--bindAddress", "localhost",
 		"--port", "4242",
 	)
 	if err != nil {
