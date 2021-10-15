@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/prompt"
 
 	"golang.org/x/crypto/ssh"
@@ -46,8 +46,9 @@ type KnownHostsCallback struct {
 }
 
 // NewKnownHostsCallback returns a new wrapper.
-func NewKnownHostsCallback(knownHostsPath string, trustAllHosts bool, throttleCh chan struct{}) (HostKeyCallback, error) {
-	// Ensure file exists
+func NewKnownHostsCallback(knownHostsPath string, trustAllHosts bool,
+	throttleCh chan struct{}) (HostKeyCallback, error) {
+
 	os.OpenFile(knownHostsPath, os.O_RDONLY|os.O_CREATE, 0666)
 	untrustedHosts := make(map[string]bool)
 
@@ -59,11 +60,9 @@ func NewKnownHostsCallback(knownHostsPath string, trustAllHosts bool, throttleCh
 		untrustedHosts:  untrustedHosts,
 		mutex:           &sync.Mutex{},
 	}
-
 	if trustAllHosts {
 		close(c.trustAllHostsCh)
 	}
-
 	return c, nil
 }
 
@@ -75,14 +74,12 @@ func (c KnownHostsCallback) Wrap() ssh.HostKeyCallback {
 		if err != nil {
 			return err
 		}
-
 		// Check for valid entry in known_hosts file
 		err = knownHostsCb(server, remote, key)
 		if err == nil {
 			// OK
 			return nil
 		}
-
 		// Make sure that interactive user callback does not interfere with
 		// SSH connection throttler.
 		<-c.throttleCh
@@ -96,11 +93,9 @@ func (c KnownHostsCallback) Wrap() ssh.HostKeyCallback {
 			ipLine:     knownhosts.Line([]string{remote.String()}, key),
 			responseCh: make(chan response),
 		}
-
-		logger.Warn("Encountered unknown host", unknown)
+		dlog.Common.Warn("Encountered unknown host", unknown)
 		// Notify user that there is an unknown host
 		c.unknownCh <- unknown
-
 		// Wait for user input.
 		switch <-unknown.responseCh {
 		case trustHost:
@@ -112,7 +107,6 @@ func (c KnownHostsCallback) Wrap() ssh.HostKeyCallback {
 		c.mutex.Lock()
 		defer c.mutex.Unlock()
 		c.untrustedHosts[server] = true
-
 		return err
 	}
 }
@@ -121,7 +115,6 @@ func (c KnownHostsCallback) Wrap() ssh.HostKeyCallback {
 // be added to the known hosts or not.
 func (c KnownHostsCallback) PromptAddHosts(ctx context.Context) {
 	var hosts []unknownHost
-
 	for {
 		// Check whether there is a unknown host
 		select {
@@ -139,7 +132,7 @@ func (c KnownHostsCallback) PromptAddHosts(ctx context.Context) {
 				hosts = []unknownHost{}
 			}
 		case <-ctx.Done():
-			logger.Debug("Stopping goroutine prompting new hosts...")
+			dlog.Common.Debug("Stopping goroutine prompting new hosts...")
 			return
 		}
 	}
@@ -147,14 +140,13 @@ func (c KnownHostsCallback) PromptAddHosts(ctx context.Context) {
 
 func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 	var servers []string
-
 	for _, host := range hosts {
 		servers = append(servers, host.server)
 	}
 
 	select {
 	case <-c.trustAllHostsCh:
-		logger.Warn("Trusting host keys of servers", servers)
+		dlog.Common.Warn("Trusting host keys of servers", servers)
 		c.trustHosts(hosts)
 		return
 	default:
@@ -165,7 +157,6 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 		strings.Join(servers, ","),
 		"Do you want to trust these hosts?",
 	)
-
 	p := prompt.New(question)
 
 	a := prompt.Answer{
@@ -175,7 +166,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 			c.trustHosts(hosts)
 		},
 		EndCallback: func() {
-			logger.Info("Added hosts to known hosts file", c.knownHostsPath)
+			dlog.Common.Info("Added hosts to known hosts file", c.knownHostsPath)
 		},
 	}
 	p.Add(a)
@@ -188,7 +179,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 			c.trustHosts(hosts)
 		},
 		EndCallback: func() {
-			logger.Info("Added hosts to known hosts file", c.knownHostsPath)
+			dlog.Common.Info("Added hosts to known hosts file", c.knownHostsPath)
 		},
 	}
 	p.Add(a)
@@ -200,7 +191,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 			c.dontTrustHosts(hosts)
 		},
 		EndCallback: func() {
-			logger.Info("Didn't add hosts to known hosts file", c.knownHostsPath)
+			dlog.Common.Info("Didn't add hosts to known hosts file", c.knownHostsPath)
 		},
 	}
 	p.Add(a)
@@ -223,7 +214,6 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 
 func (c KnownHostsCallback) trustHosts(hosts []unknownHost) {
 	tmpKnownHostsPath := fmt.Sprintf("%s.tmp", c.knownHostsPath)
-
 	newFd, err := os.OpenFile(tmpKnownHostsPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
 		panic(fmt.Sprintf("%s: %s", tmpKnownHostsPath, err.Error()))
@@ -232,7 +222,6 @@ func (c KnownHostsCallback) trustHosts(hosts []unknownHost) {
 
 	// Newly trusted hosts in normalized form
 	addresses := make(map[string]struct{})
-
 	// First write to new known hosts file, and keep track of addresses
 	for _, unknown := range hosts {
 		unknown.responseCh <- trustHost
@@ -255,7 +244,6 @@ func (c KnownHostsCallback) trustHosts(hosts []unknownHost) {
 	defer oldFd.Close()
 
 	scanner := bufio.NewScanner(oldFd)
-
 	// Now, append all still valid old entries to the new host file
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -283,6 +271,5 @@ func (c KnownHostsCallback) Untrusted(server string) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	_, ok := c.untrustedHosts[server]
-
 	return ok
 }

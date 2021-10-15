@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/mimecast/dtail/internal/clients/handlers"
+	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/omode"
 )
 
@@ -16,11 +18,10 @@ type CatClient struct {
 }
 
 // NewCatClient returns a new cat client.
-func NewCatClient(args Args) (*CatClient, error) {
+func NewCatClient(args config.Args) (*CatClient, error) {
 	if args.RegexStr != "" {
 		return nil, errors.New("Can't use regex with 'cat' operating mode")
 	}
-
 	args.Mode = omode.CatClient
 
 	c := CatClient{
@@ -33,7 +34,6 @@ func NewCatClient(args Args) (*CatClient, error) {
 
 	c.init()
 	c.makeConnections(c)
-
 	return &c, nil
 }
 
@@ -42,8 +42,13 @@ func (c CatClient) makeHandler(server string) handlers.Handler {
 }
 
 func (c CatClient) makeCommands() (commands []string) {
+	regex, err := c.Regex.Serialize()
+	if err != nil {
+		dlog.Client.FatalPanic(err)
+	}
 	for _, file := range strings.Split(c.What, ",") {
-		commands = append(commands, fmt.Sprintf("%s %s %s", c.Mode.String(), file, c.Regex.Serialize()))
+		commands = append(commands, fmt.Sprintf("%s:%s %s %s",
+			c.Mode.String(), c.Args.SerializeOptions(), file, regex))
 	}
 	return
 }

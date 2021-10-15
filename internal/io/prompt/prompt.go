@@ -3,9 +3,10 @@ package prompt
 import (
 	"bufio"
 	"fmt"
-	"github.com/mimecast/dtail/internal/io/logger"
 	"os"
 	"strings"
+
+	"github.com/mimecast/dtail/internal/io/dlog"
 )
 
 // Answer is a user input of a prompt question.
@@ -18,7 +19,7 @@ type Answer struct {
 	Callback func()
 	// Runs after Callback and after logging resumes
 	EndCallback func()
-
+	// AskAgain can be used to not to ask again about the question.
 	AskAgain bool
 }
 
@@ -30,7 +31,6 @@ type Prompt struct {
 
 func (p *Prompt) askString() string {
 	var sb strings.Builder
-
 	sb.WriteString(p.question)
 	sb.WriteString("? (")
 
@@ -41,7 +41,6 @@ func (p *Prompt) askString() string {
 
 	sb.WriteString(strings.Join(ax, ","))
 	sb.WriteString("): ")
-
 	return sb.String()
 }
 
@@ -58,7 +57,7 @@ func (p *Prompt) Add(answer Answer) {
 // Ask a question.
 func (p *Prompt) Ask() {
 	reader := bufio.NewReader(os.Stdin)
-	logger.Pause()
+	dlog.Common.Pause()
 
 	for {
 		fmt.Print(p.askString())
@@ -68,9 +67,8 @@ func (p *Prompt) Ask() {
 			if a.Callback != nil {
 				a.Callback()
 			}
-
 			if !a.AskAgain {
-				logger.Resume()
+				dlog.Common.Resume()
 				if a.EndCallback != nil {
 					a.EndCallback()
 				}
@@ -90,6 +88,5 @@ func (p *Prompt) answer(answerStr string) (*Answer, bool) {
 		default:
 		}
 	}
-
 	return nil, false
 }

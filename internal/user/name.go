@@ -10,11 +10,9 @@ func NoRootCheck() {
 	if err != nil {
 		panic(err)
 	}
-
 	if user.Uid == "0" {
 		panic("Not allowed to run as UID 0")
 	}
-
 	if user.Gid == "0" {
 		panic("Not allowed to run as GID 0")
 	}
@@ -26,6 +24,5 @@ func Name() string {
 	if err != nil {
 		panic(err)
 	}
-
 	return user.Username
 }

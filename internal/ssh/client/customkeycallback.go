@@ -7,8 +7,7 @@ import (
 )
 
 // CustomCallback is a custom host key callback wrapper.
-type CustomCallback struct {
-}
+type CustomCallback struct{}
 
 // NewCustomCallback returns a new wrapper.
 func NewCustomCallback() (*CustomCallback, error) {

@@ -9,46 +9,48 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
-	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/server"
+	"github.com/mimecast/dtail/internal/source"
 	"github.com/mimecast/dtail/internal/user"
 	"github.com/mimecast/dtail/internal/version"
 )
 
 // The evil begins here.
 func main() {
-	var cfgFile string
-	var debugEnable bool
+	var args config.Args
+	var color bool
 	var displayVersion bool
-	var noColor bool
 	var pprof int
 	var shutdownAfter int
-	var sshPort int
 
 	user.NoRootCheck()
 
-	flag.BoolVar(&debugEnable, "debug", false, "Activate debug messages")
+	flag.BoolVar(&color, "color", false, "Enable ANSII terminal colors")
+	flag.BoolVar(&config.ServerRelaxedAuthEnable, "relaxedAuth", false,
+		"Enable relaxced SSH auth mode (don't use in production!)")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
-	flag.BoolVar(&config.ServerRelaxedAuthEnable, "relaxedAuth", false, "Enable relaxced SSH auth mode (don't use in production!)")
-	flag.BoolVar(&noColor, "noColor", false, "Disable ANSII terminal colors")
+	flag.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
 	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
-	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Automatically shutdown after so many seconds")
-	flag.IntVar(&sshPort, "port", 2222, "SSH server port")
-	flag.StringVar(&cfgFile, "cfg", "", "Config file path")
+	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Shutdown after so many seconds")
+	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
+	flag.StringVar(&args.LogDir, "logDir", "", "Log dir")
+	flag.StringVar(&args.Logger, "logger", config.DefaultServerLogger, "Logger name")
+	flag.StringVar(&args.LogLevel, "logLevel", config.DefaultLogLevel, "Log level")
 
 	flag.Parse()
-
-	config.Read(cfgFile, sshPort)
-	color.Colored = !noColor
+	args.NoColor = !color
+	config.Setup(source.Server, &args, flag.Args())
 
 	if displayVersion {
 		version.PrintAndExit()
 	}
+	version.Print()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if shutdownAfter > 0 {
@@ -66,21 +68,25 @@ func main() {
 		}
 	}()
 
-	logger.Start(ctx, logger.Modes{Server: true, Debug: debugEnable || config.Common.DebugEnable})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	dlog.Start(ctx, &wg, source.Server)
 
 	if config.ServerRelaxedAuthEnable {
-		logger.Fatal("SSH relaxed-auth mode enabled")
+		dlog.Server.Fatal("SSH relaxed-auth mode enabled")
 	}
 
 	if pprof > -1 {
-		// For debugging purposes only
+		// Start of pprof server for development purposes only.
 		pprofArgs := fmt.Sprintf("0.0.0.0:%d", pprof)
-		logger.Info("Starting PProf", pprofArgs)
+		dlog.Server.Info("Starting PProf", pprofArgs)
 		go http.ListenAndServe(pprofArgs, nil)
 	}
 
 	serv := server.New()
 	status := serv.Start(ctx)
-	logger.Flush()
+	cancel()
+
+	wg.Wait()
 	os.Exit(status)
 }

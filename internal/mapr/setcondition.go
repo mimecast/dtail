@@ -39,20 +39,22 @@ func makeSetConditions(tokens []token) (set []setCondition, err error) {
 		switch setOp {
 		case "=":
 		default:
-			return sc, nil, errors.New(invalidQuery + "Unknown operation in 'set' clause: " + setOp)
+			return sc, nil, errors.New(invalidQuery + "Unknown operation in 'set' " +
+				"clause: " + setOp)
 		}
 
 		if !tokens[0].isBareword {
-			return sc, nil, errors.New(invalidQuery + "Expected bareword at 'set' clause's lValue: " + tokens[0].str)
+			return sc, nil, errors.New(invalidQuery + "Expected bareword at 'set' " +
+				"clause's lValue: " + tokens[0].str)
 		}
-
 		sc.lString = tokens[0].str
 		if !strings.HasPrefix(sc.lString, "$") {
-			return sc, nil, errors.New(invalidQuery + "Expected field variable name (starting with $) at 'set' clause's lValue: " + tokens[0].str)
+			return sc, nil, errors.New(invalidQuery + "Expected field variable name " +
+				"(starting with $) at 'set' clause's lValue: " + tokens[0].str)
 		}
 		sc.rType = Field
-
 		rString := tokens[2].str
+
 		// Seems like a function call?
 		if strings.HasSuffix(rString, ")") {
 			functionStack, functionArg, err := funcs.NewFunctionStack(tokens[2].str)
@@ -72,7 +74,6 @@ func makeSetConditions(tokens []token) (set []setCondition, err error) {
 		} else {
 			sc.rType = Field
 		}
-
 		return sc, tokens[3:], nil
 	}
 
@@ -84,10 +85,8 @@ func makeSetConditions(tokens []token) (set []setCondition, err error) {
 		if err != nil {
 			return nil, err
 		}
-
 		set = append(set, sc)
 		tokens = tokensConsumeOptional(tokens, ",")
 	}
-
 	return
 }

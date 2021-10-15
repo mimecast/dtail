@@ -2,11 +2,12 @@
 # The container can be used for developing and testing
 # Purposes
 
-FROM centos:8
+FROM fedora:34
 RUN mkdir -p /etc/dserver /var/run/dserver/ /var/log/dserver
 
 ADD ./dtail.json /etc/dserver/dtail.json
 ADD ./dserver /usr/local/bin/dserver
+ADD ./mapr_testdata.log /var/log/mapr_testdata.log
 
 RUN useradd dserver
 RUN chown -R dserver /var/run/dserver /var/log/dserver

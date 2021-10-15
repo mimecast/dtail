@@ -1,31 +1,53 @@
 GO ?= go
-all: test build
-build:
-	${GO} build -o dserver ./cmd/dserver/main.go
-	${GO} build -o dcat ./cmd/dcat/main.go
-	${GO} build -o dgrep ./cmd/dgrep/main.go
-	${GO} build -o dmap ./cmd/dmap/main.go
-	${GO} build -o dtail ./cmd/dtail/main.go
+all: build
+build: dserver dcat dgrep dmap dtail dtailhealth
+dserver:
+ifndef USE_ACL
+	${GO} build ${GO_FLAGS} -o dserver ./cmd/dserver/main.go
+else
+	${GO} build ${GO_FLAGS} -tags linuxacl -o dserver ./cmd/dserver/main.go
+endif
+dcat:
+	${GO} build ${GO_FLAGS} -o dcat ./cmd/dcat/main.go
+dgrep:
+	${GO} build ${GO_FLAGS} -o dgrep ./cmd/dgrep/main.go
+dmap:
+	${GO} build ${GO_FLAGS} -o dmap ./cmd/dmap/main.go
+dtail:
+	${GO} build ${GO_FLAGS} -o dtail ./cmd/dtail/main.go
+dtailhealth:
+	${GO} build ${GO_FLAGS} -o dtailhealth ./cmd/dtailhealth/main.go
+install:
+ifndef USE_ACL
+	${GO} install ./cmd/dserver/main.go
+else
+	${GO} install -tags linuxacl ./cmd/dserver/main.go
+endif
+	${GO} install ./cmd/dcat/main.go
+	${GO} install ./cmd/dgrep/main.go
+	${GO} install ./cmd/dmap/main.go
+	${GO} install ./cmd/dtail/main.go
+	${GO} install ./cmd/dtailhealth/main.go
 clean:
 	ls ./cmd/ | while read cmd; do \
 	  test -f $$cmd && rm $$cmd; \
 	done
-install: build
-	cp -pv dserver ${GOPATH}/bin/dserver
-	cp -pv dcat ${GOPATH}/bin/dcat
-	cp -pv dgrep ${GOPATH}/bin/dgrep
-	cp -pv dmap ${GOPATH}/bin/dmap
-	cp -pv dtail ${GOPATH}/bin/dtail
 vet:
 	find . -type d | egrep -v '(./samples|./log|./doc)' | while read dir; do \
 	  echo ${GO} vet $$dir; \
 	  ${GO} vet $$dir; \
 	done
+	grep -R TODO: .
 lint:
 	${GO} get golang.org/x/lint/golint
 	find . -type d | while read dir; do \
 	  echo golint $$dir; \
 	  golint $$dir; \
-	done
+	done | grep -F .go:
 test:
-	${GO} test ./... -v
+	${GO} clean -testcache
+ifndef USE_ACL
+	${GO} test -race ./... -v
+else
+	${GO} test -race -tags linuxacl ./... -v
+endif
