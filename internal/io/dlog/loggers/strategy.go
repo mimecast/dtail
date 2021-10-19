@@ -3,6 +3,7 @@ package loggers
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Rotation is the actual strategy used for log rotation..
@@ -25,7 +26,7 @@ type Strategy struct {
 
 // NewStrategy returns the stratey based on its name.
 func NewStrategy(name string) Strategy {
-	switch name {
+	switch strings.ToLower(name) {
 	case "daily":
 		return Strategy{DailyRotation, ""}
 	default:
