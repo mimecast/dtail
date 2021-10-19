@@ -4,7 +4,7 @@ DTAIL_SSH_DONT_ADD_HOSTS_TO_KNOWNHOSTS_FILE = yes
 all: build
 build: dserver dcat dgrep dmap dtail dtailhealth
 dserver:
-ifndef USE_ACL
+ifndef DTAIL_USE_ACL
 	${GO} build ${GO_FLAGS} -o dserver ./cmd/dserver/main.go
 else
 	${GO} build ${GO_FLAGS} -tags linuxacl -o dserver ./cmd/dserver/main.go
@@ -20,7 +20,7 @@ dtail:
 dtailhealth:
 	${GO} build ${GO_FLAGS} -o dtailhealth ./cmd/dtailhealth/main.go
 install:
-ifndef USE_ACL
+ifndef DTAIL_USE_ACL
 	${GO} install ./cmd/dserver/main.go
 else
 	${GO} install -tags linuxacl ./cmd/dserver/main.go
@@ -48,7 +48,7 @@ lint:
 	done | grep -F .go:
 test:
 	${GO} clean -testcache
-ifndef USE_ACL
+ifndef DTAIL_USE_ACL
 	set -e; find . -name '*_test.go' | while read file; do dirname $$file; done | \
 		sort -u | while read dir; do ${GO} test --race -v $$dir || exit 2; done
 else

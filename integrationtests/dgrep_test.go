@@ -4,9 +4,15 @@ import (
 	"context"
 	"os"
 	"testing"
+
+	"github.com/mimecast/dtail/internal/config"
 )
 
 func TestDGrep(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	inFile := "mapr_testdata.log"
 	stdoutFile := "dgrep.stdout.tmp"
 	expectedStdoutFile := "dgrep.txt.expected"
@@ -28,6 +34,10 @@ func TestDGrep(t *testing.T) {
 }
 
 func TestDGrep2(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	inFile := "mapr_testdata.log"
 	stdoutFile := "dgrep2.stdout.tmp"
 	expectedStdoutFile := "dgrep2.txt.expected"
@@ -49,6 +59,10 @@ func TestDGrep2(t *testing.T) {
 }
 
 func TestDGrepContext(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	inFile := "mapr_testdata.log"
 	stdoutFile := "dgrepcontext.stdout.tmp"
 	expectedStdoutFile := "dgrepcontext.txt.expected"
@@ -71,6 +85,10 @@ func TestDGrepContext(t *testing.T) {
 }
 
 func TestDGrepContext2(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	inFile := "mapr_testdata.log"
 	stdoutFile := "dgrepcontext2.stdout.tmp"
 	expectedStdoutFile := "dgrepcontext2.txt.expected"

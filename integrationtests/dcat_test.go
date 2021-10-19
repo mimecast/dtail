@@ -4,9 +4,15 @@ import (
 	"context"
 	"os"
 	"testing"
+
+	"github.com/mimecast/dtail/internal/config"
 )
 
 func TestDCat(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	testdataFile := "dcat.txt"
 	stdoutFile := "dcat.out"
 
@@ -27,6 +33,9 @@ func TestDCat(t *testing.T) {
 }
 
 func TestDCat2(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		return
+	}
 	testdataFile := "dcat2.txt"
 	expectedFile := "dcat2.txt.expected"
 	stdoutFile := "dcat2.out"
@@ -55,6 +64,9 @@ func TestDCat2(t *testing.T) {
 // TODO: The test currently fails as there is a hostname in the output. What needs
 // to be done is to ignore the hostnames in the output (which is field 2 of the output)
 func TestDCatColors(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		return
+	}
 	testdataFile := "dcatcolors.txt"
 	stdoutFile := "dcatcolors.out"
 	expectedFile := "dcatcolors.expected"

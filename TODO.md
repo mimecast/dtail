@@ -16,3 +16,4 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
 [ ] More integration test colors (via dcat?)
 [ ] Integration test for dtail in serverless mode
 [x] Integration test for dtail normal mode
+[ ] Document how to run ingeration tests

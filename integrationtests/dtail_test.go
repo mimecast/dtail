@@ -7,9 +7,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mimecast/dtail/internal/config"
 )
 
 func TestDTailWithServer(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	followFile := "dtail.follow.tmp"
 	greetings := []string{"world!", "sol-system!", "milky-way!", "universe!", "multiverse!"}
 
@@ -122,6 +128,10 @@ func TestDTailWithServer(t *testing.T) {
 }
 
 func TestDTailColorTable(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	stdoutFile := "dtailcolortable.stdout.tmp"
 	expectedStdoutFile := "dtailcolortable.expected"
 

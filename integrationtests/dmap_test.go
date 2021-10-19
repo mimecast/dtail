@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/mimecast/dtail/internal/config"
 )
 
 func TestDMap(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	inFile := "mapr_testdata.log"
 	stdoutFile := "dmap.stdout.tmp"
 	csvFile := "dmap.csv.tmp"
@@ -42,6 +48,10 @@ func TestDMap(t *testing.T) {
 }
 
 func TestDMap2(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	inFile := "mapr_testdata.log"
 	stdoutFile := "dmap2.stdout.tmp"
 	csvFile := "dmap2.csv.tmp"
@@ -75,6 +85,10 @@ func TestDMap2(t *testing.T) {
 }
 
 func TestDMap3(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	inFile := "mapr_testdata.log"
 	stdoutFile := "dmap3.stdout.tmp"
 	csvFile := "dmap3.csv.tmp"

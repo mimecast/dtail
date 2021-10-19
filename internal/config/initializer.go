@@ -82,8 +82,8 @@ func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 
 // There are some special options which can be set by environment variable.
 func (in *initializer) readEnvironmentVars() {
-	if len(os.Getenv("DTAIL_SSH_DONT_ADD_HOSTS_TO_KNOWNHOSTS_FILE")) != 0 ||
-		len(os.Getenv("DTAIL_JENKINS")) != 0 {
+	if Env("DTAIL_SSH_DONT_ADD_HOSTS_TO_KNOWNHOSTS_FILE") ||
+		Env("DTAIL_JENKINS") {
 		in.Client.SSHDontAddHostsToKnownHostsFile = true
 	}
 }

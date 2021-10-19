@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/mimecast/dtail/internal/config"
 )
 
 func TestDTailHealthCheck(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	stdoutFile := "dtailhealth.stdout.tmp"
 	expectedStdoutFile := "dtailhealth.expected"
 
@@ -26,6 +32,10 @@ func TestDTailHealthCheck(t *testing.T) {
 }
 
 func TestDTailHealthCheck2(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	stdoutFile := "dtailhealth2.stdout.tmp"
 	expectedStdoutFile := "dtailhealth2.expected"
 
@@ -47,6 +57,10 @@ func TestDTailHealthCheck2(t *testing.T) {
 }
 
 func TestDTailHealthCheck3(t *testing.T) {
+	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+		t.Log("Skipping")
+		return
+	}
 	stdoutFile := "dtailhealth3.stdout.tmp"
 	expectedStdoutFile := "dtailhealth3.expected"
 
