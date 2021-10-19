@@ -63,17 +63,20 @@ func (c *ServerConnection) Handler() handlers.Handler { return c.handler }
 
 // Attempt to parse the server port address from the provided server FQDN.
 func (c *ServerConnection) initServerPort() {
-	c.port = config.Common.SSHPort
 	parts := strings.Split(c.server, ":")
-	if len(parts) == 2 {
-		dlog.Client.Debug("Parsing port from hostname", parts)
-		port, err := strconv.Atoi(parts[1])
-		if err != nil {
-			dlog.Client.FatalPanic("Unable to parse client port", c.server, parts, err)
-		}
-		c.hostname = parts[0]
-		c.port = port
+	if len(parts) == 1 {
+		c.hostname = c.server
+		c.port = config.Common.SSHPort
+		return
 	}
+
+	dlog.Client.Debug("Parsing port from hostname", parts)
+	port, err := strconv.Atoi(parts[1])
+	if err != nil {
+		dlog.Client.FatalPanic("Unable to parse client port", c.server, parts, err)
+	}
+	c.hostname = parts[0]
+	c.port = port
 }
 
 // Start the connection to the server.
@@ -127,8 +130,8 @@ func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc,
 		<-statsCh
 	}()
 
-	dlog.Client.Debug(c.server, "Dialing into the connection")
 	address := fmt.Sprintf("%s:%d", c.hostname, c.port)
+	dlog.Client.Debug(c.server, "Dialing into the connection", address)
 
 	client, err := ssh.Dial("tcp", address, c.config)
 	if err != nil {
