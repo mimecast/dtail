@@ -374,6 +374,12 @@
               "Enable": {
                 "type": "boolean"
               },
+              "AllowFrom": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "TimeRange": {
                 "type": "array",
                 "items": [
