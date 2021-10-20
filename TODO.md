@@ -13,9 +13,6 @@ This is a loose list of what to do. Maybe for the next releae or maybe for a lat
   [ ] Document color configuratio
   [ ] Go through the git history and document more stuff
 [ ] Manual test/adjust dtail colors
-[ ] More integration test colors (via dcat?)
 [ ] Integration test for dtail in serverless mode
-[x] Integration test for dtail normal mode
 [ ] Document how to run ingeration tests
 [ ] dserver scheduled queries integration test
-[ ] fix scheduled queries JSON schema

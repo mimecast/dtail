@@ -6,6 +6,10 @@ import (
 	"os"
 	"sync"
 
+	"net/http"
+	_ "net/http"
+	_ "net/http/pprof"
+
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/dlog"
@@ -19,6 +23,8 @@ import (
 // The evil begins here.
 func main() {
 	var displayVersion bool
+	var pprof string
+
 	args := config.Args{
 		Mode: omode.MapClient,
 	}
@@ -43,6 +49,7 @@ func main() {
 	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&args.UserName, "user", userName, "Your system user name")
 	flag.StringVar(&args.What, "files", "", "File(s) to read")
+	flag.StringVar(&pprof, "pprof", "", "Start PProf server this address")
 
 	flag.Parse()
 	config.Setup(source.Client, &args, flag.Args())
@@ -55,6 +62,11 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	dlog.Start(ctx, &wg, source.Client)
+
+	if pprof != "" {
+		go http.ListenAndServe(pprof, nil)
+		dlog.Client.Info("Started PProf", pprof)
+	}
 
 	client, err := clients.NewMaprClient(args, clients.DefaultMode)
 	if err != nil {

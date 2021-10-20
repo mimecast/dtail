@@ -30,7 +30,7 @@ func main() {
 	var displayWideColorTable bool
 	var displayVersion bool
 	var grep string
-	var pprof int
+	var pprof string
 	var shutdownAfter int
 
 	userName := user.Name()
@@ -51,7 +51,6 @@ func main() {
 	flag.IntVar(&args.LContext.MaxCount, "max", 0, "Stop reading file after NUM matching lines")
 	flag.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
 	flag.IntVar(&args.Timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
-	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 3600*24, "Shutdown after so many seconds")
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
@@ -65,6 +64,7 @@ func main() {
 	flag.StringVar(&args.UserName, "user", userName, "Your system user name")
 	flag.StringVar(&args.What, "files", "", "File(s) to read")
 	flag.StringVar(&grep, "grep", "", "Alias for -regex")
+	flag.StringVar(&pprof, "pprof", "", "Start PProf server this address")
 
 	flag.Parse()
 	if grep != "" {
@@ -101,11 +101,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if pprof > -1 {
-		// For debugging purposes only
-		pprofArgs := fmt.Sprintf("0.0.0.0:%d", pprof)
-		go http.ListenAndServe(pprofArgs, nil)
-		dlog.Client.Info("Started PProf", pprofArgs)
+	if pprof != "" {
+		go http.ListenAndServe(pprof, nil)
+		dlog.Client.Info("Started PProf", pprof)
 	}
 
 	var client clients.Client

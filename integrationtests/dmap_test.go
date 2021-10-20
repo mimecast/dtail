@@ -102,7 +102,7 @@ func TestDMap3(t *testing.T) {
 
 	// Read many input files at once.
 	args := []string{"--logLevel", "trace", "--query", query}
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 100; i++ {
 		args = append(args, inFile)
 	}
 

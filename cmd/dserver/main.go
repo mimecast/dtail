@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/http"
 	_ "net/http"
 	_ "net/http/pprof"
@@ -26,7 +25,7 @@ func main() {
 	var args config.Args
 	var color bool
 	var displayVersion bool
-	var pprof int
+	var pprof string
 	var shutdownAfter int
 
 	user.NoRootCheck()
@@ -36,13 +35,13 @@ func main() {
 		"Enable relaxced SSH auth mode (don't use in production!)")
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
-	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Shutdown after so many seconds")
 	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	flag.StringVar(&args.LogDir, "logDir", "", "Log dir")
 	flag.StringVar(&args.LogLevel, "logLevel", config.DefaultLogLevel, "Log level")
 	flag.StringVar(&args.Logger, "logger", config.DefaultServerLogger, "Logger name")
 	flag.StringVar(&args.SSHBindAddress, "bindAddress", "", "The SSH bind address")
+	flag.StringVar(&pprof, "pprof", "", "Start PProf server this address")
 
 	flag.Parse()
 	args.NoColor = !color
@@ -77,11 +76,9 @@ func main() {
 		dlog.Server.Fatal("SSH relaxed-auth mode enabled")
 	}
 
-	if pprof > -1 {
-		// Start of pprof server for development purposes only.
-		pprofArgs := fmt.Sprintf("0.0.0.0:%d", pprof)
-		dlog.Server.Info("Starting PProf", pprofArgs)
-		go http.ListenAndServe(pprofArgs, nil)
+	if pprof != "" {
+		dlog.Server.Info("Starting PProf", pprof)
+		go http.ListenAndServe(pprof, nil)
 	}
 
 	serv := server.New()

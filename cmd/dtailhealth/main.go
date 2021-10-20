@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
 	"sync"
 
@@ -23,13 +22,13 @@ import (
 func main() {
 	var args config.Args
 	var displayVersion bool
-	var pprof int
+	var pprof string
 
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
-	flag.IntVar(&pprof, "pprof", -1, "Start PProf server this port")
 	flag.StringVar(&args.Logger, "logger", config.DefaultHealthCheckLogger, "Logger name")
 	flag.StringVar(&args.LogLevel, "logLevel", "none", "Log level")
 	flag.StringVar(&args.ServersStr, "server", "", "Remote server to connect")
+	flag.StringVar(&pprof, "pprof", "", "Start PProf server this address")
 	flag.Parse()
 
 	if displayVersion {
@@ -44,11 +43,9 @@ func main() {
 	wg.Add(1)
 	dlog.Start(ctx, &wg, source.HealthCheck)
 
-	if pprof > -1 {
-		// For debugging purposes only
-		pprofArgs := fmt.Sprintf("0.0.0.0:%d", pprof)
-		go http.ListenAndServe(pprofArgs, nil)
-		dlog.Client.Info("Started PProf", pprofArgs)
+	if pprof != "" {
+		go http.ListenAndServe(pprof, nil)
+		dlog.Client.Info("Started PProf", pprof)
 	}
 
 	healthClient, _ := clients.NewHealthClient(args)
