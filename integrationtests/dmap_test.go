@@ -101,7 +101,7 @@ func TestDMap3(t *testing.T) {
 		"outfile %s", csvFile)
 
 	// Read many input files at once.
-	args := []string{"--logLevel", "trace", "--query", query}
+	args := []string{"--logLevel", "trace", "--pprof", "localhost:8080", "--query", query}
 	for i := 0; i < 100; i++ {
 		args = append(args, inFile)
 	}
