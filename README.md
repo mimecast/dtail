@@ -9,7 +9,7 @@ DTail (a distributed tail program) is a DevOps tool for engineers programmed in 
 
 For secure authorization and transport encryption, the SSH protocol is used. Furthermore, DTail respects the UNIX file system permission model (traditional on all Linux/UNIX variants and also ACLs on Linux based operating systems).
 
-The DTail binary operates in either client or server mode. The DTail server must be installed on all server boxes involved. The DTail client (possibly running on a regular Laptop) is used interactively to connect to the servers concurrently. That currently scales to multiple thousands of servers per client.
+The DTail binary operates in either client or server mode. The DTail server must be installed on all server boxes involved. The DTail client (possibly running on a regular Laptop) is used interactively to connect to the servers concurrently. That currently scales to multiple thousands of servers per client. Furthermore, DTail can be operated in a serverless mode too. Read more about it in the documentation.
 
 ![DTail](doc/dtail.gif "Example")
 
