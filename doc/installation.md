@@ -19,10 +19,10 @@ This is optional, but it gives you better security. On Linux, you have the optio
 
 ### 2. Enable ACL via a Go build flag
 
-Set the `DTAIL_USE_ACL` environment variable before invoking the make command.
+Set the `USE_ACL` environment variable before invoking the make command.
 
 ```console
-% export DTAIL_USE_ACL=yes
+% export USE_ACL=yes
 ```
 
 Alternatively, you could add `-tags linuxacl` to the Go compiler. 
