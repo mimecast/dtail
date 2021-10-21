@@ -6,7 +6,9 @@ type TailFile struct {
 }
 
 // NewTailFile returns a new file tailer.
-func NewTailFile(filePath string, globID string, serverMessages chan<- string, limiter chan struct{}) TailFile {
+func NewTailFile(filePath string, globID string, serverMessages chan<- string,
+	limiter chan struct{}) TailFile {
+
 	return TailFile{
 		readFile: readFile{
 			filePath:       filePath,

@@ -3,14 +3,13 @@ package mapr
 import (
 	"strconv"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 )
 
 // WhereClause interprets the where clause of the mapreduce query.
 func (q *Query) WhereClause(fields map[string]string) bool {
 	for _, wc := range q.Where {
 		var ok bool
-
 		if wc.Operation > FloatOperation {
 			var lValue, rValue float64
 			if lValue, ok = whereClauseFloatValue(fields, wc.lString, wc.lFloat, wc.lType); !ok {
@@ -36,11 +35,12 @@ func (q *Query) WhereClause(fields map[string]string) bool {
 			return false
 		}
 	}
-
 	return true
 }
 
-func whereClauseFloatValue(fields map[string]string, str string, float float64, t fieldType) (float64, bool) {
+func whereClauseFloatValue(fields map[string]string, str string, float float64,
+	t fieldType) (float64, bool) {
+
 	switch t {
 	case Float:
 		return float, true
@@ -55,12 +55,14 @@ func whereClauseFloatValue(fields map[string]string, str string, float float64, 
 		}
 		return f, true
 	default:
-		logger.Error("Unexpected argument in 'where' clause", str, float, t)
+		dlog.Common.Error("Unexpected argument in 'where' clause", str, float, t)
 		return 0, false
 	}
 }
 
-func whereClauseStringValue(fields map[string]string, str string, t fieldType) (string, bool) {
+func whereClauseStringValue(fields map[string]string, str string,
+	t fieldType) (string, bool) {
+
 	switch t {
 	case Field:
 		value, ok := fields[str]
@@ -71,7 +73,7 @@ func whereClauseStringValue(fields map[string]string, str string, t fieldType) (
 	case String:
 		return str, true
 	default:
-		logger.Error("Unexpected argument in 'where' clause", str, t)
+		dlog.Common.Error("Unexpected argument in 'where' clause", str, t)
 		return str, false
 	}
 }

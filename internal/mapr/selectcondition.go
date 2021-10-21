@@ -37,7 +37,6 @@ func (sc selectCondition) String() string {
 
 func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 	var sel []selectCondition
-
 	// Parse select aggregation, e.g. sum(foo)
 	parse := func(token token) (selectCondition, error) {
 		var sc selectCondition
@@ -52,13 +51,15 @@ func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 
 		a := strings.Split(tokenStr, "(")
 		if len(a) != 2 {
-			return sc, errors.New(invalidQuery + "Can't parse 'select' aggregation: " + token.str)
+			return sc, errors.New(invalidQuery + "Can't parse 'select' aggregation: " +
+				token.str)
 		}
 		agg := a[0] // Aggregation, e.g. 'sum'
 
 		b := strings.Split(a[1], ")")
 		if len(b) != 2 {
-			return sc, errors.New(invalidQuery + "Can't parse 'select' field name from aggregation: " + token.str)
+			return sc, errors.New(invalidQuery + "Can't parse 'select' field name " +
+				"from aggregation: " + token.str)
 		}
 		sc.Field = b[0]            // Field name, e.g. 'foo'
 		sc.FieldStorage = tokenStr // e.g. 'sum(foo)'
@@ -79,9 +80,9 @@ func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 		case "len":
 			sc.Operation = Len
 		default:
-			return sc, errors.New(invalidQuery + "Unknown aggregation in 'select' clause: " + agg)
+			return sc, errors.New(invalidQuery +
+				"Unknown aggregation in 'select' clause: " + agg)
 		}
-
 		return sc, nil
 	}
 
@@ -92,6 +93,5 @@ func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 		}
 		sel = append(sel, sc)
 	}
-
 	return sel, nil
 }

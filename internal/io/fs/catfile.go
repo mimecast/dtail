@@ -6,7 +6,9 @@ type CatFile struct {
 }
 
 // NewCatFile returns a new file catter.
-func NewCatFile(filePath string, globID string, serverMessages chan<- string, limiter chan struct{}) CatFile {
+func NewCatFile(filePath string, globID string, serverMessages chan<- string,
+	limiter chan struct{}) CatFile {
+
 	return CatFile{
 		readFile: readFile{
 			filePath:       filePath,

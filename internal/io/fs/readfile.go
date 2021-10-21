@@ -2,16 +2,20 @@ package fs
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/line"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/regex"
 
@@ -37,31 +41,10 @@ type readFile struct {
 	limiter chan struct{}
 }
 
-func (f readFile) makeReader(fd *os.File) (reader *bufio.Reader, err error) {
-	switch {
-	case strings.HasSuffix(f.FilePath(), ".gz"):
-		fallthrough
-	case strings.HasSuffix(f.FilePath(), ".gzip"):
-		logger.Info(f.FilePath(), "Detected gzip compression format")
-		var gzipReader *gzip.Reader
-		gzipReader, err = gzip.NewReader(fd)
-		if err != nil {
-			return
-		}
-		reader = bufio.NewReader(gzipReader)
-	case strings.HasSuffix(f.FilePath(), ".zst"):
-		logger.Info(f.FilePath(), "Detected zstd compression format")
-		reader = bufio.NewReader(zstd.NewReader(fd))
-	default:
-		reader = bufio.NewReader(fd)
-	}
-
-	return
-}
-
 // String returns the string representation of the readFile
 func (f readFile) String() string {
-	return fmt.Sprintf("readFile(filePath:%s,globID:%s,retry:%v,canSkipLines:%v,seekEOF:%v)",
+	return fmt.Sprintf(
+		"readFile(filePath:%s,globID:%s,retry:%v,canSkipLines:%v,seekEOF:%v)",
 		f.filePath,
 		f.globID,
 		f.retry,
@@ -80,8 +63,10 @@ func (f readFile) Retry() bool {
 }
 
 // Start tailing a log file.
-func (f readFile) Start(ctx context.Context, lContext lcontext.LContext, lines chan<- line.Line, re regex.Regex) error {
-	logger.Debug("readFile", f)
+func (f readFile) Start(ctx context.Context, ltx lcontext.LContext,
+	lines chan<- line.Line, re regex.Regex) error {
+
+	dlog.Common.Debug("readFile", f)
 	defer func() {
 		select {
 		case <-f.limiter:
@@ -93,7 +78,8 @@ func (f readFile) Start(ctx context.Context, lContext lcontext.LContext, lines c
 	case f.limiter <- struct{}{}:
 	default:
 		select {
-		case f.serverMessages <- logger.Warn(f.filePath, f.globID, "Server limit reached. Queuing file..."):
+		case f.serverMessages <- dlog.Common.Warn(f.filePath, f.globID,
+			"Server limit reached. Queuing file..."):
 		case <-ctx.Done():
 			return nil
 		}
@@ -110,111 +96,335 @@ func (f readFile) Start(ctx context.Context, lContext lcontext.LContext, lines c
 		fd.Seek(0, io.SeekEnd)
 	}
 
-	rawLines := make(chan []byte, 100)
-	readCtx, readCancel := context.WithCancel(ctx)
+	rawLines := make(chan *bytes.Buffer, 100)
+	truncate := make(chan struct{})
 
-	filterDone := make(chan struct{})
+	readCtx, readCancel := context.WithCancel(ctx)
+	var filterWg sync.WaitGroup
+	filterWg.Add(1)
+
+	go f.periodicTruncateCheck(ctx, truncate)
 	go func() {
-		f.filter(ctx, rawLines, lines, re, lContext)
-		close(filterDone)
+		f.filter(ctx, ltx, rawLines, lines, re)
+		filterWg.Done()
 		// If the filter stopped, make the reader stop too, no need to read
 		// more data if there is nothing more the filter wants to filter for!
 		// E.g. it could be that we only want to filter N matches but not more.
 		readCancel()
 	}()
 
-	err = f.read(readCtx, fd, rawLines)
+	err = f.read(readCtx, fd, rawLines, truncate)
 	close(rawLines)
-
-	// Filter may flushes some data still. So wait until it is done here.
-	<-filterDone
+	// Filter may sends some data still. So wait until it is done here.
+	filterWg.Wait()
 
 	return err
 }
 
-func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan []byte) error {
-	var offset uint64
+func (f readFile) periodicTruncateCheck(ctx context.Context, truncate chan struct{}) {
+	for {
+		select {
+		case <-time.After(time.Second * 3):
+			select {
+			case truncate <- struct{}{}:
+			case <-ctx.Done():
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
 
+func (f readFile) makeReader(fd *os.File) (reader *bufio.Reader, err error) {
+	switch {
+	case strings.HasSuffix(f.FilePath(), ".gz"):
+		fallthrough
+	case strings.HasSuffix(f.FilePath(), ".gzip"):
+		dlog.Common.Info(f.FilePath(), "Detected gzip compression format")
+		var gzipReader *gzip.Reader
+		gzipReader, err = gzip.NewReader(fd)
+		if err != nil {
+			return
+		}
+		reader = bufio.NewReader(gzipReader)
+	case strings.HasSuffix(f.FilePath(), ".zst"):
+		dlog.Common.Info(f.FilePath(), "Detected zstd compression format")
+		reader = bufio.NewReader(zstd.NewReader(fd))
+	default:
+		reader = bufio.NewReader(fd)
+	}
+	return
+}
+
+func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Buffer, truncate <-chan struct{}) error {
+	var offset uint64
 	reader, err := f.makeReader(fd)
 	if err != nil {
 		return err
 	}
-	rawLine := make([]byte, 0, 512)
 
 	lineLengthThreshold := 1024 * 1024 // 1mb
-	longLineWarning := false
-
-	checkTruncate := f.truncateTimer(ctx)
+	warnedAboutLongLine := false
+	message := pool.BytesBuffer.Get().(*bytes.Buffer)
 
 	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-
-		select {
-		case <-checkTruncate:
-			if isTruncated, err := f.truncated(fd); isTruncated {
-				return err
-			}
-			logger.Info(f.filePath, "Current offset", offset)
-		default:
-		}
-
-		// Read some bytes (max 4k at once as of go 1.12). isPrefix will
-		// be set if line does not fit into 4k buffer.
-		bytes, isPrefix, err := reader.ReadLine()
+		b, err := reader.ReadByte()
 
 		if err != nil {
-			// If EOF, sleep a couple of ms and return with nil error.
-			// If other error, return with non-nil error.
 			if err != io.EOF {
 				return err
 			}
+			select {
+			case <-truncate:
+				if isTruncated, err := f.truncated(fd); isTruncated {
+					return err
+				}
+			case <-ctx.Done():
+				return nil
+			default:
+			}
 			if !f.seekEOF {
-				logger.Debug(f.FilePath(), "End of file reached")
+				dlog.Common.Info(f.FilePath(), "End of file reached")
 				return nil
 			}
 			time.Sleep(time.Millisecond * 100)
 			continue
 		}
+		offset++
 
-		rawLine = append(rawLine, bytes...)
-		offset += uint64(len(bytes))
-
-		if !isPrefix {
-			// last LineRead call returned contend until end of line.
-			rawLine = append(rawLine, '\n')
+		switch b {
+		case '\n':
 			select {
-			case rawLines <- rawLine:
+			case rawLines <- message:
+				message = pool.BytesBuffer.Get().(*bytes.Buffer)
+				//fmt.Printf("%d %d %p\n", message.Len(), message.Cap(), message)
+				warnedAboutLongLine = false
 			case <-ctx.Done():
 				return nil
 			}
-			rawLine = make([]byte, 0, 512)
-			if longLineWarning {
-				longLineWarning = false
+		default:
+			if message.Len() >= lineLengthThreshold {
+				if !warnedAboutLongLine {
+					f.serverMessages <- dlog.Common.Warn(f.filePath,
+						"Long log line, splitting into multiple lines")
+					warnedAboutLongLine = true
+				}
+				message.WriteString("\n")
+				select {
+				case rawLines <- message:
+					message = pool.BytesBuffer.Get().(*bytes.Buffer)
+				case <-ctx.Done():
+					return nil
+				}
+			}
+			message.WriteByte(b)
+		}
+	}
+}
+
+// Filter log lines matching a given regular expression.
+func (f readFile) filter(ctx context.Context, ltx lcontext.LContext,
+	rawLines <-chan *bytes.Buffer, lines chan<- line.Line, re regex.Regex) {
+
+	// Do we have any kind of local context settings? If so then run the more complex
+	// filterWithLContext method.
+	if ltx.Has() {
+		// We can not skip transmitting any lines to the client with a local
+		// grep context specified.
+		f.canSkipLines = false
+		f.filterWithLContext(ctx, ltx, rawLines, lines, re)
+		return
+	}
+
+	f.filterWithoutLContext(ctx, rawLines, lines, re)
+}
+
+func (f readFile) filterWithoutLContext(ctx context.Context, rawLines <-chan *bytes.Buffer,
+	lines chan<- line.Line, re regex.Regex) {
+
+	for {
+		select {
+		case line, ok := <-rawLines:
+			f.updatePosition()
+			if !ok {
+				return
+			}
+			if filteredLine, ok := f.transmittable(line, len(lines), cap(lines), re); ok {
+				select {
+				case lines <- filteredLine:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}
+}
+
+// Filter log lines matching a given regular expression, however with local grep context.
+func (f readFile) filterWithLContext(ctx context.Context, ltx lcontext.LContext,
+	rawLines <-chan *bytes.Buffer, lines chan<- line.Line, re regex.Regex) {
+
+	// Scenario 1: Finish once maxCount hits found
+	maxCount := ltx.MaxCount
+	processMaxCount := maxCount > 0
+	maxReached := false
+
+	// Scenario 2: Print prev. N lines when current line matches.
+	before := ltx.BeforeContext
+	processBefore := before > 0
+	var beforeBuf chan *bytes.Buffer
+	if processBefore {
+		beforeBuf = make(chan *bytes.Buffer, before)
+	}
+
+	// Screnario 3: Print next N lines when current line matches.
+	after := 0
+	processAfter := ltx.AfterContext > 0
+
+	for lineBytesBuffer := range rawLines {
+		f.updatePosition()
+
+		if !re.Match(lineBytesBuffer.Bytes()) {
+			f.updateLineNotMatched()
+
+			if processAfter && after > 0 {
+				after--
+				myLine := line.Line{
+					Content:         lineBytesBuffer,
+					SourceID:        f.globID,
+					Count:           f.totalLineCount(),
+					TransmittedPerc: 100,
+				}
+
+				select {
+				case lines <- myLine:
+				case <-ctx.Done():
+					return
+				}
+
+			} else if processBefore {
+				// Keep last num BeforeContext raw messages.
+				select {
+				case beforeBuf <- lineBytesBuffer:
+				default:
+					pool.RecycleBytesBuffer(<-beforeBuf)
+					beforeBuf <- lineBytesBuffer
+				}
 			}
 			continue
 		}
 
-		// Last LineRead call could not read content until end of line, buffer
-		// was too small. Determine whether we exceed the max line length we
-		// want dtail to send to the client at once. Possibly split up log line
-		// into multiple log lines.
-		if len(rawLine) >= lineLengthThreshold {
-			if !longLineWarning {
-				f.serverMessages <- logger.Warn(f.filePath, "Long log line, splitting into multiple lines")
-				// Only print out one warning per long log line.
-				longLineWarning = true
+		f.updateLineMatched()
+
+		if processAfter {
+			if maxReached {
+				return
 			}
-			rawLine = append(rawLine, '\n')
-			select {
-			case rawLines <- rawLine:
-			case <-ctx.Done():
-				return nil
+			after = ltx.AfterContext
+		}
+
+		if processBefore {
+			i := uint64(len(beforeBuf))
+			for {
+				select {
+				case lineBytesBuffer := <-beforeBuf:
+					myLine := line.Line{
+						Content:         lineBytesBuffer,
+						SourceID:        f.globID,
+						Count:           f.totalLineCount() - i,
+						TransmittedPerc: 100,
+					}
+					i--
+
+					select {
+					case lines <- myLine:
+					case <-ctx.Done():
+						return
+					}
+				default:
+					// beforeBuf is now empty.
+				}
+				if len(beforeBuf) == 0 {
+					break
+				}
 			}
-			rawLine = make([]byte, 0, 512)
+		}
+
+		line := line.Line{
+			Content:         lineBytesBuffer,
+			SourceID:        f.globID,
+			Count:           f.totalLineCount(),
+			TransmittedPerc: 100,
+		}
+
+		select {
+		case lines <- line:
+			if processMaxCount {
+				maxCount--
+				if maxCount == 0 {
+					if !processAfter || after == 0 {
+						return
+					}
+					// Unfortunatley we have to continue filter, as there might be more lines to print
+					maxReached = true
+				}
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
+}
+
+func (f readFile) transmittable(lineBytesBuffer *bytes.Buffer, length, capacity int,
+	re regex.Regex) (line.Line, bool) {
+
+	var read line.Line
+	if !re.Match(lineBytesBuffer.Bytes()) {
+		f.updateLineNotMatched()
+		f.updateLineNotTransmitted()
+		return read, false
+	}
+	f.updateLineMatched()
+
+	// Can we actually send more messages, channel capacity reached?
+	if f.canSkipLines && length >= capacity {
+		f.updateLineNotTransmitted()
+		return read, false
+	}
+	f.updateLineTransmitted()
+
+	read = line.Line{
+		Content:         lineBytesBuffer,
+		SourceID:        f.globID,
+		Count:           f.totalLineCount(),
+		TransmittedPerc: f.transmittedPerc(),
+	}
+	return read, true
+}
+
+// Check wether log file is truncated. Returns nil if not.
+func (f readFile) truncated(fd *os.File) (bool, error) {
+	dlog.Common.Debug(f.filePath, "File truncation check")
+
+	// Can not seek currently open FD.
+	curPos, err := fd.Seek(0, os.SEEK_CUR)
+	if err != nil {
+		return true, err
+	}
+	// Can not open file at original path.
+	pathFd, err := os.Open(f.filePath)
+	if err != nil {
+		return true, err
+	}
+	defer pathFd.Close()
+
+	// Can not seek file at original path.
+	pathPos, err := pathFd.Seek(0, io.SeekEnd)
+	if err != nil {
+		return true, err
+	}
+	if curPos > pathPos {
+		return true, errors.New("File got truncated")
+	}
+	return false, nil
 }

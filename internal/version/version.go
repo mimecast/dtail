@@ -5,38 +5,50 @@ import (
 	"os"
 
 	"github.com/mimecast/dtail/internal/color"
+	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 const (
 	// Name of DTail.
 	Name string = "DTail"
 	// Version of DTail.
-	Version string = "3.3.1"
+	Version string = "4.0.0-RC1"
 	// Additional information for DTail
-	Additional string = ""
-	// ProtocolCompat -ibility version.
-	ProtocolCompat string = "3"
+	Additional string = "Have a lot of fun!"
 )
 
 // String representation of the DTail version.
 func String() string {
-	return fmt.Sprintf("%s %v Protocol %s %s", Name, Version, ProtocolCompat, Additional)
+	return fmt.Sprintf("%s %v Protocol %s %s", Name, Version,
+		protocol.ProtocolCompat, Additional)
 }
 
 // PaintedString is a prettier string representation of the DTail version.
 func PaintedString() string {
-	if !color.Colored {
+	if !config.Client.TermColorsEnable {
 		return String()
 	}
-	name := color.Paint(color.Yellow, Name)
-	version := color.Paint(color.Blue, Version)
-	descr := color.Paint(color.Green, Additional)
 
-	return fmt.Sprintf("%s %v Protocol %s %s", name, version, ProtocolCompat, descr)
+	name := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Name),
+		color.FgYellow, color.BgBlue, color.AttrBold)
+	version := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Version),
+		color.FgBlue, color.BgYellow, color.AttrBold)
+	protocol := color.PaintStr(fmt.Sprintf(" Protocol %s ", protocol.ProtocolCompat),
+		color.FgBlack, color.BgGreen)
+	additional := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Additional),
+		color.FgWhite, color.BgMagenta, color.AttrUnderline)
+
+	return fmt.Sprintf("%s%v%s%s", name, version, protocol, additional)
+}
+
+// Print the version.
+func Print() {
+	fmt.Println(PaintedString())
 }
 
 // PrintAndExit prints the program version and exists.
 func PrintAndExit() {
-	fmt.Println(PaintedString())
+	Print()
 	os.Exit(0)
 }

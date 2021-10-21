@@ -6,11 +6,12 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"github.com/mimecast/dtail/internal/io/logger"
 	"io/ioutil"
 	"net"
 	"os"
 	"syscall"
+
+	"github.com/mimecast/dtail/internal/io/dlog"
 
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -23,12 +24,10 @@ func GeneratePrivateRSAKey(size int) (*rsa.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	err = privateKey.Validate()
 	if err != nil {
 		return nil, err
 	}
-
 	return privateKey, nil
 }
 
@@ -41,7 +40,6 @@ func EncodePrivateKeyToPEM(privateKey *rsa.PrivateKey) []byte {
 		Headers: nil,
 		Bytes:   derFormat,
 	}
-
 	return pem.EncodeToMemory(&block)
 }
 
@@ -57,7 +55,7 @@ func Agent() (gossh.AuthMethod, error) {
 		return nil, err
 	}
 	for i, key := range keys {
-		logger.Debug("Public key", i, key)
+		dlog.Common.Debug("Public key", i, key)
 	}
 	return gossh.PublicKeysCallback(agentClient.Signers), nil
 }
@@ -79,7 +77,6 @@ func KeyFile(keyFile string) (gossh.AuthMethod, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	key, err := gossh.ParsePrivateKey(buffer)
 	if err != nil {
 		return nil, err
@@ -105,7 +102,7 @@ func KeyFile(keyFile string) (gossh.AuthMethod, error) {
 func PrivateKey(keyFile string) (gossh.AuthMethod, error) {
 	signer, err := KeyFile(keyFile)
 	if err != nil {
-		logger.Debug(keyFile, err)
+		dlog.Common.Debug(keyFile, err)
 		return nil, err
 	}
 	return gossh.AuthMethod(signer), nil

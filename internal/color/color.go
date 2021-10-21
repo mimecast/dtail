@@ -1,70 +1,148 @@
-// Package color is used to prettify console output via ANSII terminal colors.
+// Package color contains all terminal color codes we know of.
 package color
 
 import (
 	"fmt"
+	"strings"
 )
 
-// Color name.
-type Color string
+// FgColor is the text foreground color.
+type FgColor string
 
-// Attribute of a color.
+// BgColor is the text background color.
+type BgColor string
+
+// Attribute of text.
 type Attribute string
 
 // The possible color variations.
 const (
-	escape        = "\x1b"
-	reset         = escape + "[0m"
-	seq    string = "%s%s%s"
+	escape = "\x1b"
 
-	Gray      Color = escape + "[30m"
-	Red       Color = escape + "[31m"
-	Green     Color = escape + "[32m"
-	Orange    Color = escape + "[33m"
-	Blue      Color = escape + "[34m"
-	Magenta   Color = escape + "[35m"
-	Yellow    Color = escape + "[36m"
-	LightGray Color = escape + "[37m"
+	FgBlack   FgColor = escape + "[30m"
+	FgRed     FgColor = escape + "[31m"
+	FgGreen   FgColor = escape + "[32m"
+	FgYellow  FgColor = escape + "[33m"
+	FgBlue    FgColor = escape + "[34m"
+	FgMagenta FgColor = escape + "[35m"
+	FgCyan    FgColor = escape + "[36m"
+	FgWhite   FgColor = escape + "[37m"
+	FgDefault FgColor = escape + "[39m"
 
-	BgGray      Color = escape + "[40m"
-	BgRed       Color = escape + "[41m"
-	BgGreen     Color = escape + "[42m"
-	BgOrange    Color = escape + "[43m"
-	BgBlue      Color = escape + "[44m"
-	BgMagenta   Color = escape + "[45m"
-	BgYellow    Color = escape + "[46m"
-	BgLightGray Color = escape + "[47m"
+	BgBlack   BgColor = escape + "[40m"
+	BgRed     BgColor = escape + "[41m"
+	BgGreen   BgColor = escape + "[42m"
+	BgYellow  BgColor = escape + "[43m"
+	BgBlue    BgColor = escape + "[44m"
+	BgMagenta BgColor = escape + "[45m"
+	BgCyan    BgColor = escape + "[46m"
+	BgWhite   BgColor = escape + "[47m"
+	BgDefault BgColor = escape + "[49m"
 
-	Bold         Attribute = escape + "[1m"
-	Italic       Attribute = escape + "[3m"
-	Underline    Attribute = escape + "[4m"
-	ReverseColor Attribute = escape + "[7m"
-
-	resetBold      = escape + "[22m"
-	resetItalic    = escape + "[23m"
-	resetUnderline = escape + "[24m"
-
-	Test     Color     = BgYellow
-	TestAttr Attribute = Bold
+	AttrNone       Attribute = ""
+	AttrReset      Attribute = escape + "[0m"
+	AttrBold       Attribute = escape + "[1m"
+	AttrDim        Attribute = escape + "[2m"
+	AttrItalic     Attribute = escape + "[3m"
+	AttrUnderline  Attribute = escape + "[4m"
+	AttrBlink      Attribute = escape + "[5m"
+	AttrSlowBlink  Attribute = escape + "[5m"
+	AttrRapidBlink Attribute = escape + "[6m"
+	AttrReverse    Attribute = escape + "[7m"
+	AttrHidden     Attribute = escape + "[8m"
 )
 
-// Colored DTail client output enabled.
-var Colored bool
-
-// Paint a given string in a given color.
-func Paint(c Color, s string) string {
-	return fmt.Sprintf(seq, c, s, reset)
+// ColorNames is the list of all supported terminal colors.
+var ColorNames = []string{
+	"Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White", "Default",
 }
 
-// Attr adds a given attribute to a given string, such as "bold" or "italic".
-func Attr(c Attribute, s string) string {
-	switch c {
-	case Bold:
-		return fmt.Sprintf(seq, Bold, s, resetBold)
-	case Italic:
-		return fmt.Sprintf(seq, Italic, s, resetItalic)
-	case Underline:
-		return fmt.Sprintf(seq, Underline, s, resetUnderline)
+// AttributeNames is the list of all supported terminal text attributes.
+var AttributeNames = []string{
+	"Bold", "Dim", "Italic", "Underline", "Blink", "SlowBlink", "RapidBlink",
+	"Reverse", "Hidden", "None",
+}
+
+// ToFgColor converts a given string (e.g. from a config file) into a foreground
+// color code.
+func ToFgColor(s string) (FgColor, error) {
+	switch strings.ToLower(s) {
+	case "black":
+		return FgBlack, nil
+	case "red":
+		return FgRed, nil
+	case "green":
+		return FgGreen, nil
+	case "yellow":
+		return FgYellow, nil
+	case "blue":
+		return FgBlue, nil
+	case "magenta":
+		return FgMagenta, nil
+	case "cyan":
+		return FgCyan, nil
+	case "white":
+		return FgWhite, nil
+	case "default":
+		return FgDefault, nil
+	default:
+		return FgDefault, fmt.Errorf("unknown foreground text color '" + s + "'")
 	}
-	panic("Unknown attribute")
+}
+
+// ToBgColor converts a given string (e.g. from a config file) into a background
+// color code.
+func ToBgColor(s string) (BgColor, error) {
+	switch strings.ToLower(s) {
+	case "black":
+		return BgBlack, nil
+	case "red":
+		return BgRed, nil
+	case "green":
+		return BgGreen, nil
+	case "yellow":
+		return BgYellow, nil
+	case "blue":
+		return BgBlue, nil
+	case "magenta":
+		return BgMagenta, nil
+	case "cyan":
+		return BgCyan, nil
+	case "white":
+		return BgWhite, nil
+	case "default":
+		return BgDefault, nil
+	default:
+		return BgDefault, fmt.Errorf("unknown background text color '" + s + "'")
+	}
+}
+
+// ToAttribute converts a given string (e.g. from a config file) into a text attribute.
+func ToAttribute(s string) (Attribute, error) {
+	switch strings.ToLower(s) {
+	case "bold":
+		return AttrBold, nil
+	case "dim":
+		return AttrDim, nil
+	case "italic":
+		return AttrItalic, nil
+	case "underline":
+		return AttrUnderline, nil
+	case "blink":
+		return AttrBlink, nil
+	case "slowblink":
+		return AttrSlowBlink, nil
+	case "rapidblink":
+		return AttrRapidBlink, nil
+	case "reverse":
+		return AttrReverse, nil
+	case "hidden":
+		return AttrHidden, nil
+	case "none":
+		fallthrough
+	case "":
+		return AttrNone, nil
+	default:
+		return AttrNone, fmt.Errorf("unknown text attribute '" + s + "'")
+	}
 }

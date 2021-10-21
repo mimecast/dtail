@@ -1,0 +1,576 @@
+[30m[41m[1m Foreground:     Black  |  Background:       Red  |  Attribute:      Bold [0m[49m[39m
+[30m[42m[1m Foreground:     Black  |  Background:     Green  |  Attribute:      Bold [0m[49m[39m
+[30m[43m[1m Foreground:     Black  |  Background:    Yellow  |  Attribute:      Bold [0m[49m[39m
+[30m[44m[1m Foreground:     Black  |  Background:      Blue  |  Attribute:      Bold [0m[49m[39m
+[30m[45m[1m Foreground:     Black  |  Background:   Magenta  |  Attribute:      Bold [0m[49m[39m
+[30m[46m[1m Foreground:     Black  |  Background:      Cyan  |  Attribute:      Bold [0m[49m[39m
+[30m[47m[1m Foreground:     Black  |  Background:     White  |  Attribute:      Bold [0m[49m[39m
+[30m[49m[1m Foreground:     Black  |  Background:   Default  |  Attribute:      Bold [0m[49m[39m
+[31m[40m[1m Foreground:       Red  |  Background:     Black  |  Attribute:      Bold [0m[49m[39m
+[31m[42m[1m Foreground:       Red  |  Background:     Green  |  Attribute:      Bold [0m[49m[39m
+[31m[43m[1m Foreground:       Red  |  Background:    Yellow  |  Attribute:      Bold [0m[49m[39m
+[31m[44m[1m Foreground:       Red  |  Background:      Blue  |  Attribute:      Bold [0m[49m[39m
+[31m[45m[1m Foreground:       Red  |  Background:   Magenta  |  Attribute:      Bold [0m[49m[39m
+[31m[46m[1m Foreground:       Red  |  Background:      Cyan  |  Attribute:      Bold [0m[49m[39m
+[31m[47m[1m Foreground:       Red  |  Background:     White  |  Attribute:      Bold [0m[49m[39m
+[31m[49m[1m Foreground:       Red  |  Background:   Default  |  Attribute:      Bold [0m[49m[39m
+[32m[40m[1m Foreground:     Green  |  Background:     Black  |  Attribute:      Bold [0m[49m[39m
+[32m[41m[1m Foreground:     Green  |  Background:       Red  |  Attribute:      Bold [0m[49m[39m
+[32m[43m[1m Foreground:     Green  |  Background:    Yellow  |  Attribute:      Bold [0m[49m[39m
+[32m[44m[1m Foreground:     Green  |  Background:      Blue  |  Attribute:      Bold [0m[49m[39m
+[32m[45m[1m Foreground:     Green  |  Background:   Magenta  |  Attribute:      Bold [0m[49m[39m
+[32m[46m[1m Foreground:     Green  |  Background:      Cyan  |  Attribute:      Bold [0m[49m[39m
+[32m[47m[1m Foreground:     Green  |  Background:     White  |  Attribute:      Bold [0m[49m[39m
+[32m[49m[1m Foreground:     Green  |  Background:   Default  |  Attribute:      Bold [0m[49m[39m
+[33m[40m[1m Foreground:    Yellow  |  Background:     Black  |  Attribute:      Bold [0m[49m[39m
+[33m[41m[1m Foreground:    Yellow  |  Background:       Red  |  Attribute:      Bold [0m[49m[39m
+[33m[42m[1m Foreground:    Yellow  |  Background:     Green  |  Attribute:      Bold [0m[49m[39m
+[33m[44m[1m Foreground:    Yellow  |  Background:      Blue  |  Attribute:      Bold [0m[49m[39m
+[33m[45m[1m Foreground:    Yellow  |  Background:   Magenta  |  Attribute:      Bold [0m[49m[39m
+[33m[46m[1m Foreground:    Yellow  |  Background:      Cyan  |  Attribute:      Bold [0m[49m[39m
+[33m[47m[1m Foreground:    Yellow  |  Background:     White  |  Attribute:      Bold [0m[49m[39m
+[33m[49m[1m Foreground:    Yellow  |  Background:   Default  |  Attribute:      Bold [0m[49m[39m
+[34m[40m[1m Foreground:      Blue  |  Background:     Black  |  Attribute:      Bold [0m[49m[39m
+[34m[41m[1m Foreground:      Blue  |  Background:       Red  |  Attribute:      Bold [0m[49m[39m
+[34m[42m[1m Foreground:      Blue  |  Background:     Green  |  Attribute:      Bold [0m[49m[39m
+[34m[43m[1m Foreground:      Blue  |  Background:    Yellow  |  Attribute:      Bold [0m[49m[39m
+[34m[45m[1m Foreground:      Blue  |  Background:   Magenta  |  Attribute:      Bold [0m[49m[39m
+[34m[46m[1m Foreground:      Blue  |  Background:      Cyan  |  Attribute:      Bold [0m[49m[39m
+[34m[47m[1m Foreground:      Blue  |  Background:     White  |  Attribute:      Bold [0m[49m[39m
+[34m[49m[1m Foreground:      Blue  |  Background:   Default  |  Attribute:      Bold [0m[49m[39m
+[35m[40m[1m Foreground:   Magenta  |  Background:     Black  |  Attribute:      Bold [0m[49m[39m
+[35m[41m[1m Foreground:   Magenta  |  Background:       Red  |  Attribute:      Bold [0m[49m[39m
+[35m[42m[1m Foreground:   Magenta  |  Background:     Green  |  Attribute:      Bold [0m[49m[39m
+[35m[43m[1m Foreground:   Magenta  |  Background:    Yellow  |  Attribute:      Bold [0m[49m[39m
+[35m[44m[1m Foreground:   Magenta  |  Background:      Blue  |  Attribute:      Bold [0m[49m[39m
+[35m[46m[1m Foreground:   Magenta  |  Background:      Cyan  |  Attribute:      Bold [0m[49m[39m
+[35m[47m[1m Foreground:   Magenta  |  Background:     White  |  Attribute:      Bold [0m[49m[39m
+[35m[49m[1m Foreground:   Magenta  |  Background:   Default  |  Attribute:      Bold [0m[49m[39m
+[36m[40m[1m Foreground:      Cyan  |  Background:     Black  |  Attribute:      Bold [0m[49m[39m
+[36m[41m[1m Foreground:      Cyan  |  Background:       Red  |  Attribute:      Bold [0m[49m[39m
+[36m[42m[1m Foreground:      Cyan  |  Background:     Green  |  Attribute:      Bold [0m[49m[39m
+[36m[43m[1m Foreground:      Cyan  |  Background:    Yellow  |  Attribute:      Bold [0m[49m[39m
+[36m[44m[1m Foreground:      Cyan  |  Background:      Blue  |  Attribute:      Bold [0m[49m[39m
+[36m[45m[1m Foreground:      Cyan  |  Background:   Magenta  |  Attribute:      Bold [0m[49m[39m
+[36m[47m[1m Foreground:      Cyan  |  Background:     White  |  Attribute:      Bold [0m[49m[39m
+[36m[49m[1m Foreground:      Cyan  |  Background:   Default  |  Attribute:      Bold [0m[49m[39m
+[37m[40m[1m Foreground:     White  |  Background:     Black  |  Attribute:      Bold [0m[49m[39m
+[37m[41m[1m Foreground:     White  |  Background:       Red  |  Attribute:      Bold [0m[49m[39m
+[37m[42m[1m Foreground:     White  |  Background:     Green  |  Attribute:      Bold [0m[49m[39m
+[37m[43m[1m Foreground:     White  |  Background:    Yellow  |  Attribute:      Bold [0m[49m[39m
+[37m[44m[1m Foreground:     White  |  Background:      Blue  |  Attribute:      Bold [0m[49m[39m
+[37m[45m[1m Foreground:     White  |  Background:   Magenta  |  Attribute:      Bold [0m[49m[39m
+[37m[46m[1m Foreground:     White  |  Background:      Cyan  |  Attribute:      Bold [0m[49m[39m
+[37m[49m[1m Foreground:     White  |  Background:   Default  |  Attribute:      Bold [0m[49m[39m
+[39m[40m[1m Foreground:   Default  |  Background:     Black  |  Attribute:      Bold [0m[49m[39m
+[39m[41m[1m Foreground:   Default  |  Background:       Red  |  Attribute:      Bold [0m[49m[39m
+[39m[42m[1m Foreground:   Default  |  Background:     Green  |  Attribute:      Bold [0m[49m[39m
+[39m[43m[1m Foreground:   Default  |  Background:    Yellow  |  Attribute:      Bold [0m[49m[39m
+[39m[44m[1m Foreground:   Default  |  Background:      Blue  |  Attribute:      Bold [0m[49m[39m
+[39m[45m[1m Foreground:   Default  |  Background:   Magenta  |  Attribute:      Bold [0m[49m[39m
+[39m[46m[1m Foreground:   Default  |  Background:      Cyan  |  Attribute:      Bold [0m[49m[39m
+[39m[47m[1m Foreground:   Default  |  Background:     White  |  Attribute:      Bold [0m[49m[39m
+[30m[41m[2m Foreground:     Black  |  Background:       Red  |  Attribute:       Dim [0m[49m[39m
+[30m[42m[2m Foreground:     Black  |  Background:     Green  |  Attribute:       Dim [0m[49m[39m
+[30m[43m[2m Foreground:     Black  |  Background:    Yellow  |  Attribute:       Dim [0m[49m[39m
+[30m[44m[2m Foreground:     Black  |  Background:      Blue  |  Attribute:       Dim [0m[49m[39m
+[30m[45m[2m Foreground:     Black  |  Background:   Magenta  |  Attribute:       Dim [0m[49m[39m
+[30m[46m[2m Foreground:     Black  |  Background:      Cyan  |  Attribute:       Dim [0m[49m[39m
+[30m[47m[2m Foreground:     Black  |  Background:     White  |  Attribute:       Dim [0m[49m[39m
+[30m[49m[2m Foreground:     Black  |  Background:   Default  |  Attribute:       Dim [0m[49m[39m
+[31m[40m[2m Foreground:       Red  |  Background:     Black  |  Attribute:       Dim [0m[49m[39m
+[31m[42m[2m Foreground:       Red  |  Background:     Green  |  Attribute:       Dim [0m[49m[39m
+[31m[43m[2m Foreground:       Red  |  Background:    Yellow  |  Attribute:       Dim [0m[49m[39m
+[31m[44m[2m Foreground:       Red  |  Background:      Blue  |  Attribute:       Dim [0m[49m[39m
+[31m[45m[2m Foreground:       Red  |  Background:   Magenta  |  Attribute:       Dim [0m[49m[39m
+[31m[46m[2m Foreground:       Red  |  Background:      Cyan  |  Attribute:       Dim [0m[49m[39m
+[31m[47m[2m Foreground:       Red  |  Background:     White  |  Attribute:       Dim [0m[49m[39m
+[31m[49m[2m Foreground:       Red  |  Background:   Default  |  Attribute:       Dim [0m[49m[39m
+[32m[40m[2m Foreground:     Green  |  Background:     Black  |  Attribute:       Dim [0m[49m[39m
+[32m[41m[2m Foreground:     Green  |  Background:       Red  |  Attribute:       Dim [0m[49m[39m
+[32m[43m[2m Foreground:     Green  |  Background:    Yellow  |  Attribute:       Dim [0m[49m[39m
+[32m[44m[2m Foreground:     Green  |  Background:      Blue  |  Attribute:       Dim [0m[49m[39m
+[32m[45m[2m Foreground:     Green  |  Background:   Magenta  |  Attribute:       Dim [0m[49m[39m
+[32m[46m[2m Foreground:     Green  |  Background:      Cyan  |  Attribute:       Dim [0m[49m[39m
+[32m[47m[2m Foreground:     Green  |  Background:     White  |  Attribute:       Dim [0m[49m[39m
+[32m[49m[2m Foreground:     Green  |  Background:   Default  |  Attribute:       Dim [0m[49m[39m
+[33m[40m[2m Foreground:    Yellow  |  Background:     Black  |  Attribute:       Dim [0m[49m[39m
+[33m[41m[2m Foreground:    Yellow  |  Background:       Red  |  Attribute:       Dim [0m[49m[39m
+[33m[42m[2m Foreground:    Yellow  |  Background:     Green  |  Attribute:       Dim [0m[49m[39m
+[33m[44m[2m Foreground:    Yellow  |  Background:      Blue  |  Attribute:       Dim [0m[49m[39m
+[33m[45m[2m Foreground:    Yellow  |  Background:   Magenta  |  Attribute:       Dim [0m[49m[39m
+[33m[46m[2m Foreground:    Yellow  |  Background:      Cyan  |  Attribute:       Dim [0m[49m[39m
+[33m[47m[2m Foreground:    Yellow  |  Background:     White  |  Attribute:       Dim [0m[49m[39m
+[33m[49m[2m Foreground:    Yellow  |  Background:   Default  |  Attribute:       Dim [0m[49m[39m
+[34m[40m[2m Foreground:      Blue  |  Background:     Black  |  Attribute:       Dim [0m[49m[39m
+[34m[41m[2m Foreground:      Blue  |  Background:       Red  |  Attribute:       Dim [0m[49m[39m
+[34m[42m[2m Foreground:      Blue  |  Background:     Green  |  Attribute:       Dim [0m[49m[39m
+[34m[43m[2m Foreground:      Blue  |  Background:    Yellow  |  Attribute:       Dim [0m[49m[39m
+[34m[45m[2m Foreground:      Blue  |  Background:   Magenta  |  Attribute:       Dim [0m[49m[39m
+[34m[46m[2m Foreground:      Blue  |  Background:      Cyan  |  Attribute:       Dim [0m[49m[39m
+[34m[47m[2m Foreground:      Blue  |  Background:     White  |  Attribute:       Dim [0m[49m[39m
+[34m[49m[2m Foreground:      Blue  |  Background:   Default  |  Attribute:       Dim [0m[49m[39m
+[35m[40m[2m Foreground:   Magenta  |  Background:     Black  |  Attribute:       Dim [0m[49m[39m
+[35m[41m[2m Foreground:   Magenta  |  Background:       Red  |  Attribute:       Dim [0m[49m[39m
+[35m[42m[2m Foreground:   Magenta  |  Background:     Green  |  Attribute:       Dim [0m[49m[39m
+[35m[43m[2m Foreground:   Magenta  |  Background:    Yellow  |  Attribute:       Dim [0m[49m[39m
+[35m[44m[2m Foreground:   Magenta  |  Background:      Blue  |  Attribute:       Dim [0m[49m[39m
+[35m[46m[2m Foreground:   Magenta  |  Background:      Cyan  |  Attribute:       Dim [0m[49m[39m
+[35m[47m[2m Foreground:   Magenta  |  Background:     White  |  Attribute:       Dim [0m[49m[39m
+[35m[49m[2m Foreground:   Magenta  |  Background:   Default  |  Attribute:       Dim [0m[49m[39m
+[36m[40m[2m Foreground:      Cyan  |  Background:     Black  |  Attribute:       Dim [0m[49m[39m
+[36m[41m[2m Foreground:      Cyan  |  Background:       Red  |  Attribute:       Dim [0m[49m[39m
+[36m[42m[2m Foreground:      Cyan  |  Background:     Green  |  Attribute:       Dim [0m[49m[39m
+[36m[43m[2m Foreground:      Cyan  |  Background:    Yellow  |  Attribute:       Dim [0m[49m[39m
+[36m[44m[2m Foreground:      Cyan  |  Background:      Blue  |  Attribute:       Dim [0m[49m[39m
+[36m[45m[2m Foreground:      Cyan  |  Background:   Magenta  |  Attribute:       Dim [0m[49m[39m
+[36m[47m[2m Foreground:      Cyan  |  Background:     White  |  Attribute:       Dim [0m[49m[39m
+[36m[49m[2m Foreground:      Cyan  |  Background:   Default  |  Attribute:       Dim [0m[49m[39m
+[37m[40m[2m Foreground:     White  |  Background:     Black  |  Attribute:       Dim [0m[49m[39m
+[37m[41m[2m Foreground:     White  |  Background:       Red  |  Attribute:       Dim [0m[49m[39m
+[37m[42m[2m Foreground:     White  |  Background:     Green  |  Attribute:       Dim [0m[49m[39m
+[37m[43m[2m Foreground:     White  |  Background:    Yellow  |  Attribute:       Dim [0m[49m[39m
+[37m[44m[2m Foreground:     White  |  Background:      Blue  |  Attribute:       Dim [0m[49m[39m
+[37m[45m[2m Foreground:     White  |  Background:   Magenta  |  Attribute:       Dim [0m[49m[39m
+[37m[46m[2m Foreground:     White  |  Background:      Cyan  |  Attribute:       Dim [0m[49m[39m
+[37m[49m[2m Foreground:     White  |  Background:   Default  |  Attribute:       Dim [0m[49m[39m
+[39m[40m[2m Foreground:   Default  |  Background:     Black  |  Attribute:       Dim [0m[49m[39m
+[39m[41m[2m Foreground:   Default  |  Background:       Red  |  Attribute:       Dim [0m[49m[39m
+[39m[42m[2m Foreground:   Default  |  Background:     Green  |  Attribute:       Dim [0m[49m[39m
+[39m[43m[2m Foreground:   Default  |  Background:    Yellow  |  Attribute:       Dim [0m[49m[39m
+[39m[44m[2m Foreground:   Default  |  Background:      Blue  |  Attribute:       Dim [0m[49m[39m
+[39m[45m[2m Foreground:   Default  |  Background:   Magenta  |  Attribute:       Dim [0m[49m[39m
+[39m[46m[2m Foreground:   Default  |  Background:      Cyan  |  Attribute:       Dim [0m[49m[39m
+[39m[47m[2m Foreground:   Default  |  Background:     White  |  Attribute:       Dim [0m[49m[39m
+[30m[41m[3m Foreground:     Black  |  Background:       Red  |  Attribute:    Italic [0m[49m[39m
+[30m[42m[3m Foreground:     Black  |  Background:     Green  |  Attribute:    Italic [0m[49m[39m
+[30m[43m[3m Foreground:     Black  |  Background:    Yellow  |  Attribute:    Italic [0m[49m[39m
+[30m[44m[3m Foreground:     Black  |  Background:      Blue  |  Attribute:    Italic [0m[49m[39m
+[30m[45m[3m Foreground:     Black  |  Background:   Magenta  |  Attribute:    Italic [0m[49m[39m
+[30m[46m[3m Foreground:     Black  |  Background:      Cyan  |  Attribute:    Italic [0m[49m[39m
+[30m[47m[3m Foreground:     Black  |  Background:     White  |  Attribute:    Italic [0m[49m[39m
+[30m[49m[3m Foreground:     Black  |  Background:   Default  |  Attribute:    Italic [0m[49m[39m
+[31m[40m[3m Foreground:       Red  |  Background:     Black  |  Attribute:    Italic [0m[49m[39m
+[31m[42m[3m Foreground:       Red  |  Background:     Green  |  Attribute:    Italic [0m[49m[39m
+[31m[43m[3m Foreground:       Red  |  Background:    Yellow  |  Attribute:    Italic [0m[49m[39m
+[31m[44m[3m Foreground:       Red  |  Background:      Blue  |  Attribute:    Italic [0m[49m[39m
+[31m[45m[3m Foreground:       Red  |  Background:   Magenta  |  Attribute:    Italic [0m[49m[39m
+[31m[46m[3m Foreground:       Red  |  Background:      Cyan  |  Attribute:    Italic [0m[49m[39m
+[31m[47m[3m Foreground:       Red  |  Background:     White  |  Attribute:    Italic [0m[49m[39m
+[31m[49m[3m Foreground:       Red  |  Background:   Default  |  Attribute:    Italic [0m[49m[39m
+[32m[40m[3m Foreground:     Green  |  Background:     Black  |  Attribute:    Italic [0m[49m[39m
+[32m[41m[3m Foreground:     Green  |  Background:       Red  |  Attribute:    Italic [0m[49m[39m
+[32m[43m[3m Foreground:     Green  |  Background:    Yellow  |  Attribute:    Italic [0m[49m[39m
+[32m[44m[3m Foreground:     Green  |  Background:      Blue  |  Attribute:    Italic [0m[49m[39m
+[32m[45m[3m Foreground:     Green  |  Background:   Magenta  |  Attribute:    Italic [0m[49m[39m
+[32m[46m[3m Foreground:     Green  |  Background:      Cyan  |  Attribute:    Italic [0m[49m[39m
+[32m[47m[3m Foreground:     Green  |  Background:     White  |  Attribute:    Italic [0m[49m[39m
+[32m[49m[3m Foreground:     Green  |  Background:   Default  |  Attribute:    Italic [0m[49m[39m
+[33m[40m[3m Foreground:    Yellow  |  Background:     Black  |  Attribute:    Italic [0m[49m[39m
+[33m[41m[3m Foreground:    Yellow  |  Background:       Red  |  Attribute:    Italic [0m[49m[39m
+[33m[42m[3m Foreground:    Yellow  |  Background:     Green  |  Attribute:    Italic [0m[49m[39m
+[33m[44m[3m Foreground:    Yellow  |  Background:      Blue  |  Attribute:    Italic [0m[49m[39m
+[33m[45m[3m Foreground:    Yellow  |  Background:   Magenta  |  Attribute:    Italic [0m[49m[39m
+[33m[46m[3m Foreground:    Yellow  |  Background:      Cyan  |  Attribute:    Italic [0m[49m[39m
+[33m[47m[3m Foreground:    Yellow  |  Background:     White  |  Attribute:    Italic [0m[49m[39m
+[33m[49m[3m Foreground:    Yellow  |  Background:   Default  |  Attribute:    Italic [0m[49m[39m
+[34m[40m[3m Foreground:      Blue  |  Background:     Black  |  Attribute:    Italic [0m[49m[39m
+[34m[41m[3m Foreground:      Blue  |  Background:       Red  |  Attribute:    Italic [0m[49m[39m
+[34m[42m[3m Foreground:      Blue  |  Background:     Green  |  Attribute:    Italic [0m[49m[39m
+[34m[43m[3m Foreground:      Blue  |  Background:    Yellow  |  Attribute:    Italic [0m[49m[39m
+[34m[45m[3m Foreground:      Blue  |  Background:   Magenta  |  Attribute:    Italic [0m[49m[39m
+[34m[46m[3m Foreground:      Blue  |  Background:      Cyan  |  Attribute:    Italic [0m[49m[39m
+[34m[47m[3m Foreground:      Blue  |  Background:     White  |  Attribute:    Italic [0m[49m[39m
+[34m[49m[3m Foreground:      Blue  |  Background:   Default  |  Attribute:    Italic [0m[49m[39m
+[35m[40m[3m Foreground:   Magenta  |  Background:     Black  |  Attribute:    Italic [0m[49m[39m
+[35m[41m[3m Foreground:   Magenta  |  Background:       Red  |  Attribute:    Italic [0m[49m[39m
+[35m[42m[3m Foreground:   Magenta  |  Background:     Green  |  Attribute:    Italic [0m[49m[39m
+[35m[43m[3m Foreground:   Magenta  |  Background:    Yellow  |  Attribute:    Italic [0m[49m[39m
+[35m[44m[3m Foreground:   Magenta  |  Background:      Blue  |  Attribute:    Italic [0m[49m[39m
+[35m[46m[3m Foreground:   Magenta  |  Background:      Cyan  |  Attribute:    Italic [0m[49m[39m
+[35m[47m[3m Foreground:   Magenta  |  Background:     White  |  Attribute:    Italic [0m[49m[39m
+[35m[49m[3m Foreground:   Magenta  |  Background:   Default  |  Attribute:    Italic [0m[49m[39m
+[36m[40m[3m Foreground:      Cyan  |  Background:     Black  |  Attribute:    Italic [0m[49m[39m
+[36m[41m[3m Foreground:      Cyan  |  Background:       Red  |  Attribute:    Italic [0m[49m[39m
+[36m[42m[3m Foreground:      Cyan  |  Background:     Green  |  Attribute:    Italic [0m[49m[39m
+[36m[43m[3m Foreground:      Cyan  |  Background:    Yellow  |  Attribute:    Italic [0m[49m[39m
+[36m[44m[3m Foreground:      Cyan  |  Background:      Blue  |  Attribute:    Italic [0m[49m[39m
+[36m[45m[3m Foreground:      Cyan  |  Background:   Magenta  |  Attribute:    Italic [0m[49m[39m
+[36m[47m[3m Foreground:      Cyan  |  Background:     White  |  Attribute:    Italic [0m[49m[39m
+[36m[49m[3m Foreground:      Cyan  |  Background:   Default  |  Attribute:    Italic [0m[49m[39m
+[37m[40m[3m Foreground:     White  |  Background:     Black  |  Attribute:    Italic [0m[49m[39m
+[37m[41m[3m Foreground:     White  |  Background:       Red  |  Attribute:    Italic [0m[49m[39m
+[37m[42m[3m Foreground:     White  |  Background:     Green  |  Attribute:    Italic [0m[49m[39m
+[37m[43m[3m Foreground:     White  |  Background:    Yellow  |  Attribute:    Italic [0m[49m[39m
+[37m[44m[3m Foreground:     White  |  Background:      Blue  |  Attribute:    Italic [0m[49m[39m
+[37m[45m[3m Foreground:     White  |  Background:   Magenta  |  Attribute:    Italic [0m[49m[39m
+[37m[46m[3m Foreground:     White  |  Background:      Cyan  |  Attribute:    Italic [0m[49m[39m
+[37m[49m[3m Foreground:     White  |  Background:   Default  |  Attribute:    Italic [0m[49m[39m
+[39m[40m[3m Foreground:   Default  |  Background:     Black  |  Attribute:    Italic [0m[49m[39m
+[39m[41m[3m Foreground:   Default  |  Background:       Red  |  Attribute:    Italic [0m[49m[39m
+[39m[42m[3m Foreground:   Default  |  Background:     Green  |  Attribute:    Italic [0m[49m[39m
+[39m[43m[3m Foreground:   Default  |  Background:    Yellow  |  Attribute:    Italic [0m[49m[39m
+[39m[44m[3m Foreground:   Default  |  Background:      Blue  |  Attribute:    Italic [0m[49m[39m
+[39m[45m[3m Foreground:   Default  |  Background:   Magenta  |  Attribute:    Italic [0m[49m[39m
+[39m[46m[3m Foreground:   Default  |  Background:      Cyan  |  Attribute:    Italic [0m[49m[39m
+[39m[47m[3m Foreground:   Default  |  Background:     White  |  Attribute:    Italic [0m[49m[39m
+[30m[41m[4m Foreground:     Black  |  Background:       Red  |  Attribute: Underline [0m[49m[39m
+[30m[42m[4m Foreground:     Black  |  Background:     Green  |  Attribute: Underline [0m[49m[39m
+[30m[43m[4m Foreground:     Black  |  Background:    Yellow  |  Attribute: Underline [0m[49m[39m
+[30m[44m[4m Foreground:     Black  |  Background:      Blue  |  Attribute: Underline [0m[49m[39m
+[30m[45m[4m Foreground:     Black  |  Background:   Magenta  |  Attribute: Underline [0m[49m[39m
+[30m[46m[4m Foreground:     Black  |  Background:      Cyan  |  Attribute: Underline [0m[49m[39m
+[30m[47m[4m Foreground:     Black  |  Background:     White  |  Attribute: Underline [0m[49m[39m
+[30m[49m[4m Foreground:     Black  |  Background:   Default  |  Attribute: Underline [0m[49m[39m
+[31m[40m[4m Foreground:       Red  |  Background:     Black  |  Attribute: Underline [0m[49m[39m
+[31m[42m[4m Foreground:       Red  |  Background:     Green  |  Attribute: Underline [0m[49m[39m
+[31m[43m[4m Foreground:       Red  |  Background:    Yellow  |  Attribute: Underline [0m[49m[39m
+[31m[44m[4m Foreground:       Red  |  Background:      Blue  |  Attribute: Underline [0m[49m[39m
+[31m[45m[4m Foreground:       Red  |  Background:   Magenta  |  Attribute: Underline [0m[49m[39m
+[31m[46m[4m Foreground:       Red  |  Background:      Cyan  |  Attribute: Underline [0m[49m[39m
+[31m[47m[4m Foreground:       Red  |  Background:     White  |  Attribute: Underline [0m[49m[39m
+[31m[49m[4m Foreground:       Red  |  Background:   Default  |  Attribute: Underline [0m[49m[39m
+[32m[40m[4m Foreground:     Green  |  Background:     Black  |  Attribute: Underline [0m[49m[39m
+[32m[41m[4m Foreground:     Green  |  Background:       Red  |  Attribute: Underline [0m[49m[39m
+[32m[43m[4m Foreground:     Green  |  Background:    Yellow  |  Attribute: Underline [0m[49m[39m
+[32m[44m[4m Foreground:     Green  |  Background:      Blue  |  Attribute: Underline [0m[49m[39m
+[32m[45m[4m Foreground:     Green  |  Background:   Magenta  |  Attribute: Underline [0m[49m[39m
+[32m[46m[4m Foreground:     Green  |  Background:      Cyan  |  Attribute: Underline [0m[49m[39m
+[32m[47m[4m Foreground:     Green  |  Background:     White  |  Attribute: Underline [0m[49m[39m
+[32m[49m[4m Foreground:     Green  |  Background:   Default  |  Attribute: Underline [0m[49m[39m
+[33m[40m[4m Foreground:    Yellow  |  Background:     Black  |  Attribute: Underline [0m[49m[39m
+[33m[41m[4m Foreground:    Yellow  |  Background:       Red  |  Attribute: Underline [0m[49m[39m
+[33m[42m[4m Foreground:    Yellow  |  Background:     Green  |  Attribute: Underline [0m[49m[39m
+[33m[44m[4m Foreground:    Yellow  |  Background:      Blue  |  Attribute: Underline [0m[49m[39m
+[33m[45m[4m Foreground:    Yellow  |  Background:   Magenta  |  Attribute: Underline [0m[49m[39m
+[33m[46m[4m Foreground:    Yellow  |  Background:      Cyan  |  Attribute: Underline [0m[49m[39m
+[33m[47m[4m Foreground:    Yellow  |  Background:     White  |  Attribute: Underline [0m[49m[39m
+[33m[49m[4m Foreground:    Yellow  |  Background:   Default  |  Attribute: Underline [0m[49m[39m
+[34m[40m[4m Foreground:      Blue  |  Background:     Black  |  Attribute: Underline [0m[49m[39m
+[34m[41m[4m Foreground:      Blue  |  Background:       Red  |  Attribute: Underline [0m[49m[39m
+[34m[42m[4m Foreground:      Blue  |  Background:     Green  |  Attribute: Underline [0m[49m[39m
+[34m[43m[4m Foreground:      Blue  |  Background:    Yellow  |  Attribute: Underline [0m[49m[39m
+[34m[45m[4m Foreground:      Blue  |  Background:   Magenta  |  Attribute: Underline [0m[49m[39m
+[34m[46m[4m Foreground:      Blue  |  Background:      Cyan  |  Attribute: Underline [0m[49m[39m
+[34m[47m[4m Foreground:      Blue  |  Background:     White  |  Attribute: Underline [0m[49m[39m
+[34m[49m[4m Foreground:      Blue  |  Background:   Default  |  Attribute: Underline [0m[49m[39m
+[35m[40m[4m Foreground:   Magenta  |  Background:     Black  |  Attribute: Underline [0m[49m[39m
+[35m[41m[4m Foreground:   Magenta  |  Background:       Red  |  Attribute: Underline [0m[49m[39m
+[35m[42m[4m Foreground:   Magenta  |  Background:     Green  |  Attribute: Underline [0m[49m[39m
+[35m[43m[4m Foreground:   Magenta  |  Background:    Yellow  |  Attribute: Underline [0m[49m[39m
+[35m[44m[4m Foreground:   Magenta  |  Background:      Blue  |  Attribute: Underline [0m[49m[39m
+[35m[46m[4m Foreground:   Magenta  |  Background:      Cyan  |  Attribute: Underline [0m[49m[39m
+[35m[47m[4m Foreground:   Magenta  |  Background:     White  |  Attribute: Underline [0m[49m[39m
+[35m[49m[4m Foreground:   Magenta  |  Background:   Default  |  Attribute: Underline [0m[49m[39m
+[36m[40m[4m Foreground:      Cyan  |  Background:     Black  |  Attribute: Underline [0m[49m[39m
+[36m[41m[4m Foreground:      Cyan  |  Background:       Red  |  Attribute: Underline [0m[49m[39m
+[36m[42m[4m Foreground:      Cyan  |  Background:     Green  |  Attribute: Underline [0m[49m[39m
+[36m[43m[4m Foreground:      Cyan  |  Background:    Yellow  |  Attribute: Underline [0m[49m[39m
+[36m[44m[4m Foreground:      Cyan  |  Background:      Blue  |  Attribute: Underline [0m[49m[39m
+[36m[45m[4m Foreground:      Cyan  |  Background:   Magenta  |  Attribute: Underline [0m[49m[39m
+[36m[47m[4m Foreground:      Cyan  |  Background:     White  |  Attribute: Underline [0m[49m[39m
+[36m[49m[4m Foreground:      Cyan  |  Background:   Default  |  Attribute: Underline [0m[49m[39m
+[37m[40m[4m Foreground:     White  |  Background:     Black  |  Attribute: Underline [0m[49m[39m
+[37m[41m[4m Foreground:     White  |  Background:       Red  |  Attribute: Underline [0m[49m[39m
+[37m[42m[4m Foreground:     White  |  Background:     Green  |  Attribute: Underline [0m[49m[39m
+[37m[43m[4m Foreground:     White  |  Background:    Yellow  |  Attribute: Underline [0m[49m[39m
+[37m[44m[4m Foreground:     White  |  Background:      Blue  |  Attribute: Underline [0m[49m[39m
+[37m[45m[4m Foreground:     White  |  Background:   Magenta  |  Attribute: Underline [0m[49m[39m
+[37m[46m[4m Foreground:     White  |  Background:      Cyan  |  Attribute: Underline [0m[49m[39m
+[37m[49m[4m Foreground:     White  |  Background:   Default  |  Attribute: Underline [0m[49m[39m
+[39m[40m[4m Foreground:   Default  |  Background:     Black  |  Attribute: Underline [0m[49m[39m
+[39m[41m[4m Foreground:   Default  |  Background:       Red  |  Attribute: Underline [0m[49m[39m
+[39m[42m[4m Foreground:   Default  |  Background:     Green  |  Attribute: Underline [0m[49m[39m
+[39m[43m[4m Foreground:   Default  |  Background:    Yellow  |  Attribute: Underline [0m[49m[39m
+[39m[44m[4m Foreground:   Default  |  Background:      Blue  |  Attribute: Underline [0m[49m[39m
+[39m[45m[4m Foreground:   Default  |  Background:   Magenta  |  Attribute: Underline [0m[49m[39m
+[39m[46m[4m Foreground:   Default  |  Background:      Cyan  |  Attribute: Underline [0m[49m[39m
+[39m[47m[4m Foreground:   Default  |  Background:     White  |  Attribute: Underline [0m[49m[39m
+[30m[41m[5m Foreground:     Black  |  Background:       Red  |  Attribute:     Blink [0m[49m[39m
+[30m[42m[5m Foreground:     Black  |  Background:     Green  |  Attribute:     Blink [0m[49m[39m
+[30m[43m[5m Foreground:     Black  |  Background:    Yellow  |  Attribute:     Blink [0m[49m[39m
+[30m[44m[5m Foreground:     Black  |  Background:      Blue  |  Attribute:     Blink [0m[49m[39m
+[30m[45m[5m Foreground:     Black  |  Background:   Magenta  |  Attribute:     Blink [0m[49m[39m
+[30m[46m[5m Foreground:     Black  |  Background:      Cyan  |  Attribute:     Blink [0m[49m[39m
+[30m[47m[5m Foreground:     Black  |  Background:     White  |  Attribute:     Blink [0m[49m[39m
+[30m[49m[5m Foreground:     Black  |  Background:   Default  |  Attribute:     Blink [0m[49m[39m
+[31m[40m[5m Foreground:       Red  |  Background:     Black  |  Attribute:     Blink [0m[49m[39m
+[31m[42m[5m Foreground:       Red  |  Background:     Green  |  Attribute:     Blink [0m[49m[39m
+[31m[43m[5m Foreground:       Red  |  Background:    Yellow  |  Attribute:     Blink [0m[49m[39m
+[31m[44m[5m Foreground:       Red  |  Background:      Blue  |  Attribute:     Blink [0m[49m[39m
+[31m[45m[5m Foreground:       Red  |  Background:   Magenta  |  Attribute:     Blink [0m[49m[39m
+[31m[46m[5m Foreground:       Red  |  Background:      Cyan  |  Attribute:     Blink [0m[49m[39m
+[31m[47m[5m Foreground:       Red  |  Background:     White  |  Attribute:     Blink [0m[49m[39m
+[31m[49m[5m Foreground:       Red  |  Background:   Default  |  Attribute:     Blink [0m[49m[39m
+[32m[40m[5m Foreground:     Green  |  Background:     Black  |  Attribute:     Blink [0m[49m[39m
+[32m[41m[5m Foreground:     Green  |  Background:       Red  |  Attribute:     Blink [0m[49m[39m
+[32m[43m[5m Foreground:     Green  |  Background:    Yellow  |  Attribute:     Blink [0m[49m[39m
+[32m[44m[5m Foreground:     Green  |  Background:      Blue  |  Attribute:     Blink [0m[49m[39m
+[32m[45m[5m Foreground:     Green  |  Background:   Magenta  |  Attribute:     Blink [0m[49m[39m
+[32m[46m[5m Foreground:     Green  |  Background:      Cyan  |  Attribute:     Blink [0m[49m[39m
+[32m[47m[5m Foreground:     Green  |  Background:     White  |  Attribute:     Blink [0m[49m[39m
+[32m[49m[5m Foreground:     Green  |  Background:   Default  |  Attribute:     Blink [0m[49m[39m
+[33m[40m[5m Foreground:    Yellow  |  Background:     Black  |  Attribute:     Blink [0m[49m[39m
+[33m[41m[5m Foreground:    Yellow  |  Background:       Red  |  Attribute:     Blink [0m[49m[39m
+[33m[42m[5m Foreground:    Yellow  |  Background:     Green  |  Attribute:     Blink [0m[49m[39m
+[33m[44m[5m Foreground:    Yellow  |  Background:      Blue  |  Attribute:     Blink [0m[49m[39m
+[33m[45m[5m Foreground:    Yellow  |  Background:   Magenta  |  Attribute:     Blink [0m[49m[39m
+[33m[46m[5m Foreground:    Yellow  |  Background:      Cyan  |  Attribute:     Blink [0m[49m[39m
+[33m[47m[5m Foreground:    Yellow  |  Background:     White  |  Attribute:     Blink [0m[49m[39m
+[33m[49m[5m Foreground:    Yellow  |  Background:   Default  |  Attribute:     Blink [0m[49m[39m
+[34m[40m[5m Foreground:      Blue  |  Background:     Black  |  Attribute:     Blink [0m[49m[39m
+[34m[41m[5m Foreground:      Blue  |  Background:       Red  |  Attribute:     Blink [0m[49m[39m
+[34m[42m[5m Foreground:      Blue  |  Background:     Green  |  Attribute:     Blink [0m[49m[39m
+[34m[43m[5m Foreground:      Blue  |  Background:    Yellow  |  Attribute:     Blink [0m[49m[39m
+[34m[45m[5m Foreground:      Blue  |  Background:   Magenta  |  Attribute:     Blink [0m[49m[39m
+[34m[46m[5m Foreground:      Blue  |  Background:      Cyan  |  Attribute:     Blink [0m[49m[39m
+[34m[47m[5m Foreground:      Blue  |  Background:     White  |  Attribute:     Blink [0m[49m[39m
+[34m[49m[5m Foreground:      Blue  |  Background:   Default  |  Attribute:     Blink [0m[49m[39m
+[35m[40m[5m Foreground:   Magenta  |  Background:     Black  |  Attribute:     Blink [0m[49m[39m
+[35m[41m[5m Foreground:   Magenta  |  Background:       Red  |  Attribute:     Blink [0m[49m[39m
+[35m[42m[5m Foreground:   Magenta  |  Background:     Green  |  Attribute:     Blink [0m[49m[39m
+[35m[43m[5m Foreground:   Magenta  |  Background:    Yellow  |  Attribute:     Blink [0m[49m[39m
+[35m[44m[5m Foreground:   Magenta  |  Background:      Blue  |  Attribute:     Blink [0m[49m[39m
+[35m[46m[5m Foreground:   Magenta  |  Background:      Cyan  |  Attribute:     Blink [0m[49m[39m
+[35m[47m[5m Foreground:   Magenta  |  Background:     White  |  Attribute:     Blink [0m[49m[39m
+[35m[49m[5m Foreground:   Magenta  |  Background:   Default  |  Attribute:     Blink [0m[49m[39m
+[36m[40m[5m Foreground:      Cyan  |  Background:     Black  |  Attribute:     Blink [0m[49m[39m
+[36m[41m[5m Foreground:      Cyan  |  Background:       Red  |  Attribute:     Blink [0m[49m[39m
+[36m[42m[5m Foreground:      Cyan  |  Background:     Green  |  Attribute:     Blink [0m[49m[39m
+[36m[43m[5m Foreground:      Cyan  |  Background:    Yellow  |  Attribute:     Blink [0m[49m[39m
+[36m[44m[5m Foreground:      Cyan  |  Background:      Blue  |  Attribute:     Blink [0m[49m[39m
+[36m[45m[5m Foreground:      Cyan  |  Background:   Magenta  |  Attribute:     Blink [0m[49m[39m
+[36m[47m[5m Foreground:      Cyan  |  Background:     White  |  Attribute:     Blink [0m[49m[39m
+[36m[49m[5m Foreground:      Cyan  |  Background:   Default  |  Attribute:     Blink [0m[49m[39m
+[37m[40m[5m Foreground:     White  |  Background:     Black  |  Attribute:     Blink [0m[49m[39m
+[37m[41m[5m Foreground:     White  |  Background:       Red  |  Attribute:     Blink [0m[49m[39m
+[37m[42m[5m Foreground:     White  |  Background:     Green  |  Attribute:     Blink [0m[49m[39m
+[37m[43m[5m Foreground:     White  |  Background:    Yellow  |  Attribute:     Blink [0m[49m[39m
+[37m[44m[5m Foreground:     White  |  Background:      Blue  |  Attribute:     Blink [0m[49m[39m
+[37m[45m[5m Foreground:     White  |  Background:   Magenta  |  Attribute:     Blink [0m[49m[39m
+[37m[46m[5m Foreground:     White  |  Background:      Cyan  |  Attribute:     Blink [0m[49m[39m
+[37m[49m[5m Foreground:     White  |  Background:   Default  |  Attribute:     Blink [0m[49m[39m
+[39m[40m[5m Foreground:   Default  |  Background:     Black  |  Attribute:     Blink [0m[49m[39m
+[39m[41m[5m Foreground:   Default  |  Background:       Red  |  Attribute:     Blink [0m[49m[39m
+[39m[42m[5m Foreground:   Default  |  Background:     Green  |  Attribute:     Blink [0m[49m[39m
+[39m[43m[5m Foreground:   Default  |  Background:    Yellow  |  Attribute:     Blink [0m[49m[39m
+[39m[44m[5m Foreground:   Default  |  Background:      Blue  |  Attribute:     Blink [0m[49m[39m
+[39m[45m[5m Foreground:   Default  |  Background:   Magenta  |  Attribute:     Blink [0m[49m[39m
+[39m[46m[5m Foreground:   Default  |  Background:      Cyan  |  Attribute:     Blink [0m[49m[39m
+[39m[47m[5m Foreground:   Default  |  Background:     White  |  Attribute:     Blink [0m[49m[39m
+[30m[41m[6m Foreground:     Black  |  Background:       Red  |  Attribute:RapidBlink [0m[49m[39m
+[30m[42m[6m Foreground:     Black  |  Background:     Green  |  Attribute:RapidBlink [0m[49m[39m
+[30m[43m[6m Foreground:     Black  |  Background:    Yellow  |  Attribute:RapidBlink [0m[49m[39m
+[30m[44m[6m Foreground:     Black  |  Background:      Blue  |  Attribute:RapidBlink [0m[49m[39m
+[30m[45m[6m Foreground:     Black  |  Background:   Magenta  |  Attribute:RapidBlink [0m[49m[39m
+[30m[46m[6m Foreground:     Black  |  Background:      Cyan  |  Attribute:RapidBlink [0m[49m[39m
+[30m[47m[6m Foreground:     Black  |  Background:     White  |  Attribute:RapidBlink [0m[49m[39m
+[30m[49m[6m Foreground:     Black  |  Background:   Default  |  Attribute:RapidBlink [0m[49m[39m
+[31m[40m[6m Foreground:       Red  |  Background:     Black  |  Attribute:RapidBlink [0m[49m[39m
+[31m[42m[6m Foreground:       Red  |  Background:     Green  |  Attribute:RapidBlink [0m[49m[39m
+[31m[43m[6m Foreground:       Red  |  Background:    Yellow  |  Attribute:RapidBlink [0m[49m[39m
+[31m[44m[6m Foreground:       Red  |  Background:      Blue  |  Attribute:RapidBlink [0m[49m[39m
+[31m[45m[6m Foreground:       Red  |  Background:   Magenta  |  Attribute:RapidBlink [0m[49m[39m
+[31m[46m[6m Foreground:       Red  |  Background:      Cyan  |  Attribute:RapidBlink [0m[49m[39m
+[31m[47m[6m Foreground:       Red  |  Background:     White  |  Attribute:RapidBlink [0m[49m[39m
+[31m[49m[6m Foreground:       Red  |  Background:   Default  |  Attribute:RapidBlink [0m[49m[39m
+[32m[40m[6m Foreground:     Green  |  Background:     Black  |  Attribute:RapidBlink [0m[49m[39m
+[32m[41m[6m Foreground:     Green  |  Background:       Red  |  Attribute:RapidBlink [0m[49m[39m
+[32m[43m[6m Foreground:     Green  |  Background:    Yellow  |  Attribute:RapidBlink [0m[49m[39m
+[32m[44m[6m Foreground:     Green  |  Background:      Blue  |  Attribute:RapidBlink [0m[49m[39m
+[32m[45m[6m Foreground:     Green  |  Background:   Magenta  |  Attribute:RapidBlink [0m[49m[39m
+[32m[46m[6m Foreground:     Green  |  Background:      Cyan  |  Attribute:RapidBlink [0m[49m[39m
+[32m[47m[6m Foreground:     Green  |  Background:     White  |  Attribute:RapidBlink [0m[49m[39m
+[32m[49m[6m Foreground:     Green  |  Background:   Default  |  Attribute:RapidBlink [0m[49m[39m
+[33m[40m[6m Foreground:    Yellow  |  Background:     Black  |  Attribute:RapidBlink [0m[49m[39m
+[33m[41m[6m Foreground:    Yellow  |  Background:       Red  |  Attribute:RapidBlink [0m[49m[39m
+[33m[42m[6m Foreground:    Yellow  |  Background:     Green  |  Attribute:RapidBlink [0m[49m[39m
+[33m[44m[6m Foreground:    Yellow  |  Background:      Blue  |  Attribute:RapidBlink [0m[49m[39m
+[33m[45m[6m Foreground:    Yellow  |  Background:   Magenta  |  Attribute:RapidBlink [0m[49m[39m
+[33m[46m[6m Foreground:    Yellow  |  Background:      Cyan  |  Attribute:RapidBlink [0m[49m[39m
+[33m[47m[6m Foreground:    Yellow  |  Background:     White  |  Attribute:RapidBlink [0m[49m[39m
+[33m[49m[6m Foreground:    Yellow  |  Background:   Default  |  Attribute:RapidBlink [0m[49m[39m
+[34m[40m[6m Foreground:      Blue  |  Background:     Black  |  Attribute:RapidBlink [0m[49m[39m
+[34m[41m[6m Foreground:      Blue  |  Background:       Red  |  Attribute:RapidBlink [0m[49m[39m
+[34m[42m[6m Foreground:      Blue  |  Background:     Green  |  Attribute:RapidBlink [0m[49m[39m
+[34m[43m[6m Foreground:      Blue  |  Background:    Yellow  |  Attribute:RapidBlink [0m[49m[39m
+[34m[45m[6m Foreground:      Blue  |  Background:   Magenta  |  Attribute:RapidBlink [0m[49m[39m
+[34m[46m[6m Foreground:      Blue  |  Background:      Cyan  |  Attribute:RapidBlink [0m[49m[39m
+[34m[47m[6m Foreground:      Blue  |  Background:     White  |  Attribute:RapidBlink [0m[49m[39m
+[34m[49m[6m Foreground:      Blue  |  Background:   Default  |  Attribute:RapidBlink [0m[49m[39m
+[35m[40m[6m Foreground:   Magenta  |  Background:     Black  |  Attribute:RapidBlink [0m[49m[39m
+[35m[41m[6m Foreground:   Magenta  |  Background:       Red  |  Attribute:RapidBlink [0m[49m[39m
+[35m[42m[6m Foreground:   Magenta  |  Background:     Green  |  Attribute:RapidBlink [0m[49m[39m
+[35m[43m[6m Foreground:   Magenta  |  Background:    Yellow  |  Attribute:RapidBlink [0m[49m[39m
+[35m[44m[6m Foreground:   Magenta  |  Background:      Blue  |  Attribute:RapidBlink [0m[49m[39m
+[35m[46m[6m Foreground:   Magenta  |  Background:      Cyan  |  Attribute:RapidBlink [0m[49m[39m
+[35m[47m[6m Foreground:   Magenta  |  Background:     White  |  Attribute:RapidBlink [0m[49m[39m
+[35m[49m[6m Foreground:   Magenta  |  Background:   Default  |  Attribute:RapidBlink [0m[49m[39m
+[36m[40m[6m Foreground:      Cyan  |  Background:     Black  |  Attribute:RapidBlink [0m[49m[39m
+[36m[41m[6m Foreground:      Cyan  |  Background:       Red  |  Attribute:RapidBlink [0m[49m[39m
+[36m[42m[6m Foreground:      Cyan  |  Background:     Green  |  Attribute:RapidBlink [0m[49m[39m
+[36m[43m[6m Foreground:      Cyan  |  Background:    Yellow  |  Attribute:RapidBlink [0m[49m[39m
+[36m[44m[6m Foreground:      Cyan  |  Background:      Blue  |  Attribute:RapidBlink [0m[49m[39m
+[36m[45m[6m Foreground:      Cyan  |  Background:   Magenta  |  Attribute:RapidBlink [0m[49m[39m
+[36m[47m[6m Foreground:      Cyan  |  Background:     White  |  Attribute:RapidBlink [0m[49m[39m
+[36m[49m[6m Foreground:      Cyan  |  Background:   Default  |  Attribute:RapidBlink [0m[49m[39m
+[37m[40m[6m Foreground:     White  |  Background:     Black  |  Attribute:RapidBlink [0m[49m[39m
+[37m[41m[6m Foreground:     White  |  Background:       Red  |  Attribute:RapidBlink [0m[49m[39m
+[37m[42m[6m Foreground:     White  |  Background:     Green  |  Attribute:RapidBlink [0m[49m[39m
+[37m[43m[6m Foreground:     White  |  Background:    Yellow  |  Attribute:RapidBlink [0m[49m[39m
+[37m[44m[6m Foreground:     White  |  Background:      Blue  |  Attribute:RapidBlink [0m[49m[39m
+[37m[45m[6m Foreground:     White  |  Background:   Magenta  |  Attribute:RapidBlink [0m[49m[39m
+[37m[46m[6m Foreground:     White  |  Background:      Cyan  |  Attribute:RapidBlink [0m[49m[39m
+[37m[49m[6m Foreground:     White  |  Background:   Default  |  Attribute:RapidBlink [0m[49m[39m
+[39m[40m[6m Foreground:   Default  |  Background:     Black  |  Attribute:RapidBlink [0m[49m[39m
+[39m[41m[6m Foreground:   Default  |  Background:       Red  |  Attribute:RapidBlink [0m[49m[39m
+[39m[42m[6m Foreground:   Default  |  Background:     Green  |  Attribute:RapidBlink [0m[49m[39m
+[39m[43m[6m Foreground:   Default  |  Background:    Yellow  |  Attribute:RapidBlink [0m[49m[39m
+[39m[44m[6m Foreground:   Default  |  Background:      Blue  |  Attribute:RapidBlink [0m[49m[39m
+[39m[45m[6m Foreground:   Default  |  Background:   Magenta  |  Attribute:RapidBlink [0m[49m[39m
+[39m[46m[6m Foreground:   Default  |  Background:      Cyan  |  Attribute:RapidBlink [0m[49m[39m
+[39m[47m[6m Foreground:   Default  |  Background:     White  |  Attribute:RapidBlink [0m[49m[39m
+[30m[41m[7m Foreground:     Black  |  Background:       Red  |  Attribute:   Reverse [0m[49m[39m
+[30m[42m[7m Foreground:     Black  |  Background:     Green  |  Attribute:   Reverse [0m[49m[39m
+[30m[43m[7m Foreground:     Black  |  Background:    Yellow  |  Attribute:   Reverse [0m[49m[39m
+[30m[44m[7m Foreground:     Black  |  Background:      Blue  |  Attribute:   Reverse [0m[49m[39m
+[30m[45m[7m Foreground:     Black  |  Background:   Magenta  |  Attribute:   Reverse [0m[49m[39m
+[30m[46m[7m Foreground:     Black  |  Background:      Cyan  |  Attribute:   Reverse [0m[49m[39m
+[30m[47m[7m Foreground:     Black  |  Background:     White  |  Attribute:   Reverse [0m[49m[39m
+[30m[49m[7m Foreground:     Black  |  Background:   Default  |  Attribute:   Reverse [0m[49m[39m
+[31m[40m[7m Foreground:       Red  |  Background:     Black  |  Attribute:   Reverse [0m[49m[39m
+[31m[42m[7m Foreground:       Red  |  Background:     Green  |  Attribute:   Reverse [0m[49m[39m
+[31m[43m[7m Foreground:       Red  |  Background:    Yellow  |  Attribute:   Reverse [0m[49m[39m
+[31m[44m[7m Foreground:       Red  |  Background:      Blue  |  Attribute:   Reverse [0m[49m[39m
+[31m[45m[7m Foreground:       Red  |  Background:   Magenta  |  Attribute:   Reverse [0m[49m[39m
+[31m[46m[7m Foreground:       Red  |  Background:      Cyan  |  Attribute:   Reverse [0m[49m[39m
+[31m[47m[7m Foreground:       Red  |  Background:     White  |  Attribute:   Reverse [0m[49m[39m
+[31m[49m[7m Foreground:       Red  |  Background:   Default  |  Attribute:   Reverse [0m[49m[39m
+[32m[40m[7m Foreground:     Green  |  Background:     Black  |  Attribute:   Reverse [0m[49m[39m
+[32m[41m[7m Foreground:     Green  |  Background:       Red  |  Attribute:   Reverse [0m[49m[39m
+[32m[43m[7m Foreground:     Green  |  Background:    Yellow  |  Attribute:   Reverse [0m[49m[39m
+[32m[44m[7m Foreground:     Green  |  Background:      Blue  |  Attribute:   Reverse [0m[49m[39m
+[32m[45m[7m Foreground:     Green  |  Background:   Magenta  |  Attribute:   Reverse [0m[49m[39m
+[32m[46m[7m Foreground:     Green  |  Background:      Cyan  |  Attribute:   Reverse [0m[49m[39m
+[32m[47m[7m Foreground:     Green  |  Background:     White  |  Attribute:   Reverse [0m[49m[39m
+[32m[49m[7m Foreground:     Green  |  Background:   Default  |  Attribute:   Reverse [0m[49m[39m
+[33m[40m[7m Foreground:    Yellow  |  Background:     Black  |  Attribute:   Reverse [0m[49m[39m
+[33m[41m[7m Foreground:    Yellow  |  Background:       Red  |  Attribute:   Reverse [0m[49m[39m
+[33m[42m[7m Foreground:    Yellow  |  Background:     Green  |  Attribute:   Reverse [0m[49m[39m
+[33m[44m[7m Foreground:    Yellow  |  Background:      Blue  |  Attribute:   Reverse [0m[49m[39m
+[33m[45m[7m Foreground:    Yellow  |  Background:   Magenta  |  Attribute:   Reverse [0m[49m[39m
+[33m[46m[7m Foreground:    Yellow  |  Background:      Cyan  |  Attribute:   Reverse [0m[49m[39m
+[33m[47m[7m Foreground:    Yellow  |  Background:     White  |  Attribute:   Reverse [0m[49m[39m
+[33m[49m[7m Foreground:    Yellow  |  Background:   Default  |  Attribute:   Reverse [0m[49m[39m
+[34m[40m[7m Foreground:      Blue  |  Background:     Black  |  Attribute:   Reverse [0m[49m[39m
+[34m[41m[7m Foreground:      Blue  |  Background:       Red  |  Attribute:   Reverse [0m[49m[39m
+[34m[42m[7m Foreground:      Blue  |  Background:     Green  |  Attribute:   Reverse [0m[49m[39m
+[34m[43m[7m Foreground:      Blue  |  Background:    Yellow  |  Attribute:   Reverse [0m[49m[39m
+[34m[45m[7m Foreground:      Blue  |  Background:   Magenta  |  Attribute:   Reverse [0m[49m[39m
+[34m[46m[7m Foreground:      Blue  |  Background:      Cyan  |  Attribute:   Reverse [0m[49m[39m
+[34m[47m[7m Foreground:      Blue  |  Background:     White  |  Attribute:   Reverse [0m[49m[39m
+[34m[49m[7m Foreground:      Blue  |  Background:   Default  |  Attribute:   Reverse [0m[49m[39m
+[35m[40m[7m Foreground:   Magenta  |  Background:     Black  |  Attribute:   Reverse [0m[49m[39m
+[35m[41m[7m Foreground:   Magenta  |  Background:       Red  |  Attribute:   Reverse [0m[49m[39m
+[35m[42m[7m Foreground:   Magenta  |  Background:     Green  |  Attribute:   Reverse [0m[49m[39m
+[35m[43m[7m Foreground:   Magenta  |  Background:    Yellow  |  Attribute:   Reverse [0m[49m[39m
+[35m[44m[7m Foreground:   Magenta  |  Background:      Blue  |  Attribute:   Reverse [0m[49m[39m
+[35m[46m[7m Foreground:   Magenta  |  Background:      Cyan  |  Attribute:   Reverse [0m[49m[39m
+[35m[47m[7m Foreground:   Magenta  |  Background:     White  |  Attribute:   Reverse [0m[49m[39m
+[35m[49m[7m Foreground:   Magenta  |  Background:   Default  |  Attribute:   Reverse [0m[49m[39m
+[36m[40m[7m Foreground:      Cyan  |  Background:     Black  |  Attribute:   Reverse [0m[49m[39m
+[36m[41m[7m Foreground:      Cyan  |  Background:       Red  |  Attribute:   Reverse [0m[49m[39m
+[36m[42m[7m Foreground:      Cyan  |  Background:     Green  |  Attribute:   Reverse [0m[49m[39m
+[36m[43m[7m Foreground:      Cyan  |  Background:    Yellow  |  Attribute:   Reverse [0m[49m[39m
+[36m[44m[7m Foreground:      Cyan  |  Background:      Blue  |  Attribute:   Reverse [0m[49m[39m
+[36m[45m[7m Foreground:      Cyan  |  Background:   Magenta  |  Attribute:   Reverse [0m[49m[39m
+[36m[47m[7m Foreground:      Cyan  |  Background:     White  |  Attribute:   Reverse [0m[49m[39m
+[36m[49m[7m Foreground:      Cyan  |  Background:   Default  |  Attribute:   Reverse [0m[49m[39m
+[37m[40m[7m Foreground:     White  |  Background:     Black  |  Attribute:   Reverse [0m[49m[39m
+[37m[41m[7m Foreground:     White  |  Background:       Red  |  Attribute:   Reverse [0m[49m[39m
+[37m[42m[7m Foreground:     White  |  Background:     Green  |  Attribute:   Reverse [0m[49m[39m
+[37m[43m[7m Foreground:     White  |  Background:    Yellow  |  Attribute:   Reverse [0m[49m[39m
+[37m[44m[7m Foreground:     White  |  Background:      Blue  |  Attribute:   Reverse [0m[49m[39m
+[37m[45m[7m Foreground:     White  |  Background:   Magenta  |  Attribute:   Reverse [0m[49m[39m
+[37m[46m[7m Foreground:     White  |  Background:      Cyan  |  Attribute:   Reverse [0m[49m[39m
+[37m[49m[7m Foreground:     White  |  Background:   Default  |  Attribute:   Reverse [0m[49m[39m
+[39m[40m[7m Foreground:   Default  |  Background:     Black  |  Attribute:   Reverse [0m[49m[39m
+[39m[41m[7m Foreground:   Default  |  Background:       Red  |  Attribute:   Reverse [0m[49m[39m
+[39m[42m[7m Foreground:   Default  |  Background:     Green  |  Attribute:   Reverse [0m[49m[39m
+[39m[43m[7m Foreground:   Default  |  Background:    Yellow  |  Attribute:   Reverse [0m[49m[39m
+[39m[44m[7m Foreground:   Default  |  Background:      Blue  |  Attribute:   Reverse [0m[49m[39m
+[39m[45m[7m Foreground:   Default  |  Background:   Magenta  |  Attribute:   Reverse [0m[49m[39m
+[39m[46m[7m Foreground:   Default  |  Background:      Cyan  |  Attribute:   Reverse [0m[49m[39m
+[39m[47m[7m Foreground:   Default  |  Background:     White  |  Attribute:   Reverse [0m[49m[39m
+[30m[41m Foreground:     Black  |  Background:       Red  |  Attribute:      None [49m[39m
+[30m[42m Foreground:     Black  |  Background:     Green  |  Attribute:      None [49m[39m
+[30m[43m Foreground:     Black  |  Background:    Yellow  |  Attribute:      None [49m[39m
+[30m[44m Foreground:     Black  |  Background:      Blue  |  Attribute:      None [49m[39m
+[30m[45m Foreground:     Black  |  Background:   Magenta  |  Attribute:      None [49m[39m
+[30m[46m Foreground:     Black  |  Background:      Cyan  |  Attribute:      None [49m[39m
+[30m[47m Foreground:     Black  |  Background:     White  |  Attribute:      None [49m[39m
+[30m[49m Foreground:     Black  |  Background:   Default  |  Attribute:      None [49m[39m
+[31m[40m Foreground:       Red  |  Background:     Black  |  Attribute:      None [49m[39m
+[31m[42m Foreground:       Red  |  Background:     Green  |  Attribute:      None [49m[39m
+[31m[43m Foreground:       Red  |  Background:    Yellow  |  Attribute:      None [49m[39m
+[31m[44m Foreground:       Red  |  Background:      Blue  |  Attribute:      None [49m[39m
+[31m[45m Foreground:       Red  |  Background:   Magenta  |  Attribute:      None [49m[39m
+[31m[46m Foreground:       Red  |  Background:      Cyan  |  Attribute:      None [49m[39m
+[31m[47m Foreground:       Red  |  Background:     White  |  Attribute:      None [49m[39m
+[31m[49m Foreground:       Red  |  Background:   Default  |  Attribute:      None [49m[39m
+[32m[40m Foreground:     Green  |  Background:     Black  |  Attribute:      None [49m[39m
+[32m[41m Foreground:     Green  |  Background:       Red  |  Attribute:      None [49m[39m
+[32m[43m Foreground:     Green  |  Background:    Yellow  |  Attribute:      None [49m[39m
+[32m[44m Foreground:     Green  |  Background:      Blue  |  Attribute:      None [49m[39m
+[32m[45m Foreground:     Green  |  Background:   Magenta  |  Attribute:      None [49m[39m
+[32m[46m Foreground:     Green  |  Background:      Cyan  |  Attribute:      None [49m[39m
+[32m[47m Foreground:     Green  |  Background:     White  |  Attribute:      None [49m[39m
+[32m[49m Foreground:     Green  |  Background:   Default  |  Attribute:      None [49m[39m
+[33m[40m Foreground:    Yellow  |  Background:     Black  |  Attribute:      None [49m[39m
+[33m[41m Foreground:    Yellow  |  Background:       Red  |  Attribute:      None [49m[39m
+[33m[42m Foreground:    Yellow  |  Background:     Green  |  Attribute:      None [49m[39m
+[33m[44m Foreground:    Yellow  |  Background:      Blue  |  Attribute:      None [49m[39m
+[33m[45m Foreground:    Yellow  |  Background:   Magenta  |  Attribute:      None [49m[39m
+[33m[46m Foreground:    Yellow  |  Background:      Cyan  |  Attribute:      None [49m[39m
+[33m[47m Foreground:    Yellow  |  Background:     White  |  Attribute:      None [49m[39m
+[33m[49m Foreground:    Yellow  |  Background:   Default  |  Attribute:      None [49m[39m
+[34m[40m Foreground:      Blue  |  Background:     Black  |  Attribute:      None [49m[39m
+[34m[41m Foreground:      Blue  |  Background:       Red  |  Attribute:      None [49m[39m
+[34m[42m Foreground:      Blue  |  Background:     Green  |  Attribute:      None [49m[39m
+[34m[43m Foreground:      Blue  |  Background:    Yellow  |  Attribute:      None [49m[39m
+[34m[45m Foreground:      Blue  |  Background:   Magenta  |  Attribute:      None [49m[39m
+[34m[46m Foreground:      Blue  |  Background:      Cyan  |  Attribute:      None [49m[39m
+[34m[47m Foreground:      Blue  |  Background:     White  |  Attribute:      None [49m[39m
+[34m[49m Foreground:      Blue  |  Background:   Default  |  Attribute:      None [49m[39m
+[35m[40m Foreground:   Magenta  |  Background:     Black  |  Attribute:      None [49m[39m
+[35m[41m Foreground:   Magenta  |  Background:       Red  |  Attribute:      None [49m[39m
+[35m[42m Foreground:   Magenta  |  Background:     Green  |  Attribute:      None [49m[39m
+[35m[43m Foreground:   Magenta  |  Background:    Yellow  |  Attribute:      None [49m[39m
+[35m[44m Foreground:   Magenta  |  Background:      Blue  |  Attribute:      None [49m[39m
+[35m[46m Foreground:   Magenta  |  Background:      Cyan  |  Attribute:      None [49m[39m
+[35m[47m Foreground:   Magenta  |  Background:     White  |  Attribute:      None [49m[39m
+[35m[49m Foreground:   Magenta  |  Background:   Default  |  Attribute:      None [49m[39m
+[36m[40m Foreground:      Cyan  |  Background:     Black  |  Attribute:      None [49m[39m
+[36m[41m Foreground:      Cyan  |  Background:       Red  |  Attribute:      None [49m[39m
+[36m[42m Foreground:      Cyan  |  Background:     Green  |  Attribute:      None [49m[39m
+[36m[43m Foreground:      Cyan  |  Background:    Yellow  |  Attribute:      None [49m[39m
+[36m[44m Foreground:      Cyan  |  Background:      Blue  |  Attribute:      None [49m[39m
+[36m[45m Foreground:      Cyan  |  Background:   Magenta  |  Attribute:      None [49m[39m
+[36m[47m Foreground:      Cyan  |  Background:     White  |  Attribute:      None [49m[39m
+[36m[49m Foreground:      Cyan  |  Background:   Default  |  Attribute:      None [49m[39m
+[37m[40m Foreground:     White  |  Background:     Black  |  Attribute:      None [49m[39m
+[37m[41m Foreground:     White  |  Background:       Red  |  Attribute:      None [49m[39m
+[37m[42m Foreground:     White  |  Background:     Green  |  Attribute:      None [49m[39m
+[37m[43m Foreground:     White  |  Background:    Yellow  |  Attribute:      None [49m[39m
+[37m[44m Foreground:     White  |  Background:      Blue  |  Attribute:      None [49m[39m
+[37m[45m Foreground:     White  |  Background:   Magenta  |  Attribute:      None [49m[39m
+[37m[46m Foreground:     White  |  Background:      Cyan  |  Attribute:      None [49m[39m
+[37m[49m Foreground:     White  |  Background:   Default  |  Attribute:      None [49m[39m
+[39m[40m Foreground:   Default  |  Background:     Black  |  Attribute:      None [49m[39m
+[39m[41m Foreground:   Default  |  Background:       Red  |  Attribute:      None [49m[39m
+[39m[42m Foreground:   Default  |  Background:     Green  |  Attribute:      None [49m[39m
+[39m[43m Foreground:   Default  |  Background:    Yellow  |  Attribute:      None [49m[39m
+[39m[44m Foreground:   Default  |  Background:      Blue  |  Attribute:      None [49m[39m
+[39m[45m Foreground:   Default  |  Background:   Magenta  |  Attribute:      None [49m[39m
+[39m[46m Foreground:   Default  |  Background:      Cyan  |  Attribute:      None [49m[39m
+[39m[47m Foreground:   Default  |  Background:     White  |  Attribute:      None [49m[39m
