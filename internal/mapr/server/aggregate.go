@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"os"
 	"strings"
 	"time"
 
@@ -38,7 +37,7 @@ func NewAggregate(queryStr string) (*Aggregate, error) {
 		return nil, err
 	}
 
-	fqdn, err := os.Hostname()
+	fqdn, err := config.Hostname()
 	if err != nil {
 		dlog.Common.Error(err)
 	}

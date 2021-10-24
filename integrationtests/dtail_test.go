@@ -45,7 +45,7 @@ func TestDTailWithServer(t *testing.T) {
 		return
 	}
 
-	// TODO: In testmode, never read a config file (use none for all commands)
+	// MAYBETODO: In testmode, never read a config file (use none for all commands)
 	clientCh, _, _, err := startCommand(ctx, t,
 		"../dtail",
 		"--logger", "stdout",

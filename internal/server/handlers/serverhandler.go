@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"context"
-	"os"
 	"strings"
 
 	"github.com/mimecast/dtail/internal"
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/lcontext"
@@ -43,7 +43,7 @@ func NewServerHandler(user *user.User, catLimiter,
 	}
 	h.handleCommandCb = h.handleUserCommand
 
-	fqdn, err := os.Hostname()
+	fqdn, err := config.Hostname()
 	if err != nil {
 		dlog.Server.FatalPanic(err)
 	}

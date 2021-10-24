@@ -60,13 +60,11 @@ func TestDCat2(t *testing.T) {
 	os.Remove(stdoutFile)
 }
 
-/*
-// TODO: The test currently fails as there is a hostname in the output. What needs
-// to be done is to ignore the hostnames in the output (which is field 2 of the output)
 func TestDCatColors(t *testing.T) {
 	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
 		return
 	}
+
 	testdataFile := "dcatcolors.txt"
 	stdoutFile := "dcatcolors.out"
 	expectedFile := "dcatcolors.expected"
@@ -86,4 +84,3 @@ func TestDCatColors(t *testing.T) {
 
 	os.Remove(stdoutFile)
 }
-*/

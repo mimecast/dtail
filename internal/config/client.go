@@ -104,9 +104,6 @@ type termColors struct {
 type ClientConfig struct {
 	TermColorsEnable bool       `json:",omitempty"`
 	TermColors       termColors `json:",omitempty"`
-	// When unit testing in Jenkins you don't want to touch files in ~jenkins
-	// during integration tests really.
-	SSHDontAddHostsToKnownHostsFile bool `json:",omitempty"`
 }
 
 // Create a new default client configuration.
