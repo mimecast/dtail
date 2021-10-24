@@ -17,7 +17,9 @@ func TestDTailWithServer(t *testing.T) {
 		return
 	}
 	followFile := "dtail.follow.tmp"
-	greetings := []string{"world!", "sol-system!", "milky-way!", "universe!", "multiverse!"}
+	port := getUniquePortNumber()
+	bindAddress := "localhost"
+	greetings := []string{"World!", "Sol-System!", "Milky-Way!", "Universe!", "Multiverse!"}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -37,8 +39,8 @@ func TestDTailWithServer(t *testing.T) {
 		"--cfg", "none",
 		"--logger", "stdout",
 		"--logLevel", "info",
-		"--bindAddress", "localhost",
-		"--port", "4243",
+		"--bindAddress", bindAddress,
+		"--port", fmt.Sprintf("%d", port),
 		"--relaxedAuth",
 	)
 	if err != nil {
@@ -52,7 +54,7 @@ func TestDTailWithServer(t *testing.T) {
 		"--cfg", "none",
 		"--logger", "stdout",
 		"--logLevel", "info",
-		"--servers", "localhost:4243",
+		"--servers", fmt.Sprintf("%s:%d", bindAddress, port),
 		"--files", followFile,
 		"--grep", "Hello",
 		"--trustAllHosts",

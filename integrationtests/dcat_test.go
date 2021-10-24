@@ -47,7 +47,8 @@ func TestDCat2(t *testing.T) {
 		args = append(args, testdataFile)
 	}
 
-	if _, err := runCommand(context.TODO(), t, stdoutFile, "../dcat", args...); err != nil {
+	_, err := runCommand(context.TODO(), t, stdoutFile, "../dcat", args...)
+	if err != nil {
 		t.Error(err)
 		return
 	}
