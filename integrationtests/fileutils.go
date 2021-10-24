@@ -12,28 +12,28 @@ import (
 	"testing"
 )
 
-// Checks whether both files have the same lines (order doesn't matter)
-func compareFilesContents(t *testing.T, fileA, fileB string) error {
-	mapFile := func(file string) (map[string]int, error) {
-		t.Log("Reading", file)
-		contents := make(map[string]int)
-		fd, err := os.Open(file)
-		if err != nil {
-			return contents, err
-		}
-		defer fd.Close()
+func mapFile(t *testing.T, file string) (map[string]int, error) {
+	t.Log("Mapping", file)
+	contents := make(map[string]int)
+	fd, err := os.Open(file)
+	if err != nil {
+		return contents, err
+	}
+	defer fd.Close()
 
-		scanner := bufio.NewScanner(fd)
-		scanner.Split(bufio.ScanLines)
-		for scanner.Scan() {
-			line := scanner.Text()
-			count, _ := contents[line]
-			contents[line] = count + 1
-		}
-
-		return contents, nil
+	scanner := bufio.NewScanner(fd)
+	scanner.Split(bufio.ScanLines)
+	for scanner.Scan() {
+		line := scanner.Text()
+		count, _ := contents[line]
+		contents[line] = count + 1
 	}
 
+	return contents, nil
+}
+
+// Checks whether both files have the same lines (order doesn't matter)
+func compareFilesContents(t *testing.T, fileA, fileB string) error {
 	compareMaps := func(a, b map[string]int) error {
 		for line, countA := range a {
 			countB, ok := b[line]
@@ -49,11 +49,11 @@ func compareFilesContents(t *testing.T, fileA, fileB string) error {
 	}
 
 	// Read files into maps.
-	a, err := mapFile(fileA)
+	a, err := mapFile(t, fileA)
 	if err != nil {
 		return err
 	}
-	b, err := mapFile(fileB)
+	b, err := mapFile(t, fileB)
 	if err != nil {
 		return err
 	}
@@ -88,6 +88,23 @@ func compareFiles(t *testing.T, fileA, fileB string) error {
 	}
 
 	return nil
+}
+
+func fileContainsStr(t *testing.T, file, str string) error {
+	t.Log("Checking if file contains string", file, str)
+	m, err := mapFile(t, file)
+	if err != nil {
+		return err
+	}
+
+	for line := range m {
+		if strings.Contains(line, str) {
+			t.Log(line)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("File %s does not contain string %s", file, str)
 }
 
 func shaOfFile(t *testing.T, file string) string {

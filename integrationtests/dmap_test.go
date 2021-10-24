@@ -15,7 +15,6 @@ func TestDMap(t *testing.T) {
 		return
 	}
 	inFile := "mapr_testdata.log"
-	stdoutFile := "dmap.stdout.tmp"
 	csvFile := "dmap.csv.tmp"
 	expectedCsvFile := "dmap.csv.expected"
 	queryFile := fmt.Sprintf("%s.query", csvFile)
@@ -25,13 +24,23 @@ func TestDMap(t *testing.T) {
 		"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) "+
 		"group by $hostname outfile %s", csvFile)
 
-	_, err := runCommand(context.TODO(), t, stdoutFile,
-		"../dmap", "--query", query, inFile)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t, "../dmap",
+		"--cfg", "none",
+		"--query", query,
+		"--logger", "stdout",
+		"--logLevel", "error",
+		"--noColor",
+		inFile)
 
 	if err != nil {
 		t.Error(err)
 		return
 	}
+
+	waitForCommand(ctx, t, stdoutCh, stderrCh, cmdErrCh)
 
 	if err := compareFiles(t, csvFile, expectedCsvFile); err != nil {
 		t.Error(err)
@@ -42,7 +51,6 @@ func TestDMap(t *testing.T) {
 		return
 	}
 
-	os.Remove(stdoutFile)
 	os.Remove(csvFile)
 	os.Remove(queryFile)
 }
@@ -64,7 +72,7 @@ func TestDMap2(t *testing.T) {
 		"outfile %s", csvFile)
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
-		"../dmap", "--query", query, inFile)
+		"../dmap", "--query", query, "--cfg", "none", inFile)
 	if err != nil {
 		t.Error(err)
 		return
@@ -100,16 +108,32 @@ func TestDMap3(t *testing.T) {
 		"avg($goroutines),min($goroutines) group by $time order by count($time) "+
 		"outfile %s", csvFile)
 
-	// Read many input files at once.
-	args := []string{"--logLevel", "trace", "--pprof", "localhost:8080", "--query", query}
-	for i := 0; i < 100; i++ {
-		args = append(args, inFile)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	if _, err := runCommand(context.TODO(), t, stdoutFile, "../dmap", args...); err != nil {
+	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t, "../dmap",
+		"--query", query,
+		"--cfg", "none",
+		"--logger", "stdout",
+		"--logLevel", "info",
+		"--noColor",
+		inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile,
+		inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile,
+		inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile,
+		inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile,
+		inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile,
+		inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile,
+		inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile,
+		inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile,
+		inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile,
+		inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile, inFile)
+
+	if err != nil {
 		t.Error(err)
 		return
 	}
+	waitForCommand(ctx, t, stdoutCh, stderrCh, cmdErrCh)
+
 	if err := compareFilesContents(t, csvFile, expectedCsvFile); err != nil {
 		t.Error(err)
 		return

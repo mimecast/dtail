@@ -18,7 +18,11 @@ func TestDGrep(t *testing.T) {
 	expectedStdoutFile := "dgrep.txt.expected"
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
-		"../dgrep", "--spartan", "--grep", "20211002-071947", inFile)
+		"../dgrep",
+		"--spartan",
+		"--cfg", "none",
+		"--grep", "20211002-071947",
+		inFile)
 
 	if err != nil {
 		t.Error(err)
@@ -43,7 +47,12 @@ func TestDGrep2(t *testing.T) {
 	expectedStdoutFile := "dgrep2.txt.expected"
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
-		"../dgrep", "-spartan", "--grep", "20211002-071947", "--invert", inFile)
+		"../dgrep",
+		"--spartan",
+		"--cfg", "none",
+		"--grep", "20211002-071947",
+		"--invert",
+		inFile)
 
 	if err != nil {
 		t.Error(err)
@@ -68,8 +77,12 @@ func TestDGrepContext(t *testing.T) {
 	expectedStdoutFile := "dgrepcontext.txt.expected"
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
-		"../dgrep", "--spartan", "--grep", "20211002-071947",
-		"-after", "3", "-before", "3", inFile)
+		"../dgrep",
+		"--spartan",
+		"--cfg", "none",
+		"--grep", "20211002-071947",
+		"--after", "3",
+		"--before", "3", inFile)
 
 	if err != nil {
 		t.Error(err)
@@ -94,7 +107,12 @@ func TestDGrepContext2(t *testing.T) {
 	expectedStdoutFile := "dgrepcontext2.txt.expected"
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
-		"../dgrep", "--spartan", "--grep", "20211002", "-max", "3", inFile)
+		"../dgrep",
+		"--spartan",
+		"--cfg", "none",
+		"--grep", "20211002",
+		"--max", "3",
+		inFile)
 
 	if err != nil {
 		t.Error(err)

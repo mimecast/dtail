@@ -17,7 +17,9 @@ func TestDTailWithServer(t *testing.T) {
 		return
 	}
 	followFile := "dtail.follow.tmp"
-	greetings := []string{"world!", "sol-system!", "milky-way!", "universe!", "multiverse!"}
+	port := getUniquePortNumber()
+	bindAddress := "localhost"
+	greetings := []string{"World!", "Sol-System!", "Milky-Way!", "Universe!", "Multiverse!"}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -34,10 +36,11 @@ func TestDTailWithServer(t *testing.T) {
 
 	serverCh, _, _, err := startCommand(ctx, t,
 		"../dserver",
+		"--cfg", "none",
 		"--logger", "stdout",
-		"--logLevel", "trace",
-		"--bindAddress", "localhost",
-		"--port", "4243",
+		"--logLevel", "info",
+		"--bindAddress", bindAddress,
+		"--port", fmt.Sprintf("%d", port),
 		"--relaxedAuth",
 	)
 	if err != nil {
@@ -45,13 +48,13 @@ func TestDTailWithServer(t *testing.T) {
 		return
 	}
 
-	// TODO: In testmode, the client should not try to manipulate any known_hosts files.
-	// TODO: In testmode, never read a config file (use none for all commands)
+	// MAYBETODO: In testmode, never read a config file (use none for all commands)
 	clientCh, _, _, err := startCommand(ctx, t,
 		"../dtail",
+		"--cfg", "none",
 		"--logger", "stdout",
-		"--logLevel", "trace",
-		"--servers", "localhost:4243",
+		"--logLevel", "info",
+		"--servers", fmt.Sprintf("%s:%d", bindAddress, port),
 		"--files", followFile,
 		"--grep", "Hello",
 		"--trustAllHosts",

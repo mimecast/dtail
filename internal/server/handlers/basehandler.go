@@ -114,7 +114,6 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 		pool.RecycleBytesBuffer(line.Content)
 
 	case <-time.After(time.Second):
-		// Once in a while check whether we are done.
 		select {
 		case <-h.done.Done():
 			err = io.EOF

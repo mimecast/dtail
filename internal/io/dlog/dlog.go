@@ -78,7 +78,7 @@ type DLog struct {
 
 // new creates a new DTail logger.
 func new(sourceProcess, sourcePackage source.Source) *DLog {
-	hostname, err := os.Hostname()
+	hostname, err := config.Hostname()
 	if err != nil {
 		panic(err)
 	}

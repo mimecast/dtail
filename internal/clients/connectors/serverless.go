@@ -47,7 +47,6 @@ func (s *Serverless) Start(ctx context.Context, cancel context.CancelFunc,
 	dlog.Client.Debug("Starting serverless connector")
 	go func() {
 		defer cancel()
-
 		if err := s.handle(ctx, cancel); err != nil {
 			dlog.Client.Warn(err)
 		}

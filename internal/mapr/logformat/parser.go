@@ -3,11 +3,11 @@ package logformat
 import (
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 	"time"
 
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/mapr"
 )
 
@@ -26,7 +26,7 @@ type Parser struct {
 
 // NewParser returns a new log parser.
 func NewParser(logFormatName string, query *mapr.Query) (*Parser, error) {
-	hostname, err := os.Hostname()
+	hostname, err := config.Hostname()
 	if err != nil {
 		return nil, err
 	}

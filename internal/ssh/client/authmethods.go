@@ -29,19 +29,14 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 	privateKeyPath string) ([]gossh.AuthMethod, HostKeyCallback) {
 
 	var sshAuthMethods []gossh.AuthMethod
-	knownHostsPath := os.Getenv("HOME") + "/.ssh/known_hosts"
-	knownHostsCallback, err := NewKnownHostsCallback(knownHostsPath, trustAllHosts,
+	knownHostsFile := config.SSHKnownHostsFile()
+	knownHostsCallback, err := NewKnownHostsCallback(knownHostsFile, trustAllHosts,
 		throttleCh)
 	if err != nil {
-		dlog.Client.FatalPanic(knownHostsPath, err)
+		dlog.Client.FatalPanic(knownHostsFile, err)
 	}
-	dlog.Client.Debug("initKnownHostsAuthMethods", "Added known hosts file path", knownHostsPath)
-	/*
-		if config.Client.ExperimentalFeaturesEnable {
-			sshAuthMethods = append(sshAuthMethods, gossh.Password("experimental feature test"))
-			dlog.Client.Debug("initKnownHostsAuthMethods", "Added experimental method to list of auth methods")
-		}
-	*/
+
+	dlog.Client.Debug("initKnownHostsAuthMethods", "Added known hosts file path", knownHostsFile)
 
 	// First try to read custom private key path.
 	if privateKeyPath != "" {
@@ -100,11 +95,7 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 	dlog.Client.Debug("initKnownHostsAuthMethods", "Unable to use private key",
 		privateKeyPath, err)
 
-	// This is only a panic when we expect to do something about it.
-	if !config.Client.SSHDontAddHostsToKnownHostsFile {
-		dlog.Client.FatalPanic("Unable to find private SSH key information")
-	}
-
+	dlog.Client.FatalPanic("Unable to find private SSH key information")
 	// Never reach this point.
 	return sshAuthMethods, knownHostsCallback
 }

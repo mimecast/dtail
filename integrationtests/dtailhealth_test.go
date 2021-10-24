@@ -62,17 +62,20 @@ func TestDTailHealthCheck3(t *testing.T) {
 		return
 	}
 	stdoutFile := "dtailhealth3.stdout.tmp"
-	expectedStdoutFile := "dtailhealth3.expected"
+	port := getUniquePortNumber()
+	bindAddress := "localhost"
+	expectedOut := fmt.Sprintf("OK: All fine at %s:%d :-)", bindAddress, port)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	_, _, _, err := startCommand(ctx, t,
 		"../dserver",
+		"--cfg", "none",
 		"--logger", "stdout",
 		"--logLevel", "trace",
-		"--bindAddress", "localhost",
-		"--port", "4242",
+		"--bindAddress", bindAddress,
+		"--port", fmt.Sprintf("%d", port),
 	)
 	if err != nil {
 		t.Error(err)
@@ -80,13 +83,13 @@ func TestDTailHealthCheck3(t *testing.T) {
 	}
 
 	_, err = runCommandRetry(ctx, t, 10, stdoutFile,
-		"../dtailhealth", "--server", "localhost:4242")
+		"../dtailhealth", "--server", fmt.Sprintf("%s:%d", bindAddress, port))
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	if err := compareFiles(t, stdoutFile, expectedStdoutFile); err != nil {
+	if err := fileContainsStr(t, stdoutFile, expectedOut); err != nil {
 		t.Error(err)
 		return
 	}

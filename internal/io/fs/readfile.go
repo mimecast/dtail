@@ -38,7 +38,6 @@ type readFile struct {
 	canSkipLines bool
 	// Seek to the EOF before processing file?
 	seekEOF bool
-	limiter chan struct{}
 }
 
 // String returns the string representation of the readFile
@@ -66,25 +65,7 @@ func (f readFile) Retry() bool {
 func (f readFile) Start(ctx context.Context, ltx lcontext.LContext,
 	lines chan<- line.Line, re regex.Regex) error {
 
-	dlog.Common.Debug("readFile", f)
-	defer func() {
-		select {
-		case <-f.limiter:
-		default:
-		}
-	}()
-
-	select {
-	case f.limiter <- struct{}{}:
-	default:
-		select {
-		case f.serverMessages <- dlog.Common.Warn(f.filePath, f.globID,
-			"Server limit reached. Queuing file..."):
-		case <-ctx.Done():
-			return nil
-		}
-		f.limiter <- struct{}{}
-	}
+	dlog.Common.Trace("readFile", f)
 
 	fd, err := os.Open(f.filePath)
 	if err != nil {
@@ -156,7 +137,9 @@ func (f readFile) makeReader(fd *os.File) (reader *bufio.Reader, err error) {
 	return
 }
 
-func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Buffer, truncate <-chan struct{}) error {
+func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Buffer,
+	truncate <-chan struct{}) error {
+
 	var offset uint64
 	reader, err := f.makeReader(fd)
 	if err != nil {
@@ -250,6 +233,7 @@ func (f readFile) filterWithoutLContext(ctx context.Context, rawLines <-chan *by
 				return
 			}
 			if filteredLine, ok := f.transmittable(line, len(lines), cap(lines), re); ok {
+				//dlog.Common.Trace("TODO", "lines", lines, len(lines), cap(lines))
 				select {
 				case lines <- filteredLine:
 				case <-ctx.Done():

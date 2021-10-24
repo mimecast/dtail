@@ -109,18 +109,51 @@ func (r *readCommand) readFileIfPermissions(ctx context.Context, ltx lcontext.LC
 	r.readFile(ctx, ltx, path, globID, re)
 }
 
+func (*readCommand) limit(ctx context.Context, limiter chan struct{}, message string) {
+	select {
+	case <-ctx.Done():
+		return
+	}
+}
+
 func (r *readCommand) readFile(ctx context.Context, ltx lcontext.LContext,
 	path, globID string, re regex.Regex) {
 
 	dlog.Server.Info(r.server.user, "Start reading file", path, globID)
 	var reader fs.FileReader
+	var limiter chan struct{}
+
 	switch r.mode {
 	case omode.TailClient:
-		reader = fs.NewTailFile(path, globID, r.server.serverMessages, r.server.tailLimiter)
+		reader = fs.NewTailFile(path, globID, r.server.serverMessages)
+		limiter = r.server.tailLimiter
 	case omode.GrepClient, omode.CatClient:
-		reader = fs.NewCatFile(path, globID, r.server.serverMessages, r.server.catLimiter)
+		reader = fs.NewCatFile(path, globID, r.server.serverMessages)
+		limiter = r.server.catLimiter
 	default:
-		reader = fs.NewTailFile(path, globID, r.server.serverMessages, r.server.tailLimiter)
+		reader = fs.NewTailFile(path, globID, r.server.serverMessages)
+		limiter = r.server.tailLimiter
+	}
+
+	defer func() {
+		select {
+		case <-limiter:
+		default:
+		}
+	}()
+
+	select {
+	case limiter <- struct{}{}:
+	case <-ctx.Done():
+		return
+	default:
+		dlog.Server.Info("Server limit hit, queueing file", len(limiter), path)
+		select {
+		case limiter <- struct{}{}:
+			dlog.Server.Info("Server limit OK now, processing file", len(limiter), path)
+		case <-ctx.Done():
+			return
+		}
 	}
 
 	lines := r.server.lines
