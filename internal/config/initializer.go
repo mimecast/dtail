@@ -85,6 +85,7 @@ func (in *initializer) readEnvironmentVars() {
 	if Env("DTAIL_RUN_INTEGRATION_TESTS") {
 		os.Setenv("DTAIL_HOSTNAME_OVERRIDE", "integrationtest")
 		os.Setenv("DTAIL_SSH_KNOWN_HOSTS_FILE", "./known_hosts")
+		in.Server.HostKeyFile = "./ssh_host_key"
 	}
 }
 
