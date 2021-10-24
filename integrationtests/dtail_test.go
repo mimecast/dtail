@@ -45,7 +45,6 @@ func TestDTailWithServer(t *testing.T) {
 		return
 	}
 
-	// TODO: In testmode, the client should not try to manipulate any known_hosts files.
 	// TODO: In testmode, never read a config file (use none for all commands)
 	clientCh, _, _, err := startCommand(ctx, t,
 		"../dtail",

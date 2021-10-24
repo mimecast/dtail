@@ -20,6 +20,7 @@ type Aggregate struct {
 	done *internal.Done
 	// NextLinesCh can be used to use a new line ch.
 	NextLinesCh chan chan line.Line
+	linesCh     chan line.Line
 	// Hostname of the current server (used to populate $hostname field).
 	hostname string
 	// Signals to serialize data.
@@ -113,58 +114,84 @@ func (a *Aggregate) aggregateTimer(ctx context.Context) {
 	}
 }
 
+func (a *Aggregate) nextLine() (line line.Line, ok bool, noMoreChannels bool) {
+
+	dlog.Common.Trace("nextLine", "entry", line, ok, noMoreChannels)
+	select {
+	case line, ok = <-a.linesCh:
+		if !ok {
+			// Channel is closed, go to next channel.
+			select {
+			case a.linesCh = <-a.NextLinesCh:
+			default:
+				noMoreChannels = true
+			}
+		}
+	default:
+		// No new line from current lines channel. Try next one.
+		select {
+		case newLinesCh := <-a.NextLinesCh:
+			oldLinesCh := a.linesCh
+			go func() { a.NextLinesCh <- oldLinesCh }()
+			a.linesCh = newLinesCh
+		default:
+			// No new lines channel found.
+		}
+	}
+	dlog.Common.Trace("nextLine", "exit", line, ok, noMoreChannels)
+
+	return
+}
+
 func (a *Aggregate) fieldsFromLines(ctx context.Context) <-chan map[string]string {
 	fieldsCh := make(chan map[string]string)
 
 	go func() {
 		defer close(fieldsCh)
-		var lines chan line.Line
 
 		// Gather first lines channel (first input file)
 		select {
-		case lines = <-a.NextLinesCh:
+		case a.linesCh = <-a.NextLinesCh:
 		case <-ctx.Done():
 			return
 		}
 
 		for {
 			select {
-			case line, ok := <-lines:
-				if !ok {
-					select {
-					case lines = <-a.NextLinesCh:
-						// Have a new lines channel (e.g. new input file)
-					case <-ctx.Done():
-					default:
-						// No new lines channel found.
-						return
-					}
-				}
-
-				maprLine := strings.TrimSpace(line.Content.String())
-				fields, err := a.parser.MakeFields(maprLine)
-				// Can't recycle it here yet, as field slices are still
-				// TODO: Add unit test reading from multiple mapreduce files lines.
-				// TODO: Add capability to recycle this bytes buffer.
-				//pool.RecycleBytesBuffer(line.Content)
-
-				if err != nil {
-					// Should fields be ignored anyway?
-					if err != logformat.ErrIgnoreFields {
-						dlog.Common.Error(fields, err)
-					}
-					continue
-				}
-				if !a.query.WhereClause(fields) {
-					continue
-				}
-
-				select {
-				case fieldsCh <- fields:
-				case <-ctx.Done():
-				}
 			case <-ctx.Done():
 				return
+			default:
+			}
+
+			// Gather first lines channel (first input file)
+			line, ok, noMoreChannels := a.nextLine()
+			if !ok {
+				if noMoreChannels {
+					break
+				}
+				time.Sleep(time.Millisecond * 100)
+			}
+
+			maprLine := strings.TrimSpace(line.Content.String())
+			fields, err := a.parser.MakeFields(maprLine)
+			// Can't recycle it here yet, as field slices are still
+			// MAYBETODO: Add capability to recycle this bytes buffer.
+			//pool.RecycleBytesBuffer(line.Content)
+
+			if err != nil {
+				// Should fields be ignored anyway?
+				if err != logformat.ErrIgnoreFields {
+					dlog.Common.Error(fields, err)
+				}
+				continue
+			}
+			if !a.query.WhereClause(fields) {
+				continue
+			}
+
+			select {
+			case fieldsCh <- fields:
+			case <-ctx.Done():
 			}
 		}
 	}()

@@ -12,9 +12,6 @@ import (
 	"time"
 )
 
-// The exit code and the Go error of the command terminated.
-type exitPromise func() (int, error)
-
 func runCommand(ctx context.Context, t *testing.T, stdoutFile, cmdStr string,
 	args ...string) (int, error) {
 
@@ -51,7 +48,7 @@ func runCommandRetry(ctx context.Context, t *testing.T, retries int, stdoutFile,
 }
 
 func startCommand(ctx context.Context, t *testing.T, cmdStr string,
-	args ...string) (<-chan string, <-chan string, exitPromise, error) {
+	args ...string) (<-chan string, <-chan string, <-chan error, error) {
 
 	stdoutCh := make(chan string)
 	stderrCh := make(chan string)
@@ -90,10 +87,33 @@ func startCommand(ctx context.Context, t *testing.T, cmdStr string,
 		close(stderrCh)
 	}()
 
-	return stdoutCh, stderrCh, func() (int, error) {
-		err := cmd.Wait()
-		return exitCodeFromError(err), err
-	}, nil
+	cmdErrCh := make(chan error)
+	go func() {
+		cmdErrCh <- cmd.Wait()
+	}()
+
+	return stdoutCh, stderrCh, cmdErrCh, nil
+}
+
+func waitForCommand(ctx context.Context, t *testing.T,
+	stdoutCh, stderrCh <-chan string, cmdErrCh <-chan error) {
+
+	for {
+		select {
+		case line, ok := <-stdoutCh:
+			if ok {
+				t.Log(line)
+			}
+		case line, ok := <-stderrCh:
+			if ok {
+				t.Log(line)
+			}
+		case cmdErr := <-cmdErrCh:
+			t.Log(fmt.Sprintf("Command finished with with exit code %d: %v",
+				exitCodeFromError(cmdErr), cmdErr))
+			return
+		}
+	}
 }
 
 func exitCodeFromError(err error) int {
