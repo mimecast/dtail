@@ -21,7 +21,7 @@ type initializer struct {
 type transformCb func(*initializer, *Args, []string) error
 
 func (in *initializer) parseConfig(args *Args) error {
-	if strings.ToUpper(args.ConfigFile) == "NONE" {
+	if strings.ToLower(args.ConfigFile) == "none" {
 		return nil
 	}
 

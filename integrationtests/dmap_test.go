@@ -28,6 +28,7 @@ func TestDMap(t *testing.T) {
 	defer cancel()
 
 	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t, "../dmap",
+		"--cfg", "none",
 		"--query", query,
 		"--logger", "stdout",
 		"--logLevel", "error",
@@ -71,7 +72,7 @@ func TestDMap2(t *testing.T) {
 		"outfile %s", csvFile)
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
-		"../dmap", "--query", query, inFile)
+		"../dmap", "--query", query, "--cfg", "none", inFile)
 	if err != nil {
 		t.Error(err)
 		return
@@ -112,6 +113,7 @@ func TestDMap3(t *testing.T) {
 
 	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t, "../dmap",
 		"--query", query,
+		"--cfg", "none",
 		"--logger", "stdout",
 		"--logLevel", "info",
 		"--noColor",

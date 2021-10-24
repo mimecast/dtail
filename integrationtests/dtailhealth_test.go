@@ -69,6 +69,7 @@ func TestDTailHealthCheck3(t *testing.T) {
 
 	_, _, _, err := startCommand(ctx, t,
 		"../dserver",
+		"--cfg", "none",
 		"--logger", "stdout",
 		"--logLevel", "trace",
 		"--bindAddress", "localhost",
@@ -79,6 +80,7 @@ func TestDTailHealthCheck3(t *testing.T) {
 		return
 	}
 
+	// TODO: Get unique test port number.
 	_, err = runCommandRetry(ctx, t, 10, stdoutFile,
 		"../dtailhealth", "--server", "localhost:4242")
 	if err != nil {

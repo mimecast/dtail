@@ -34,8 +34,9 @@ func TestDTailWithServer(t *testing.T) {
 
 	serverCh, _, _, err := startCommand(ctx, t,
 		"../dserver",
+		"--cfg", "none",
 		"--logger", "stdout",
-		"--logLevel", "trace",
+		"--logLevel", "info",
 		"--bindAddress", "localhost",
 		"--port", "4243",
 		"--relaxedAuth",
@@ -48,8 +49,9 @@ func TestDTailWithServer(t *testing.T) {
 	// MAYBETODO: In testmode, never read a config file (use none for all commands)
 	clientCh, _, _, err := startCommand(ctx, t,
 		"../dtail",
+		"--cfg", "none",
 		"--logger", "stdout",
-		"--logLevel", "trace",
+		"--logLevel", "info",
 		"--servers", "localhost:4243",
 		"--files", followFile,
 		"--grep", "Hello",
