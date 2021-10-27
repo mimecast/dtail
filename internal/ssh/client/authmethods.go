@@ -25,27 +25,44 @@ func InitSSHAuthMethods(sshAuthMethods []gossh.AuthMethod,
 	return initKnownHostsAuthMethods(trustAllHosts, throttleCh, privateKeyPath)
 }
 
+func initIntegrationTestKnownHostsAuthMethods() []gossh.AuthMethod {
+	var sshAuthMethods []gossh.AuthMethod
+	privateKeyPath := "./id_rsa"
+
+	GeneratePrivatePublicKeyPairIfNotExists(privateKeyPath, 4096)
+	authMethod, err := ssh.PrivateKey(privateKeyPath)
+	if err != nil {
+		dlog.Client.FatalPanic("Unable to use private SSH key", privateKeyPath, err)
+	}
+
+	sshAuthMethods = append(sshAuthMethods, authMethod)
+	dlog.Client.Debug("initKnownHostsAuthMethods",
+		"Added path to list of auth methods, not adding further methods", privateKeyPath)
+	return sshAuthMethods
+}
+
 func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 	privateKeyPath string) ([]gossh.AuthMethod, HostKeyCallback) {
 
-	var sshAuthMethods []gossh.AuthMethod
 	knownHostsFile := config.SSHKnownHostsFile()
-	knownHostsCallback, err := NewKnownHostsCallback(knownHostsFile, trustAllHosts,
-		throttleCh)
+	knownHostsCallback, err := NewKnownHostsCallback(knownHostsFile, trustAllHosts, throttleCh)
 	if err != nil {
 		dlog.Client.FatalPanic(knownHostsFile, err)
 	}
-
 	dlog.Client.Debug("initKnownHostsAuthMethods", "Added known hosts file path", knownHostsFile)
 
+	if config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
+		return initIntegrationTestKnownHostsAuthMethods(), knownHostsCallback
+	}
+
+	var sshAuthMethods []gossh.AuthMethod
 	// First try to read custom private key path.
 	if privateKeyPath != "" {
 		authMethod, err := ssh.PrivateKey(privateKeyPath)
 		if err == nil {
 			sshAuthMethods = append(sshAuthMethods, authMethod)
 			dlog.Client.Debug("initKnownHostsAuthMethods",
-				"Added path to list of auth methods, not adding further methods",
-				privateKeyPath)
+				"Added path to list of auth methods, not adding further methods", privateKeyPath)
 			return sshAuthMethods, knownHostsCallback
 		}
 		dlog.Client.FatalPanic("Unable to use private SSH key", privateKeyPath, err)
@@ -59,8 +76,7 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 			"to list of auth methods, not adding further methods")
 		return sshAuthMethods, knownHostsCallback
 	}
-	dlog.Client.Debug("initKnownHostsAuthMethods",
-		"Unable to init SSH Agent auth method", err)
+	dlog.Client.Debug("initKnownHostsAuthMethods", "Unable to init SSH Agent auth method", err)
 
 	// Third, try Linux/UNIX default key paths
 	privateKeyPath = os.Getenv("HOME") + "/.ssh/id_rsa"
@@ -71,8 +87,7 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 			"Added path to list of auth methods, not adding further methods", privateKeyPath)
 		return sshAuthMethods, knownHostsCallback
 	}
-	dlog.Client.Debug("initKnownHostsAuthMethods", "Unable to use private key",
-		privateKeyPath, err)
+	dlog.Client.Debug("initKnownHostsAuthMethods", "Unable to use private key", privateKeyPath, err)
 
 	privateKeyPath = os.Getenv("HOME") + "/.ssh/id_dsa"
 	authMethod, err = ssh.PrivateKey(privateKeyPath)
@@ -92,10 +107,7 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 		return sshAuthMethods, knownHostsCallback
 	}
 
-	dlog.Client.Debug("initKnownHostsAuthMethods", "Unable to use private key",
-		privateKeyPath, err)
-
-	dlog.Client.FatalPanic("Unable to find private SSH key information")
+	dlog.Client.FatalPanic("Unable to find private SSH key information", privateKeyPath, err)
 	// Never reach this point.
 	return sshAuthMethods, knownHostsCallback
 }

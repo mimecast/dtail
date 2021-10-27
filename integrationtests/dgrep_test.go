@@ -9,7 +9,7 @@ import (
 )
 
 func TestDGrep(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
@@ -38,7 +38,7 @@ func TestDGrep(t *testing.T) {
 }
 
 func TestDGrep2(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
@@ -68,7 +68,7 @@ func TestDGrep2(t *testing.T) {
 }
 
 func TestDGrepContext(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
@@ -98,7 +98,7 @@ func TestDGrepContext(t *testing.T) {
 }
 
 func TestDGrepContext2(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}

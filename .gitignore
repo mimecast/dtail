@@ -14,3 +14,6 @@ tags
 /dserver
 /dtailhealth
 known_hosts
+id_rsa
+id_rsa.pub
+ssh_host_key

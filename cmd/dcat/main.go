@@ -40,7 +40,7 @@ func main() {
 	flag.StringVar(&args.LogDir, "logDir", "~/log", "Log dir")
 	flag.StringVar(&args.Logger, "logger", config.DefaultClientLogger, "Logger name")
 	flag.StringVar(&args.LogLevel, "logLevel", config.DefaultLogLevel, "Log level")
-	flag.StringVar(&args.PrivateKeyPathFile, "key", "", "Path to private key")
+	flag.StringVar(&args.SSHPrivateKeyPathFile, "key", "", "Path to private key")
 	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")
 	flag.StringVar(&args.UserName, "user", userName, "Your system user name")
 	flag.StringVar(&args.What, "files", "", "File(s) to read")
