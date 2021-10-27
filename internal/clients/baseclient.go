@@ -112,10 +112,19 @@ func (c *baseClient) startConnection(ctx context.Context, i int,
 		// Retrieve status code from handler (dtail client will exit with that status)
 		status = conn.Handler().Status()
 
+		// Do we want to retry?
 		if !c.retry {
+			// No, we don't.
 			return
 		}
+		select {
+		case <-ctx.Done():
+			// No, context is done, so no retry.
+			return
+		default:
+		}
 
+		// Yes, we want to retry.
 		time.Sleep(time.Second * 2)
 		dlog.Client.Debug(conn.Server(), "Reconnecting")
 		conn = c.makeConnection(conn.Server(), c.sshAuthMethods, c.hostKeyCallback)
