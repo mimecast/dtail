@@ -10,7 +10,7 @@ This guide assumes that you know how to generate and configure a public/private 
 To compile and install all DTail binaries directly from GitHub run:
 
 ```console
-% for cmd in dcat dgrep dmap dtail dserver; do
+% for cmd in dcat dgrep dmap dtail dserver dtailhealth; do
     go get github.com/mimecast/dtail/cmd/$cmd;
   done
 ```
@@ -21,6 +21,7 @@ It produces the following executables in ``$GOPATH/bin``:
 * ``dgrep``: Client for searching whole files remotely using a regex (distributed grep)
 * ``dmap``: Client for executing distributed MapReduce queries (may consume a lot of RAM and CPU)
 * ``dtail``: Client for tailing/following log files remotely (distributed tail)
+* ``dtailhealth``: Client for dserver health checks
 * ``dserver``: The DTail server
 
 # Start DTail server
@@ -28,12 +29,15 @@ It produces the following executables in ``$GOPATH/bin``:
 Copy the ``dserver`` binary to the remote server machines of your choice (e.g. ``serv-001.lan.example.org`` and ``serv-002.lan.example.org``) and start it on each of the servers as follows:
 
 ```console
-% ./dserver
-SERVER|serv-001|INFO|Launching server|server|DTail 1.0.0
-SERVER|serv-001|INFO|Creating server|DTail 1.0.0
-SERVER|serv-001|INFO|Generating private server RSA host key
-SERVER|serv-001|INFO|Starting server
-SERVER|serv-001|INFO|Binding server|0.0.0.0:2222
+❯ ./dserver --logger Stdout --logLevel debug --bindAddress $(hostname) --port 2222
+DTail 4.0.0 Protocol 4 Have a lot of fun!
+INFO|20211027-102513|Creating server|DTail 4.0.0-RC2 Protocol 4 Have a lot of fun!
+INFO|20211027-102513|Reading private server RSA host key from file|./ssh_host_key
+INFO|20211027-102513|Starting server
+INFO|20211027-102513|Binding server|X.Y.Z.W:2222
+INFO|20211027-102513|Starting continuous job runner after 10s
+DEBUG|20211027-102513|Starting listener loop
+INFO|20211027-102513|Starting scheduled job runner after 10s
 ```
 
 ``dserver`` is now listening on TCP port 2222 and waiting for incoming connections. All SSH keys listed in ``~/.ssh/authorized_keys`` are now respected by the DTail server for authorization.
@@ -79,7 +83,7 @@ Now it is time to connect to the DTail servers through the DTail client:
 
 ```console
 % dtail --servers serv-001.lan.example.org,server-002.lan.example.org --files "/var/log/service/*.log"
-CLIENT|workstation01|INFO|Launching client|tail|DTail 1.0.0
+CLIENT|workstation01|INFO|Launching client|tail|DTail 4.0.0
 CLIENT|workstation01|INFO|Initiating base client
 CLIENT|workstation01|INFO|Added SSH Agent to list of auth methods
 CLIENT|workstation01|INFO|Deduped server list|1|1
