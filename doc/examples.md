@@ -15,6 +15,12 @@ The following example demonstrates how to follow logs of multiple servers at onc
 
 ![dtail](dtail.gif "Tail example")
 
+You can also use the shorthand version:
+
+```shell
+% dtail --servers serverlist.txt --regex STAT "/var/log/service/*.log"
+```
+
 ## Aggregating logs
 
 To run ad-hoc MapReduce aggregations on newly written log lines, you also must add a query. The following example follows all remote log lines and prints out every 5 seconds the top 10 servers with the most average free memory. To run a MapReduce query across log lines written in the past, please use the ``dmap`` command instead.
@@ -29,6 +35,14 @@ For MapReduce queries to work, you have to ensure that DTail supports your log f
 
 ![dtail-map](dtail-map.gif "Tail mapreduce example")
 
+You can also use the shorthand version:
+
+```shell
+% dtail --servers serverlist.txt  \
+    'select avg(memfree), $hostname from MCVMSTATS group by $hostname order by avg(memfree) limit 10 interval 5' \
+    '/var/log/service/*.log'
+```
+
 # How to use ``dcat``
 
 The following example demonstrates how to cat files (display the full content of the files) of multiple servers at once. The servers are provided as a comma-separated list this time.
@@ -39,6 +53,13 @@ The following example demonstrates how to cat files (display the full content of
 ```
 
 ![dcat](dcat.gif "Cat example")
+
+You can also use the shorthand version:
+
+```shell
+% dcat --servers serv-011.lan.example.org,serv-012.lan.example.org,serv-013.lan.example.org \
+    /etc/hostname
+```
 
 # How to use ``dgrep``
 
@@ -51,6 +72,14 @@ The following example demonstrates how to grep files (display only the lines whi
 ```
 
 ![dgrep](dgrep.gif "Grep example")
+
+You can also use the shorthand version:
+
+TODO: Auto detect that swap is a regex.
+```shell
+% dgrep --servers <(head -n 20 serverlist.txt) \
+    /etc/fstab swap
+```
 
 # How to use ``dmap``
 
@@ -65,3 +94,11 @@ To run a MapReduce aggregation over logs written in the past, the ``dmap`` comma
 Remember: For that to work, you have to make sure that DTail supports your log format. You can either use the ones already defined in ``internal/mapr/log format`` or add an extension to support a custom log format.
 
 ![dmap](dmap.gif "DMap example")
+
+You can also use the shorthand version:
+
+```shell
+% dmap --servers serv-011.lan.example.org,serv-012.lan.example.org,serv-013.lan.example.org,serv-021.lan.example.org,serv-022.lan.example.org,serv-023.lan.example.org \
+    'select avg(memfree), $day, $hour, $minute, $hostname from MCVMSTATS group by $day, $hour, $minute, $hostname order by avg(memfree) limit 10 outfile mapreduce.csv' \
+    "/var/log/service/*.log"
+```

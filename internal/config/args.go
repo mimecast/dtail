@@ -15,31 +15,31 @@ import (
 // Args is a helper struct to summarize common client arguments.
 type Args struct {
 	lcontext.LContext
-	Arguments          []string
-	ConfigFile         string
-	ConnectionsPerCPU  int
-	Discovery          string
-	LogDir             string
-	Logger             string
-	LogLevel           string
-	Mode               omode.Mode
-	NoColor            bool
-	PrivateKeyPathFile string
-	QueryStr           string
-	Quiet              bool
-	RegexInvert        bool
-	RegexStr           string
-	Serverless         bool
-	ServersStr         string
-	Spartan            bool
-	SSHAuthMethods     []gossh.AuthMethod
-	SSHBindAddress     string
-	SSHHostKeyCallback gossh.HostKeyCallback
-	SSHPort            int
-	Timeout            int
-	TrustAllHosts      bool
-	UserName           string
-	What               string
+	Arguments             []string
+	ConfigFile            string
+	ConnectionsPerCPU     int
+	Discovery             string
+	LogDir                string
+	Logger                string
+	LogLevel              string
+	Mode                  omode.Mode
+	NoColor               bool
+	QueryStr              string
+	Quiet                 bool
+	RegexInvert           bool
+	RegexStr              string
+	SSHAuthMethods        []gossh.AuthMethod
+	SSHBindAddress        string
+	SSHHostKeyCallback    gossh.HostKeyCallback
+	SSHPort               int
+	SSHPrivateKeyPathFile string
+	Serverless            bool
+	ServersStr            string
+	Spartan               bool
+	Timeout               int
+	TrustAllHosts         bool
+	UserName              string
+	What                  string
 }
 
 func (a *Args) String() string {
@@ -56,7 +56,6 @@ func (a *Args) String() string {
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Logger", a.Logger))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Mode", a.Mode))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "NoColor", a.NoColor))
-	sb.WriteString(fmt.Sprintf("%s:%v,", "PrivateKeyPathFile", a.PrivateKeyPathFile))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "QueryStr", a.QueryStr))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Quiet", a.Quiet))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "RegexInvert", a.RegexInvert))
@@ -64,6 +63,7 @@ func (a *Args) String() string {
 	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHAuthMethods", a.SSHAuthMethods))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHBindAddress", a.SSHBindAddress))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHHostKeyCallback", a.SSHHostKeyCallback))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHPrivateKeyPathFile", a.SSHPrivateKeyPathFile))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHPort", a.SSHPort))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Serverless", a.Serverless))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "ServersStr", a.ServersStr))

@@ -233,7 +233,6 @@ func (f readFile) filterWithoutLContext(ctx context.Context, rawLines <-chan *by
 				return
 			}
 			if filteredLine, ok := f.transmittable(line, len(lines), cap(lines), re); ok {
-				//dlog.Common.Trace("TODO", "lines", lines, len(lines), cap(lines))
 				select {
 				case lines <- filteredLine:
 				case <-ctx.Done():

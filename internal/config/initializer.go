@@ -80,10 +80,10 @@ func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 	}
 }
 
-// There are some special options which can be set by environment variable.
 func (in *initializer) processEnvVars() {
 	if Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		os.Setenv("DTAIL_HOSTNAME_OVERRIDE", "integrationtest")
+		in.Server.HostKeyFile = "./ssh_host_key"
 	}
 }
 
