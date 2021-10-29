@@ -83,7 +83,6 @@ func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 func (in *initializer) processEnvVars() {
 	if Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		os.Setenv("DTAIL_HOSTNAME_OVERRIDE", "integrationtest")
-		in.Server.HostKeyFile = "./ssh_host_key"
 	}
 }
 

@@ -12,6 +12,9 @@ import (
 // PrivateHostKey retrieves the private server RSA host key.
 func PrivateHostKey() []byte {
 	hostKeyFile := config.Server.HostKeyFile
+	if config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
+		hostKeyFile = "./ssh_host_key"
+	}
 	_, err := os.Stat(hostKeyFile)
 
 	if os.IsNotExist(err) {
