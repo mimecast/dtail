@@ -23,9 +23,9 @@ func newScheduler() *scheduler {
 }
 
 func (s *scheduler) start(ctx context.Context) {
-	dlog.Server.Info("Starting scheduled job runner after 10s")
+	dlog.Server.Info("Starting scheduled job runner after 2s")
 	// First run after just 10s!
-	time.Sleep(time.Second * 10)
+	time.Sleep(time.Second * 2)
 	s.runJobs(ctx)
 	for {
 		select {

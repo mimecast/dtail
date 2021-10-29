@@ -20,8 +20,8 @@ func newContinuous() *continuous {
 }
 
 func (c *continuous) start(ctx context.Context) {
-	dlog.Server.Info("Starting continuous job runner after 10s")
-	time.Sleep(time.Second * 10)
+	dlog.Server.Info("Starting continuous job runner after 2s")
+	time.Sleep(time.Second * 2)
 	c.runJobs(ctx)
 }
 
