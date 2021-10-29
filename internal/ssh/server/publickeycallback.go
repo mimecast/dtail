@@ -23,9 +23,9 @@ func PublicKeyCallback(c gossh.ConnMetadata,
 		return nil, err
 	}
 
-	dlog.Common.Info(user, "Incoming authorization")
+	dlog.Server.Info(user, "Incoming authorization")
 	if config.ServerRelaxedAuthEnable {
-		dlog.Common.Fatal(user, "Granting permissions via relaxed-auth")
+		dlog.Server.Fatal(user, "Granting permissions via relaxed-auth")
 		return nil, nil
 	}
 
@@ -34,7 +34,7 @@ func PublicKeyCallback(c gossh.ConnMetadata,
 		return nil, err
 	}
 
-	dlog.Common.Info(user, "Reading", authorizedKeysFile)
+	dlog.Server.Info(user, "Reading", authorizedKeysFile)
 	authorizedKeysBytes, err := ioutil.ReadFile(authorizedKeysFile)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to read authorized keys file|%s|%s|%s",
@@ -56,11 +56,11 @@ func verifyAuthorizedKeys(user *user.User, authorizedKeysBytes []byte,
 		}
 		authorizedKeysMap[string(authorizedPubKey.Marshal())] = true
 		authorizedKeysBytes = restBytes
-		dlog.Common.Debug(user, "Authorized public key fingerprint",
+		dlog.Server.Debug(user, "Authorized public key fingerprint",
 			gossh.FingerprintSHA256(authorizedPubKey))
 	}
 
-	dlog.Common.Debug(user, "Offered public key fingerprint", gossh.FingerprintSHA256(offeredPubKey))
+	dlog.Server.Debug(user, "Offered public key fingerprint", gossh.FingerprintSHA256(offeredPubKey))
 	if authorizedKeysMap[string(offeredPubKey.Marshal())] {
 		return &gossh.Permissions{
 			Extensions: map[string]string{"pubkey-fp": gossh.FingerprintSHA256(offeredPubKey)},

@@ -54,7 +54,7 @@ func (a *Aggregate) Aggregate(message string) error {
 	for _, sc := range a.query.Select {
 		if val, ok := fields[sc.FieldStorage]; ok {
 			if err := set.Aggregate(sc.FieldStorage, sc.Operation, val, true); err != nil {
-				dlog.Common.Error(err)
+				dlog.Client.Error(err)
 				continue
 			}
 			addedSamples = true

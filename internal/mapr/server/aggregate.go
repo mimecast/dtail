@@ -39,7 +39,7 @@ func NewAggregate(queryStr string) (*Aggregate, error) {
 
 	fqdn, err := config.Hostname()
 	if err != nil {
-		dlog.Common.Error(err)
+		dlog.Server.Error(err)
 	}
 	s := strings.Split(fqdn, ".")
 
@@ -54,12 +54,12 @@ func NewAggregate(queryStr string) (*Aggregate, error) {
 		parserName = query.LogFormat
 	}
 
-	dlog.Common.Info("Creating log format parser", parserName)
+	dlog.Server.Info("Creating log format parser", parserName)
 	logParser, err := logformat.NewParser(parserName, query)
 	if err != nil {
-		dlog.Common.Error("Could not create log format parser. Falling back to 'generic'", err)
+		dlog.Server.Error("Could not create log format parser. Falling back to 'generic'", err)
 		if logParser, err = logformat.NewParser("generic", query); err != nil {
-			dlog.Common.FatalPanic("Could not create log format parser", err)
+			dlog.Server.FatalPanic("Could not create log format parser", err)
 		}
 	}
 
@@ -115,7 +115,7 @@ func (a *Aggregate) aggregateTimer(ctx context.Context) {
 
 func (a *Aggregate) nextLine() (line line.Line, ok bool, noMoreChannels bool) {
 
-	dlog.Common.Trace("nextLine", "entry", line, ok, noMoreChannels)
+	dlog.Server.Trace("nextLine", "entry", line, ok, noMoreChannels)
 	select {
 	case line, ok = <-a.linesCh:
 		if !ok {
@@ -137,7 +137,7 @@ func (a *Aggregate) nextLine() (line line.Line, ok bool, noMoreChannels bool) {
 			// No new lines channel found.
 		}
 	}
-	dlog.Common.Trace("nextLine", "exit", line, ok, noMoreChannels)
+	dlog.Server.Trace("nextLine", "exit", line, ok, noMoreChannels)
 
 	return
 }
@@ -180,7 +180,7 @@ func (a *Aggregate) fieldsFromLines(ctx context.Context) <-chan map[string]strin
 			if err != nil {
 				// Should fields be ignored anyway?
 				if err != logformat.ErrIgnoreFields {
-					dlog.Common.Error(fields, err)
+					dlog.Server.Error(fields, err)
 				}
 				continue
 			}
@@ -210,7 +210,7 @@ func (a *Aggregate) setAdditionalFields(ctx context.Context,
 				return
 			}
 			if err := a.query.SetClause(fields); err != nil {
-				dlog.Common.Error(err)
+				dlog.Server.Error(err)
 			}
 
 			select {
@@ -227,7 +227,7 @@ func (a *Aggregate) aggregateAndSerialize(ctx context.Context,
 
 	group := mapr.NewGroupSet()
 	serialize := func() {
-		dlog.Common.Info("Serializing mapreduce result")
+		dlog.Server.Info("Serializing mapreduce result")
 		group.Serialize(ctx, maprMessages)
 		group = mapr.NewGroupSet()
 	}
@@ -264,7 +264,7 @@ func (a *Aggregate) aggregate(group *mapr.GroupSet, fields map[string]string) {
 	for _, sc := range a.query.Select {
 		if val, ok := fields[sc.Field]; ok {
 			if err := set.Aggregate(sc.FieldStorage, sc.Operation, val, false); err != nil {
-				dlog.Common.Error(err)
+				dlog.Server.Error(err)
 				continue
 			}
 			addedSample = true
@@ -275,7 +275,7 @@ func (a *Aggregate) aggregate(group *mapr.GroupSet, fields map[string]string) {
 		set.Samples++
 		return
 	}
-	dlog.Common.Trace("Aggregated data locally without adding new samples")
+	dlog.Server.Trace("Aggregated data locally without adding new samples")
 }
 
 // Serialize all the aggregated data.
@@ -283,7 +283,7 @@ func (a *Aggregate) Serialize(ctx context.Context) {
 	select {
 	case a.serialize <- struct{}{}:
 	case <-time.After(time.Minute):
-		dlog.Common.Warn("Starting to serialize mapredice data takes over a minute")
+		dlog.Server.Warn("Starting to serialize mapredice data takes over a minute")
 	case <-ctx.Done():
 	}
 }

@@ -93,7 +93,7 @@ func (c KnownHostsCallback) Wrap() ssh.HostKeyCallback {
 			ipLine:     knownhosts.Line([]string{remote.String()}, key),
 			responseCh: make(chan response),
 		}
-		dlog.Common.Warn("Encountered unknown host", unknown)
+		dlog.Client.Warn("Encountered unknown host", unknown)
 		// Notify user that there is an unknown host
 		c.unknownCh <- unknown
 		// Wait for user input.
@@ -132,7 +132,7 @@ func (c KnownHostsCallback) PromptAddHosts(ctx context.Context) {
 				hosts = []unknownHost{}
 			}
 		case <-ctx.Done():
-			dlog.Common.Debug("Stopping goroutine prompting new hosts...")
+			dlog.Client.Debug("Stopping goroutine prompting new hosts...")
 			return
 		}
 	}
@@ -146,7 +146,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 
 	select {
 	case <-c.trustAllHostsCh:
-		dlog.Common.Warn("Trusting host keys of servers", servers)
+		dlog.Client.Warn("Trusting host keys of servers", servers)
 		c.trustHosts(hosts)
 		return
 	default:
@@ -166,7 +166,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 			c.trustHosts(hosts)
 		},
 		EndCallback: func() {
-			dlog.Common.Info("Added hosts to known hosts file", c.knownHostsPath)
+			dlog.Client.Info("Added hosts to known hosts file", c.knownHostsPath)
 		},
 	}
 	p.Add(a)
@@ -179,7 +179,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 			c.trustHosts(hosts)
 		},
 		EndCallback: func() {
-			dlog.Common.Info("Added hosts to known hosts file", c.knownHostsPath)
+			dlog.Client.Info("Added hosts to known hosts file", c.knownHostsPath)
 		},
 	}
 	p.Add(a)
@@ -191,7 +191,7 @@ func (c KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 			c.dontTrustHosts(hosts)
 		},
 		EndCallback: func() {
-			dlog.Common.Info("Didn't add hosts to known hosts file", c.knownHostsPath)
+			dlog.Client.Info("Didn't add hosts to known hosts file", c.knownHostsPath)
 		},
 	}
 	p.Add(a)

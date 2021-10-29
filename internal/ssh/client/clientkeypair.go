@@ -16,7 +16,7 @@ import (
 // GeneratePrivatePublicKeyPairIfNotExists generates a SSH key pair (used by the integration tests)
 func GeneratePrivatePublicKeyPairIfNotExists(keyPath string, bitSize int) {
 	if _, err := os.Stat(keyPath); err == nil {
-		dlog.Common.Debug("Private/public key pair already exists", keyPath)
+		dlog.Client.Debug("Private/public key pair already exists", keyPath)
 		return
 	}
 	GeneratePrivatePublicKeyPair(keyPath, bitSize)
@@ -27,27 +27,27 @@ func GeneratePrivatePublicKeyPair(keyPath string, bitSize int) {
 	privateKeyPath := keyPath
 	publicKeyPath := fmt.Sprintf("%s.pub", keyPath)
 
-	dlog.Common.Debug("Generating private/public key pair", privateKeyPath, publicKeyPath)
+	dlog.Client.Debug("Generating private/public key pair", privateKeyPath, publicKeyPath)
 
 	privateKey, err := generatePrivateKey(bitSize)
 	if err != nil {
-		dlog.Common.FatalPanic(err)
+		dlog.Client.FatalPanic(err)
 	}
 	publicKeyBytes, err := generatePublicKey(&privateKey.PublicKey)
 	if err != nil {
-		dlog.Common.FatalPanic(err)
+		dlog.Client.FatalPanic(err)
 	}
 	privateKeyBytes := encodePrivateKeyToPEM(privateKey)
 	err = writeKey(privateKeyBytes, privateKeyPath)
 	if err != nil {
-		dlog.Common.FatalPanic(err)
+		dlog.Client.FatalPanic(err)
 	}
 	err = writeKey([]byte(publicKeyBytes), publicKeyPath)
 	if err != nil {
-		dlog.Common.FatalPanic(err)
+		dlog.Client.FatalPanic(err)
 	}
 
-	dlog.Common.Debug("Done generating private/public key pair", privateKeyPath, publicKeyPath)
+	dlog.Client.Debug("Done generating private/public key pair", privateKeyPath, publicKeyPath)
 }
 
 func generatePrivateKey(bitSize int) (*rsa.PrivateKey, error) {

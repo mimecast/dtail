@@ -18,25 +18,25 @@ func PrivateHostKey() []byte {
 	_, err := os.Stat(hostKeyFile)
 
 	if os.IsNotExist(err) {
-		dlog.Common.Info("Generating private server RSA host key")
+		dlog.Server.Info("Generating private server RSA host key")
 		privateKey, err := ssh.GeneratePrivateRSAKey(config.Server.HostKeyBits)
 
 		if err != nil {
-			dlog.Common.FatalPanic("Failed to generate private server RSA host key", err)
+			dlog.Server.FatalPanic("Failed to generate private server RSA host key", err)
 		}
 
 		pem := ssh.EncodePrivateKeyToPEM(privateKey)
 		if err := ioutil.WriteFile(hostKeyFile, pem, 0600); err != nil {
-			dlog.Common.Error("Unable to write private server RSA host key to file",
+			dlog.Server.Error("Unable to write private server RSA host key to file",
 				hostKeyFile, err)
 		}
 		return pem
 	}
 
-	dlog.Common.Info("Reading private server RSA host key from file", hostKeyFile)
+	dlog.Server.Info("Reading private server RSA host key from file", hostKeyFile)
 	pem, err := ioutil.ReadFile(hostKeyFile)
 	if err != nil {
-		dlog.Common.FatalPanic("Failed to load private server RSA host key", err)
+		dlog.Server.FatalPanic("Failed to load private server RSA host key", err)
 	}
 	return pem
 }
