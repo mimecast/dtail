@@ -10,7 +10,7 @@ import (
 )
 
 func TestDTailHealthCheck(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
@@ -32,7 +32,7 @@ func TestDTailHealthCheck(t *testing.T) {
 }
 
 func TestDTailHealthCheck2(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
@@ -57,7 +57,7 @@ func TestDTailHealthCheck2(t *testing.T) {
 }
 
 func TestDTailHealthCheck3(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}

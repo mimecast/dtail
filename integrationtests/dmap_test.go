@@ -10,7 +10,7 @@ import (
 )
 
 func TestDMap(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
@@ -56,7 +56,7 @@ func TestDMap(t *testing.T) {
 }
 
 func TestDMap2(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
@@ -93,7 +93,7 @@ func TestDMap2(t *testing.T) {
 }
 
 func TestDMap3(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}

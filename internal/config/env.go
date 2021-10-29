@@ -16,12 +16,3 @@ func Hostname() (string, error) {
 	}
 	return os.Hostname()
 }
-
-// SSHKnownHostsFile returns the known hosts file path (useful for integration tests)
-func SSHKnownHostsFile() string {
-	if len(os.Getenv("DTAIL_SSH_KNOWN_HOSTS_FILE")) > 0 {
-		return os.Getenv("DTAIL_SSH_KNOWN_HOSTS_FILE")
-	} else {
-		return os.Getenv("HOME") + "/.ssh/known_hosts"
-	}
-}

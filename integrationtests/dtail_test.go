@@ -12,7 +12,7 @@ import (
 )
 
 func TestDTailWithServer(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
@@ -41,7 +41,6 @@ func TestDTailWithServer(t *testing.T) {
 		"--logLevel", "info",
 		"--bindAddress", bindAddress,
 		"--port", fmt.Sprintf("%d", port),
-		"--relaxedAuth",
 	)
 	if err != nil {
 		t.Error(err)
@@ -131,7 +130,7 @@ func TestDTailWithServer(t *testing.T) {
 }
 
 func TestDTailColorTable(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}

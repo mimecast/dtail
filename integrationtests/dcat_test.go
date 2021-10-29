@@ -9,7 +9,7 @@ import (
 )
 
 func TestDCat(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
@@ -33,7 +33,7 @@ func TestDCat(t *testing.T) {
 }
 
 func TestDCat2(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		return
 	}
 	testdataFile := "dcat2.txt"
@@ -62,7 +62,7 @@ func TestDCat2(t *testing.T) {
 }
 
 func TestDCatColors(t *testing.T) {
-	if !config.Env("DTAIL_RUN_INTEGRATION_TESTS") {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		return
 	}
 

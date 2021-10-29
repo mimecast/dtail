@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/mimecast/dtail/internal/config"
@@ -29,9 +30,13 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 	privateKeyPath string) ([]gossh.AuthMethod, HostKeyCallback) {
 
 	var sshAuthMethods []gossh.AuthMethod
-	knownHostsFile := config.SSHKnownHostsFile()
-	knownHostsCallback, err := NewKnownHostsCallback(knownHostsFile, trustAllHosts,
-		throttleCh)
+	knownHostsFile := fmt.Sprintf("%s/.ssh/known_hosts", os.Getenv("HOME"))
+	if config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
+		// In case of integration test, override known hosts file path.
+		knownHostsFile = "./known_hosts"
+	}
+
+	knownHostsCallback, err := NewKnownHostsCallback(knownHostsFile, trustAllHosts, throttleCh)
 	if err != nil {
 		dlog.Client.FatalPanic(knownHostsFile, err)
 	}

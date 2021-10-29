@@ -65,7 +65,7 @@ func (in *initializer) parseSpecificConfig(configFile string) error {
 func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 	additionalArgs []string) error {
 
-	in.readEnvironmentVars()
+	in.processEnvVars()
 
 	switch sourceProcess {
 	case source.Server:
@@ -81,10 +81,9 @@ func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 }
 
 // There are some special options which can be set by environment variable.
-func (in *initializer) readEnvironmentVars() {
-	if Env("DTAIL_RUN_INTEGRATION_TESTS") {
+func (in *initializer) processEnvVars() {
+	if Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		os.Setenv("DTAIL_HOSTNAME_OVERRIDE", "integrationtest")
-		os.Setenv("DTAIL_SSH_KNOWN_HOSTS_FILE", "./known_hosts")
 	}
 }
 
