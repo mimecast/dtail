@@ -2,6 +2,8 @@ package datas
 
 import "fmt"
 
+// TODO: Unused code file, delete it.
+
 // RBuffer is a simple circular string ring buffer data structure.
 type RBuffer struct {
 	Capacity int

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -45,6 +46,16 @@ func (r *readCommand) Start(ctx context.Context, ltx lcontext.LContext,
 			"Unable to parse command", args, argc))
 		return
 	}
+
+	// In serverless mode, can also read data from pipe
+	// e.g.: grep foo bar.log | dmap 'from STATS select ...'
+	if r.isInputFromPipe() {
+		dlog.Server.Debug("Reading data from pipe")
+		r.read(ctx, ltx, "PIPE", "PIPE", re)
+		return
+	}
+
+	dlog.Server.Debug("Reading data from file(s)")
 	r.readGlob(ctx, ltx, args[1], re, retries)
 }
 
@@ -106,20 +117,13 @@ func (r *readCommand) readFileIfPermissions(ctx context.Context, ltx lcontext.LC
 			"Unable to read file(s), check server logs"))
 		return
 	}
-	r.readFile(ctx, ltx, path, globID, re)
+	r.read(ctx, ltx, path, globID, re)
 }
 
-func (*readCommand) limit(ctx context.Context, limiter chan struct{}, message string) {
-	select {
-	case <-ctx.Done():
-		return
-	}
-}
-
-func (r *readCommand) readFile(ctx context.Context, ltx lcontext.LContext,
+func (r *readCommand) read(ctx context.Context, ltx lcontext.LContext,
 	path, globID string, re regex.Regex) {
 
-	dlog.Server.Info(r.server.user, "Start reading file", path, globID)
+	dlog.Server.Info(r.server.user, "Start reading", path, globID)
 	var reader fs.FileReader
 	var limiter chan struct{}
 
@@ -205,4 +209,13 @@ func (r *readCommand) makeGlobID(path, glob string) string {
 	r.server.send(r.server.serverMessages,
 		dlog.Server.Warn("Empty file path given?", path, glob))
 	return ""
+}
+
+func (r *readCommand) isInputFromPipe() bool {
+	if !r.server.serverless {
+		// Can read from pipe only in serverless mode.
+		return false
+	}
+	fileInfo, _ := os.Stdin.Stat()
+	return fileInfo.Mode()&os.ModeCharDevice == 0
 }

@@ -65,16 +65,12 @@ func (f readFile) Retry() bool {
 func (f readFile) Start(ctx context.Context, ltx lcontext.LContext,
 	lines chan<- line.Line, re regex.Regex) error {
 
-	dlog.Common.Trace("readFile", f)
-
-	fd, err := os.Open(f.filePath)
+	reader, fd, err := f.makeReader()
+	if fd != nil {
+		defer fd.Close()
+	}
 	if err != nil {
 		return err
-	}
-	defer fd.Close()
-
-	if f.seekEOF {
-		fd.Seek(0, io.SeekEnd)
 	}
 
 	rawLines := make(chan *bytes.Buffer, 100)
@@ -94,12 +90,42 @@ func (f readFile) Start(ctx context.Context, ltx lcontext.LContext,
 		readCancel()
 	}()
 
-	err = f.read(readCtx, fd, rawLines, truncate)
+	err = f.read(readCtx, fd, reader, rawLines, truncate)
 	close(rawLines)
 	// Filter may sends some data still. So wait until it is done here.
 	filterWg.Wait()
 
 	return err
+}
+
+func (f readFile) makeReader() (*bufio.Reader, *os.File, error) {
+	if f.filePath == "PIPE" && f.globID == "PIPE" {
+		return f.makePipeReader()
+	}
+	return f.makeFileReader()
+}
+
+func (f readFile) makeFileReader() (*bufio.Reader, *os.File, error) {
+	var reader *bufio.Reader
+	fd, err := os.Open(f.filePath)
+	if err != nil {
+		return reader, fd, err
+	}
+
+	if f.seekEOF {
+		fd.Seek(0, io.SeekEnd)
+	}
+
+	reader, err = f.makeCompressedFileReader(fd)
+	if err != nil {
+		return reader, fd, err
+	}
+
+	return reader, fd, nil
+}
+
+func (f readFile) makePipeReader() (*bufio.Reader, *os.File, error) {
+	return bufio.NewReader(os.Stdin), nil, nil
 }
 
 func (f readFile) periodicTruncateCheck(ctx context.Context, truncate chan struct{}) {
@@ -116,7 +142,7 @@ func (f readFile) periodicTruncateCheck(ctx context.Context, truncate chan struc
 	}
 }
 
-func (f readFile) makeReader(fd *os.File) (reader *bufio.Reader, err error) {
+func (f readFile) makeCompressedFileReader(fd *os.File) (reader *bufio.Reader, err error) {
 	switch {
 	case strings.HasSuffix(f.FilePath(), ".gz"):
 		fallthrough
@@ -137,14 +163,10 @@ func (f readFile) makeReader(fd *os.File) (reader *bufio.Reader, err error) {
 	return
 }
 
-func (f readFile) read(ctx context.Context, fd *os.File, rawLines chan *bytes.Buffer,
-	truncate <-chan struct{}) error {
+func (f readFile) read(ctx context.Context, fd *os.File, reader *bufio.Reader,
+	rawLines chan *bytes.Buffer, truncate <-chan struct{}) error {
 
 	var offset uint64
-	reader, err := f.makeReader(fd)
-	if err != nil {
-		return err
-	}
 
 	lineLengthThreshold := 1024 * 1024 // 1mb
 	warnedAboutLongLine := false
@@ -387,6 +409,10 @@ func (f readFile) transmittable(lineBytesBuffer *bytes.Buffer, length, capacity 
 
 // Check wether log file is truncated. Returns nil if not.
 func (f readFile) truncated(fd *os.File) (bool, error) {
+	if fd == nil {
+		return false, nil
+	}
+
 	dlog.Common.Debug(f.filePath, "File truncation check")
 
 	// Can not seek currently open FD.
