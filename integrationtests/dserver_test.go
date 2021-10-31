@@ -27,7 +27,7 @@ func TestDServer(t *testing.T) {
 	defer cancel()
 
 	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t,
-		"../dserver",
+		"", "../dserver",
 		"--cfg", "dserver.cfg",
 		"--logger", "stdout",
 		"--logLevel", "info",
@@ -94,7 +94,7 @@ func TestDServer2(t *testing.T) {
 	}()
 
 	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t,
-		"../dserver",
+		"", "../dserver",
 		"--cfg", "dserver2.cfg",
 		"--logger", "stdout",
 		"--logLevel", "debug",

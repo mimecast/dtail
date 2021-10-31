@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -47,8 +48,8 @@ func runCommandRetry(ctx context.Context, t *testing.T, retries int, stdoutFile,
 	return
 }
 
-func startCommand(ctx context.Context, t *testing.T, cmdStr string,
-	args ...string) (<-chan string, <-chan string, <-chan error, error) {
+func startCommand(ctx context.Context, t *testing.T, inPipeFile,
+	cmdStr string, args ...string) (<-chan string, <-chan string, <-chan error, error) {
 
 	stdoutCh := make(chan string)
 	stderrCh := make(chan string)
@@ -65,10 +66,26 @@ func startCommand(ctx context.Context, t *testing.T, cmdStr string,
 	if err != nil {
 		return stdoutCh, stderrCh, nil, err
 	}
+
 	cmdStderr, err := cmd.StderrPipe()
 	err = cmd.Start()
 	if err != nil {
 		return stdoutCh, stderrCh, nil, err
+	}
+
+	// Read input file and send to stdin pipe?
+	if inPipeFile != "" {
+		t.Log(fmt.Sprintf("Piping %s to stdin pipe", inPipeFile))
+		stdinPipe, err := cmd.StdinPipe()
+		if err != nil {
+			return stdoutCh, stderrCh, nil, err
+		}
+		fd, err := os.Open(inPipeFile)
+		if err != nil {
+			return stdoutCh, stderrCh, nil, err
+		}
+		defer fd.Close()
+		go io.Copy(stdinPipe, bufio.NewReader(fd))
 	}
 
 	go func() {

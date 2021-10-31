@@ -70,7 +70,7 @@ func TestDTailHealthCheck3(t *testing.T) {
 	defer cancel()
 
 	_, _, _, err := startCommand(ctx, t,
-		"../dserver",
+		"", "../dserver",
 		"--cfg", "none",
 		"--logger", "stdout",
 		"--logLevel", "trace",

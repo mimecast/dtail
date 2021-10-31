@@ -50,8 +50,9 @@ func (r *readCommand) Start(ctx context.Context, ltx lcontext.LContext,
 	// In serverless mode, can also read data from pipe
 	// e.g.: grep foo bar.log | dmap 'from STATS select ...'
 	if r.isInputFromPipe() {
-		dlog.Server.Debug("Reading data from pipe")
-		r.read(ctx, ltx, "PIPE", "PIPE", re)
+		dlog.Server.Debug("Reading data from stdin pipe")
+		// Empty file path and globID "-" represents reading from the stdin pipe.
+		r.read(ctx, ltx, "", "-", re)
 		return
 	}
 

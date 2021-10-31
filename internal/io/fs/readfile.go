@@ -99,7 +99,7 @@ func (f readFile) Start(ctx context.Context, ltx lcontext.LContext,
 }
 
 func (f readFile) makeReader() (*bufio.Reader, *os.File, error) {
-	if f.filePath == "PIPE" && f.globID == "PIPE" {
+	if f.filePath == "" && f.globID == "-" {
 		return f.makePipeReader()
 	}
 	return f.makeFileReader()

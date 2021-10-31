@@ -14,6 +14,20 @@ func TestDMap(t *testing.T) {
 		t.Log("Skipping")
 		return
 	}
+
+	t.Log("Testing dmap with input file")
+	if err := testDmap(t, false); err != nil {
+		t.Log(err)
+		return
+	}
+	t.Log("Testing dmap with stdin input pipe")
+	if err := testDmap(t, true); err != nil {
+		t.Log(err)
+		return
+	}
+}
+
+func testDmap(t *testing.T, usePipe bool) error {
 	inFile := "mapr_testdata.log"
 	csvFile := "dmap.csv.tmp"
 	expectedCsvFile := "dmap.csv.expected"
@@ -27,32 +41,45 @@ func TestDMap(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t, "../dmap",
-		"--cfg", "none",
-		"--query", query,
-		"--logger", "stdout",
-		"--logLevel", "error",
-		"--noColor",
-		inFile)
+	var stdoutCh, stderrCh <-chan string
+	var cmdErrCh <-chan error
+	var err error
+
+	if usePipe {
+		stdoutCh, stderrCh, cmdErrCh, err = startCommand(ctx, t,
+			inFile, "../dmap",
+			"--cfg", "none",
+			"--query", query,
+			"--logger", "stdout",
+			"--logLevel", "error",
+			"--noColor")
+	} else {
+		stdoutCh, stderrCh, cmdErrCh, err = startCommand(ctx, t,
+			"", "../dmap",
+			"--cfg", "none",
+			"--query", query,
+			"--logger", "stdout",
+			"--logLevel", "error",
+			"--noColor",
+			inFile)
+	}
 
 	if err != nil {
-		t.Error(err)
-		return
+		return err
 	}
 
 	waitForCommand(ctx, t, stdoutCh, stderrCh, cmdErrCh)
 
 	if err := compareFiles(t, csvFile, expectedCsvFile); err != nil {
-		t.Error(err)
-		return
+		return err
 	}
 	if err := compareFiles(t, queryFile, expectedQueryFile); err != nil {
-		t.Error(err)
-		return
+		return err
 	}
 
 	os.Remove(csvFile)
 	os.Remove(queryFile)
+	return nil
 }
 
 func TestDMap2(t *testing.T) {
@@ -111,7 +138,8 @@ func TestDMap3(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t, "../dmap",
+	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t,
+		"", "../dmap",
 		"--query", query,
 		"--cfg", "none",
 		"--logger", "stdout",
