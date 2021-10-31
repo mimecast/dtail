@@ -18,6 +18,7 @@ If you like what you see [look here for more examples](doc/examples.md)! You can
 Installation and Usage
 ======================
 
+* Check out the [Testing Guide](doc/testing.md) for unit and integration testing.
 * For the most straightforward setup, please follow the [Quick Starting Guide](doc/quickstart.md).
 * For a more sustainable setup, please follow the [Installation Guide](doc/installation.md).
 * Please also look at the [Usage Examples](doc/examples.md).
