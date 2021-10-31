@@ -7,6 +7,8 @@ Currently, there are 3 different ways of how DTail can be tested.
 2. Integration tests (automatic)
 3. Semi-manual tests with DTail server instances running in Docker.
 
+Also, not actually testing, DTail is being linted and vetted before each release. For this run `make lint` and `make vet` at the top level source directory.
+
 ## Unit tests
 
 To run all the unit tests simply run the following make command at the top level source directory:
