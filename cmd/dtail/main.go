@@ -38,7 +38,7 @@ func main() {
 	flag.BoolVar(&args.NoColor, "noColor", false, "Disable ANSII terminal colors")
 	flag.BoolVar(&args.Quiet, "quiet", false, "Quiet output mode")
 	flag.BoolVar(&args.RegexInvert, "invert", false, "Invert regex")
-	flag.BoolVar(&args.Spartan, "spartan", false, "Spartan output mode")
+	flag.BoolVar(&args.Plain, "plain", false, "Plain output mode")
 	flag.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Trust all unknown host keys")
 	flag.BoolVar(&checkHealth, "checkHealth", false, "Deprecated, flag will be removed soon")
 	flag.BoolVar(&displayColorTable, "colorTable", false, "Show color table")
@@ -74,7 +74,7 @@ func main() {
 	if displayVersion {
 		version.PrintAndExit()
 	}
-	if !args.Spartan {
+	if !args.Plain {
 		if displayWideColorTable {
 			color.TablePrintAndExit(true)
 		}

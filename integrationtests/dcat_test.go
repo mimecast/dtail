@@ -17,7 +17,7 @@ func TestDCat(t *testing.T) {
 	stdoutFile := "dcat.out"
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
-		"../dcat", "--spartan", "--cfg", "none", testdataFile)
+		"../dcat", "--plain", "--cfg", "none", testdataFile)
 
 	if err != nil {
 		t.Error(err)
@@ -40,7 +40,7 @@ func TestDCat2(t *testing.T) {
 	expectedFile := "dcat2.txt.expected"
 	stdoutFile := "dcat2.out"
 
-	args := []string{"--spartan", "--logLevel", "error", "--cfg", "none"}
+	args := []string{"--plain", "--logLevel", "error", "--cfg", "none"}
 
 	// Cat file 100 times in one session.
 	for i := 0; i < 100; i++ {

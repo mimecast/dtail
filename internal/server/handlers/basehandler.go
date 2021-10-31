@@ -44,7 +44,7 @@ type baseHandler struct {
 	once       sync.Once
 	mutex      sync.Mutex
 	quiet      bool
-	spartan    bool
+	plain    bool
 	serverless bool
 }
 
@@ -96,7 +96,7 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 		n = copy(p, h.readBuf.Bytes())
 
 	case line := <-h.lines:
-		if !h.spartan {
+		if !h.plain {
 			h.readBuf.WriteString("REMOTE")
 			h.readBuf.WriteString(protocol.FieldDelimiter)
 			h.readBuf.WriteString(h.hostname)
@@ -255,9 +255,9 @@ func (h *baseHandler) handleOptions(options map[string]string) {
 			dlog.Server.Debug(h.user, "Enabling quiet mode")
 			h.quiet = true
 		}
-		if spartan, _ := options["spartan"]; spartan == "true" {
-			dlog.Server.Debug(h.user, "Enabling spartan mode")
-			h.spartan = true
+		if plain, _ := options["plain"]; plain == "true" {
+			dlog.Server.Debug(h.user, "Enabling plain mode")
+			h.plain = true
 		}
 		if serverless, _ := options["serverless"]; serverless == "true" {
 			dlog.Server.Debug(h.user, "Enabling serverless mode")

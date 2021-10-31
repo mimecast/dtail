@@ -246,10 +246,10 @@ INFO|20211015-055201|paul@172.17.0.1:33724|Invoking channel handler
 INFO|20211015-055201|paul@172.17.0.1:33724|Invoking request handler
 DEBUG|20211015-055201|paul@172.17.0.1:33724|Creating new server handler
 DEBUG|20211015-055201|paul@172.17.0.1:33724|protocol 4 base64 Y2F0OnNwYXJ0YW49dHJ1ZTpxdWlldD10cnVlIC92YXIvbG9nL2RzZXJ2ZXIvKiByZWdleDpub29wIA==
-TRACE|20211015-055201|paul@172.17.0.1:33724|Base64 decoded received command|cat:spartan=true:quiet=true /var/log/dserver/* regex:noop |58|[cat:spartan=true:quiet=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055201|paul@172.17.0.1:33724|Base64 decoded received command|cat:plain=true:quiet=true /var/log/dserver/* regex:noop |58|[cat:plain=true:quiet=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 DEBUG|20211015-055201|paul@172.17.0.1:33724|Enabling quiet mode
-DEBUG|20211015-055201|paul@172.17.0.1:33724|Enabling spartan mode
-DEBUG|20211015-055201|paul@172.17.0.1:33724|Handling user command|58|[cat:spartan=true:quiet=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055201|paul@172.17.0.1:33724|Enabling plain mode
+DEBUG|20211015-055201|paul@172.17.0.1:33724|Handling user command|58|[cat:plain=true:quiet=true /var/log/dserver/* regex:noop ]
 DEBUG|20211015-055201|paul@172.17.0.1:33724|/var/log/dserver/dserver.log|readfiles|Checking config permissions
 FATAL|20211015-055201|paul@172.17.0.1:33724|/var/log/dserver/dserver.log|readfiles|Server releaxed auth enabled
 INFO|20211015-055201|paul@172.17.0.1:33724|Start reading file|/var/log/dserver/dserver.log|dserver.log
@@ -518,10 +518,10 @@ INFO|20211015-055201|paul@172.17.0.1:34278|Invoking channel handler
 INFO|20211015-055201|paul@172.17.0.1:34278|Invoking request handler
 DEBUG|20211015-055201|paul@172.17.0.1:34278|Creating new server handler
 DEBUG|20211015-055201|paul@172.17.0.1:34278|protocol 4 base64 Y2F0OnF1aWV0PXRydWU6c3BhcnRhbj10cnVlIC92YXIvbG9nL2RzZXJ2ZXIvKiByZWdleDpub29wIA==
-TRACE|20211015-055201|paul@172.17.0.1:34278|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055201|paul@172.17.0.1:34278|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 DEBUG|20211015-055201|paul@172.17.0.1:34278|Enabling quiet mode
-DEBUG|20211015-055201|paul@172.17.0.1:34278|Enabling spartan mode
-DEBUG|20211015-055201|paul@172.17.0.1:34278|Handling user command|58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055201|paul@172.17.0.1:34278|Enabling plain mode
+DEBUG|20211015-055201|paul@172.17.0.1:34278|Handling user command|58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]
 DEBUG|20211015-055201|paul@172.17.0.1:34278|/var/log/dserver/dserver.log|readfiles|Checking config permissions
 FATAL|20211015-055201|paul@172.17.0.1:34278|/var/log/dserver/dserver.log|readfiles|Server releaxed auth enabled
 INFO|20211015-055201|paul@172.17.0.1:34278|Start reading file|/var/log/dserver/dserver.log|dserver.log
@@ -800,10 +800,10 @@ INFO|20211015-055201|paul@172.17.0.1:36830|Invoking channel handler
 INFO|20211015-055201|paul@172.17.0.1:36830|Invoking request handler
 DEBUG|20211015-055201|paul@172.17.0.1:36830|Creating new server handler
 DEBUG|20211015-055201|paul@172.17.0.1:36830|protocol 4 base64 Y2F0OnF1aWV0PXRydWU6c3BhcnRhbj10cnVlIC92YXIvbG9nL2RzZXJ2ZXIvKiByZWdleDpub29wIA==
-TRACE|20211015-055201|paul@172.17.0.1:36830|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055201|paul@172.17.0.1:36830|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 DEBUG|20211015-055201|paul@172.17.0.1:36830|Enabling quiet mode
-DEBUG|20211015-055201|paul@172.17.0.1:36830|Enabling spartan mode
-DEBUG|20211015-055201|paul@172.17.0.1:36830|Handling user command|58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055201|paul@172.17.0.1:36830|Enabling plain mode
+DEBUG|20211015-055201|paul@172.17.0.1:36830|Handling user command|58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]
 DEBUG|20211015-055201|paul@172.17.0.1:36830|/var/log/dserver/dserver.log|readfiles|Checking config permissions
 FATAL|20211015-055201|paul@172.17.0.1:36830|/var/log/dserver/dserver.log|readfiles|Server releaxed auth enabled
 INFO|20211015-055201|paul@172.17.0.1:36830|Start reading file|/var/log/dserver/dserver.log|dserver.log
@@ -2101,7 +2101,7 @@ INFO|20211015-055059|paul@172.17.0.1:58310|Start reading file|/var/log/dserver/d
 INFO|20211015-055021|1|stats.go:53|8|11|7|0.45|781h38m58s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=4
 INFO|20211015-055059|paul@172.17.0.1:55200|Incoming authorization
 DEBUG|20211015-055059|paul@172.17.0.1:53194|protocol 4 base64 dGFpbDogL3Zhci9sb2cvZHNlcnZlci8qIHJlZ2V4Om5vb3Ag
-TRACE|20211015-055201|paul@172.17.0.1:56120|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055201|paul@172.17.0.1:56120|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 INFO|20211015-054958|1|stats.go:53|8|11|7|0.45|781h38m36s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=4
 INFO|20211015-055047|1|stats.go:53|8|11|7|0.51|781h39m25s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=4
 DEBUG|20211015-055059|readFile|readFile(filePath:/var/log/dserver/dserver.log,globID:dserver.log,retry:true,canSkipLines:true,seekEOF:true)
@@ -2115,14 +2115,14 @@ DEBUG|20211015-055102|/var/log/dserver/dserver.log|File truncation check
 INFO|20211015-055041|1|stats.go:53|8|11|7|0.61|781h39m18s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=4
 INFO|20211015-055059|1|stats.go:53|8|15|7|0.58|781h39m37s|MAPREDUCE:STATS|currentConnections=1|lifetimeConnections=5
 DEBUG|20211015-055059|paul@172.17.0.1:53194|Handling user command|36|[tail: /var/log/dserver/* regex:noop ]
-DEBUG|20211015-055201|paul@172.17.0.1:56120|Enabling spartan mode
+DEBUG|20211015-055201|paul@172.17.0.1:56120|Enabling plain mode
 INFO|20211015-055018|1|stats.go:53|8|11|7|0.45|781h38m56s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=4
 INFO|20211015-055059|Handling connection
 DEBUG|20211015-055105|/var/log/dserver/dserver.log|File truncation check
 INFO|20211015-055051|1|stats.go:53|8|11|7|0.51|781h39m28s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=4
 INFO|20211015-055059|paul@172.17.0.1:55200|Invoking channel handler
 DEBUG|20211015-055059|paul@172.17.0.1:53194|/var/log/dserver/dserver.log|readfiles|Checking config permissions
-DEBUG|20211015-055201|paul@172.17.0.1:56120|Handling user command|58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055201|paul@172.17.0.1:56120|Handling user command|58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]
 INFO|20211015-055028|1|stats.go:53|8|11|7|0.53|781h39m6s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=4
 INFO|20211015-055059|paul@172.17.0.1:55050|Incoming authorization
 INFO|20211015-055107|1|stats.go:53|8|26|7|0.57|781h39m44s|MAPREDUCE:STATS|currentConnections=1|lifetimeConnections=5
@@ -2276,7 +2276,7 @@ DEBUG|20211015-055149|paul@172.17.0.1:58312|/var/log/dserver/dserver.log|readfil
 TRACE|20211015-055108|paul@172.17.0.1:46956|flush()|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:278
 INFO|20211015-055147|1|stats.go:53|8|11|7|0.41|781h40m25s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
 INFO|20211015-055148|paul@172.17.0.1:53198|Invoking request handler
-TRACE|20211015-055223|paul@172.17.0.1:56122|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055223|paul@172.17.0.1:56122|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 INFO|20211015-055108|1|stats.go:53|8|16|7|0.57|781h39m46s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
 INFO|20211015-055117|1|stats.go:53|8|11|7|0.56|781h39m55s|MAPREDUCE:STATS|lifetimeConnections=5|currentConnections=0
 FATAL|20211015-055149|paul@172.17.0.1:58312|/var/log/dserver/dserver.log|readfiles|Server releaxed auth enabled
@@ -2290,14 +2290,14 @@ INFO|20211015-055149|paul@172.17.0.1:58312|Start reading file|/var/log/dserver/d
 INFO|20211015-055111|1|stats.go:53|8|11|7|0.57|781h39m48s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
 INFO|20211015-055148|paul@172.17.0.1:55202|Incoming authorization
 DEBUG|20211015-055148|paul@172.17.0.1:53198|protocol 4 base64 Y2F0OiAvdmFyL2xvZy9kc2VydmVyLyogcmVnZXg6bm9vcCA=
-DEBUG|20211015-055223|paul@172.17.0.1:56122|Enabling spartan mode
+DEBUG|20211015-055223|paul@172.17.0.1:56122|Enabling plain mode
 DEBUG|20211015-055108|paul@172.17.0.1:33004|shutdown()
 INFO|20211015-055137|1|stats.go:53|8|11|7|0.40|781h40m15s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
 DEBUG|20211015-055149|readFile|readFile(filePath:/var/log/dserver/dserver.log,globID:dserver.log,retry:false,canSkipLines:false,seekEOF:false)
 INFO|20211015-055121|1|stats.go:53|8|11|7|0.56|781h39m58s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
 FATAL|20211015-055148|paul@172.17.0.1:55202|Granting permissions via relaxed-auth
 TRACE|20211015-055148|paul@172.17.0.1:53198|Base64 decoded received command|cat: /var/log/dserver/* regex:noop |35|[cat: /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
-DEBUG|20211015-055223|paul@172.17.0.1:56122|Handling user command|58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055223|paul@172.17.0.1:56122|Handling user command|58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]
 TRACE|20211015-055108|paul@172.17.0.1:33004|flush()|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:278
 INFO|20211015-055147|1|stats.go:53|8|11|7|0.41|781h40m25s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
 INFO|20211015-055149|/var/log/dserver/dserver.log|End of file reached
@@ -2523,7 +2523,7 @@ DEBUG|20211015-055154|paul@172.17.0.1:55204|ALL lines sent|0xc00032a0e0
 INFO|20211015-055201|Handling connection
 DEBUG|20211015-055154|paul@172.17.0.1:33008|/var/log/dserver/dserver.log|readfiles|Checking config permissions
 DEBUG|20211015-055154|paul@172.17.0.1:55054|shutdown()
-TRACE|20211015-055201|paul@172.17.0.1:58316|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055201|paul@172.17.0.1:58316|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 DEBUG|20211015-055154|readFile|readFile(filePath:/var/log/dserver/dserver.log,globID:dserver.log,retry:false,canSkipLines:false,seekEOF:false)
 INFO|20211015-055154|1|stats.go:53|8|13|7|0.54|781h40m32s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=7
 INFO|20211015-055201|paul@172.17.0.1:53208|Incoming authorization
@@ -2535,13 +2535,13 @@ INFO|20211015-055154|paul@172.17.0.1:55204|Good bye Mister!
 FATAL|20211015-055201|paul@172.17.0.1:53208|Granting permissions via relaxed-auth
 INFO|20211015-055154|paul@172.17.0.1:33008|Start reading file|/var/log/dserver/dserver.log|dserver.log
 DEBUG|20211015-055154|paul@172.17.0.1:55054|Still lines to be sent
-DEBUG|20211015-055201|paul@172.17.0.1:58316|Enabling spartan mode
+DEBUG|20211015-055201|paul@172.17.0.1:58316|Enabling plain mode
 DEBUG|20211015-055154|paul@172.17.0.1:46960|shutdown()
 INFO|20211015-055157|1|stats.go:53|8|11|7|0.58|781h40m35s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=7
 INFO|20211015-055201|1|stats.go:53|8|15|7|0.53|781h40m39s|MAPREDUCE:STATS|currentConnections=1|lifetimeConnections=8
 DEBUG|20211015-055154|readFile|readFile(filePath:/var/log/dserver/dserver.log,globID:dserver.log,retry:false,canSkipLines:false,seekEOF:false)
 DEBUG|20211015-055154|paul@172.17.0.1:55054|ALL lines sent|0xc0000c6000
-DEBUG|20211015-055201|paul@172.17.0.1:58316|Handling user command|58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055201|paul@172.17.0.1:58316|Handling user command|58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]
 TRACE|20211015-055154|paul@172.17.0.1:46960|flush()|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:278
 INFO|20211015-055201|Handling connection
 INFO|20211015-055201|paul@172.17.0.1:53208|Invoking channel handler
@@ -2568,7 +2568,7 @@ INFO|20211015-055201|Handling connection
 DEBUG|20211015-055201|readFile|readFile(filePath:/var/log/dserver/dserver.log,globID:dserver.log,retry:false,canSkipLines:false,seekEOF:false)
 INFO|20211015-055154|paul@172.17.0.1:46960|Good bye Mister!
 INFO|20211015-055201|paul@172.17.0.1:55206|Invoking channel handler
-TRACE|20211015-055201|paul@172.17.0.1:53208|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055201|paul@172.17.0.1:53208|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 DEBUG|20211015-055154|paul@172.17.0.1:33008|ALL lines sent|0xc0002a4000
 INFO|20211015-055201|paul@172.17.0.1:55056|Incoming authorization
 INFO|20211015-055201|/var/log/dserver/dserver.log|End of file reached
@@ -2580,18 +2580,18 @@ FATAL|20211015-055201|paul@172.17.0.1:55056|Granting permissions via relaxed-aut
 DEBUG|20211015-055201|paul@172.17.0.1:58316|shutdown()
 INFO|20211015-055201|Handling connection
 DEBUG|20211015-055201|paul@172.17.0.1:55206|Creating new server handler
-DEBUG|20211015-055201|paul@172.17.0.1:53208|Enabling spartan mode
+DEBUG|20211015-055201|paul@172.17.0.1:53208|Enabling plain mode
 INFO|20211015-055154|paul@172.17.0.1:33008|Good bye Mister!
 INFO|20211015-055201|1|stats.go:53|8|15|7|0.53|781h40m39s|MAPREDUCE:STATS|currentConnections=1|lifetimeConnections=8
 TRACE|20211015-055201|paul@172.17.0.1:58316|flush()|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:278
 INFO|20211015-055201|paul@172.17.0.1:46964|Incoming authorization
 DEBUG|20211015-055201|paul@172.17.0.1:55206|protocol 4 base64 Y2F0OnF1aWV0PXRydWU6c3BhcnRhbj10cnVlIC92YXIvbG9nL2RzZXJ2ZXIvKiByZWdleDpub29wIA==
-DEBUG|20211015-055201|paul@172.17.0.1:53208|Handling user command|58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055201|paul@172.17.0.1:53208|Handling user command|58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]
 INFO|20211015-055158|1|stats.go:53|8|11|7|0.58|781h40m36s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=7
 INFO|20211015-055201|paul@172.17.0.1:55056|Invoking channel handler
 DEBUG|20211015-055201|paul@172.17.0.1:58316|Still lines to be sent
 FATAL|20211015-055201|paul@172.17.0.1:46964|Granting permissions via relaxed-auth
-TRACE|20211015-055201|paul@172.17.0.1:55206|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055201|paul@172.17.0.1:55206|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 DEBUG|20211015-055201|paul@172.17.0.1:53208|/var/log/dserver/dserver.log|readfiles|Checking config permissions
 INFO|20211015-055201|Handling connection
 INFO|20211015-055201|paul@172.17.0.1:55056|Invoking request handler
@@ -2603,16 +2603,16 @@ INFO|20211015-055201|paul@172.17.0.1:33010|Incoming authorization
 DEBUG|20211015-055201|paul@172.17.0.1:55056|Creating new server handler
 INFO|20211015-055201|1|stats.go:53|8|13|7|0.53|781h40m39s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=8
 INFO|20211015-055201|paul@172.17.0.1:46964|Invoking channel handler
-DEBUG|20211015-055201|paul@172.17.0.1:55206|Enabling spartan mode
+DEBUG|20211015-055201|paul@172.17.0.1:55206|Enabling plain mode
 INFO|20211015-055201|paul@172.17.0.1:53208|Start reading file|/var/log/dserver/dserver.log|dserver.log
 FATAL|20211015-055201|paul@172.17.0.1:33010|Granting permissions via relaxed-auth
 DEBUG|20211015-055201|paul@172.17.0.1:55056|protocol 4 base64 Y2F0OnF1aWV0PXRydWU6c3BhcnRhbj10cnVlIC92YXIvbG9nL2RzZXJ2ZXIvKiByZWdleDpub29wIA==
 INFO|20211015-055201|paul@172.17.0.1:58316|Good bye Mister!
 INFO|20211015-055201|paul@172.17.0.1:46964|Invoking request handler
-DEBUG|20211015-055201|paul@172.17.0.1:55206|Handling user command|58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055201|paul@172.17.0.1:55206|Handling user command|58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]
 DEBUG|20211015-055201|readFile|readFile(filePath:/var/log/dserver/dserver.log,globID:dserver.log,retry:false,canSkipLines:false,seekEOF:false)
 INFO|20211015-055201|1|stats.go:53|8|15|7|0.53|781h40m39s|MAPREDUCE:STATS|currentConnections=1|lifetimeConnections=8
-TRACE|20211015-055201|paul@172.17.0.1:55056|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055201|paul@172.17.0.1:55056|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 INFO|20211015-055207|1|stats.go:53|8|11|7|0.49|781h40m44s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=8
 DEBUG|20211015-055201|paul@172.17.0.1:46964|Creating new server handler
 DEBUG|20211015-055201|paul@172.17.0.1:55206|/var/log/dserver/dserver.log|readfiles|Checking config permissions
@@ -2624,13 +2624,13 @@ DEBUG|20211015-055201|paul@172.17.0.1:46964|protocol 4 base64 Y2F0OnF1aWV0PXRydW
 FATAL|20211015-055201|paul@172.17.0.1:55206|/var/log/dserver/dserver.log|readfiles|Server releaxed auth enabled
 DEBUG|20211015-055201|paul@172.17.0.1:53208|shutdown()
 INFO|20211015-055201|paul@172.17.0.1:33010|Invoking request handler
-DEBUG|20211015-055201|paul@172.17.0.1:55056|Enabling spartan mode
+DEBUG|20211015-055201|paul@172.17.0.1:55056|Enabling plain mode
 INFO|20211015-055223|Handling connection
-TRACE|20211015-055201|paul@172.17.0.1:46964|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055201|paul@172.17.0.1:46964|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 INFO|20211015-055201|paul@172.17.0.1:55206|Start reading file|/var/log/dserver/dserver.log|dserver.log
 TRACE|20211015-055201|paul@172.17.0.1:53208|flush()|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:278
 DEBUG|20211015-055201|paul@172.17.0.1:33010|Creating new server handler
-DEBUG|20211015-055201|paul@172.17.0.1:55056|Handling user command|58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055201|paul@172.17.0.1:55056|Handling user command|58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]
 INFO|20211015-055223|paul@172.17.0.1:58318|Incoming authorization
 DEBUG|20211015-055201|paul@172.17.0.1:46964|Enabling quiet mode
 DEBUG|20211015-055201|readFile|readFile(filePath:/var/log/dserver/dserver.log,globID:dserver.log,retry:false,canSkipLines:false,seekEOF:false)
@@ -2638,13 +2638,13 @@ DEBUG|20211015-055201|paul@172.17.0.1:53208|Still lines to be sent
 DEBUG|20211015-055201|paul@172.17.0.1:33010|protocol 4 base64 Y2F0OnNwYXJ0YW49dHJ1ZTpxdWlldD10cnVlIC92YXIvbG9nL2RzZXJ2ZXIvKiByZWdleDpub29wIA==
 DEBUG|20211015-055201|paul@172.17.0.1:55056|/var/log/dserver/dserver.log|readfiles|Checking config permissions
 FATAL|20211015-055223|paul@172.17.0.1:58318|Granting permissions via relaxed-auth
-DEBUG|20211015-055201|paul@172.17.0.1:46964|Enabling spartan mode
+DEBUG|20211015-055201|paul@172.17.0.1:46964|Enabling plain mode
 INFO|20211015-055201|/var/log/dserver/dserver.log|End of file reached
 DEBUG|20211015-055201|paul@172.17.0.1:53208|ALL lines sent|0xc0000d2000
-TRACE|20211015-055201|paul@172.17.0.1:33010|Base64 decoded received command|cat:spartan=true:quiet=true /var/log/dserver/* regex:noop |58|[cat:spartan=true:quiet=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055201|paul@172.17.0.1:33010|Base64 decoded received command|cat:plain=true:quiet=true /var/log/dserver/* regex:noop |58|[cat:plain=true:quiet=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 FATAL|20211015-055201|paul@172.17.0.1:55056|/var/log/dserver/dserver.log|readfiles|Server releaxed auth enabled
 INFO|20211015-055223|1|stats.go:53|8|15|7|0.45|781h41m1s|MAPREDUCE:STATS|currentConnections=1|lifetimeConnections=9
-DEBUG|20211015-055201|paul@172.17.0.1:46964|Handling user command|58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055201|paul@172.17.0.1:46964|Handling user command|58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]
 DEBUG|20211015-055201|paul@172.17.0.1:55206|shutdown()
 INFO|20211015-055201|1|stats.go:53|8|13|7|0.53|781h40m39s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=8
 DEBUG|20211015-055201|paul@172.17.0.1:33010|Enabling quiet mode
@@ -2653,13 +2653,13 @@ INFO|20211015-055223|paul@172.17.0.1:58318|Invoking channel handler
 DEBUG|20211015-055201|paul@172.17.0.1:46964|/var/log/dserver/dserver.log|readfiles|Checking config permissions
 TRACE|20211015-055201|paul@172.17.0.1:55206|flush()|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:278
 INFO|20211015-055201|paul@172.17.0.1:53208|Good bye Mister!
-DEBUG|20211015-055201|paul@172.17.0.1:33010|Enabling spartan mode
+DEBUG|20211015-055201|paul@172.17.0.1:33010|Enabling plain mode
 DEBUG|20211015-055201|readFile|readFile(filePath:/var/log/dserver/dserver.log,globID:dserver.log,retry:false,canSkipLines:false,seekEOF:false)
 INFO|20211015-055223|paul@172.17.0.1:58318|Invoking request handler
 FATAL|20211015-055201|paul@172.17.0.1:46964|/var/log/dserver/dserver.log|readfiles|Server releaxed auth enabled
 DEBUG|20211015-055201|paul@172.17.0.1:55206|Still lines to be sent
 INFO|20211015-055210|1|stats.go:53|8|11|7|0.49|781h40m48s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=8
-DEBUG|20211015-055201|paul@172.17.0.1:33010|Handling user command|58|[cat:spartan=true:quiet=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055201|paul@172.17.0.1:33010|Handling user command|58|[cat:plain=true:quiet=true /var/log/dserver/* regex:noop ]
 INFO|20211015-055201|/var/log/dserver/dserver.log|End of file reached
 DEBUG|20211015-055223|paul@172.17.0.1:58318|Creating new server handler
 INFO|20211015-055201|paul@172.17.0.1:46964|Start reading file|/var/log/dserver/dserver.log|dserver.log
@@ -2673,7 +2673,7 @@ INFO|20211015-055201|1|stats.go:53|8|13|7|0.53|781h40m39s|MAPREDUCE:STATS|curren
 INFO|20211015-055223|Handling connection
 FATAL|20211015-055201|paul@172.17.0.1:33010|/var/log/dserver/dserver.log|readfiles|Server releaxed auth enabled
 TRACE|20211015-055201|paul@172.17.0.1:55056|flush()|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:278
-TRACE|20211015-055223|paul@172.17.0.1:58318|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055223|paul@172.17.0.1:58318|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 INFO|20211015-055201|/var/log/dserver/dserver.log|End of file reached
 INFO|20211015-055201|paul@172.17.0.1:55206|Good bye Mister!
 INFO|20211015-055223|paul@172.17.0.1:53212|Incoming authorization
@@ -2726,7 +2726,7 @@ DEBUG|20211015-055223|paul@172.17.0.1:55208|protocol 4 base64 Y2F0OnF1aWV0PXRydW
 INFO|20211015-055218|1|stats.go:53|8|11|7|0.49|781h40m56s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=8
 INFO|20211015-055223|paul@172.17.0.1:55058|Invoking channel handler
 FATAL|20211015-055223|paul@172.17.0.1:46966|Granting permissions via relaxed-auth
-TRACE|20211015-055223|paul@172.17.0.1:55208|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055223|paul@172.17.0.1:55208|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 INFO|20211015-055223|Handling connection
 INFO|20211015-055223|paul@172.17.0.1:55058|Invoking request handler
 INFO|20211015-055223|1|stats.go:53|8|15|7|0.45|781h41m1s|MAPREDUCE:STATS|currentConnections=1|lifetimeConnections=9
@@ -2738,17 +2738,17 @@ FATAL|20211015-055223|paul@172.17.0.1:33012|Granting permissions via relaxed-aut
 DEBUG|20211015-055223|paul@172.17.0.1:55058|protocol 4 base64 Y2F0OnF1aWV0PXRydWU6c3BhcnRhbj10cnVlIC92YXIvbG9nL2RzZXJ2ZXIvKiByZWdleDpub29wIA==
 INFO|20211015-055223|paul@172.17.0.1:46966|Invoking request handler
 INFO|20211015-055223|1|stats.go:53|8|15|7|0.45|781h41m1s|MAPREDUCE:STATS|lifetimeConnections=9|currentConnections=1
-TRACE|20211015-055223|paul@172.17.0.1:55058|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055223|paul@172.17.0.1:55058|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 DEBUG|20211015-055223|paul@172.17.0.1:46966|Creating new server handler
 INFO|20211015-055223|paul@172.17.0.1:33012|Invoking channel handler
 DEBUG|20211015-055223|paul@172.17.0.1:55058|Enabling quiet mode
 DEBUG|20211015-055223|paul@172.17.0.1:46966|protocol 4 base64 Y2F0OnF1aWV0PXRydWU6c3BhcnRhbj10cnVlIC92YXIvbG9nL2RzZXJ2ZXIvKiByZWdleDpub29wIA==
 INFO|20211015-055223|paul@172.17.0.1:33012|Invoking request handler
-DEBUG|20211015-055223|paul@172.17.0.1:55058|Enabling spartan mode
+DEBUG|20211015-055223|paul@172.17.0.1:55058|Enabling plain mode
 DEBUG|20211015-055223|paul@172.17.0.1:33012|Creating new server handler
-DEBUG|20211015-055223|paul@172.17.0.1:55058|Handling user command|58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]
+DEBUG|20211015-055223|paul@172.17.0.1:55058|Handling user command|58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]
 DEBUG|20211015-055223|paul@172.17.0.1:33012|protocol 4 base64 Y2F0OnF1aWV0PXRydWU6c3BhcnRhbj10cnVlIC92YXIvbG9nL2RzZXJ2ZXIvKiByZWdleDpub29wIA==
 DEBUG|20211015-055223|paul@172.17.0.1:55058|/var/log/dserver/dserver.log|readfiles|Checking config permissions
-TRACE|20211015-055223|paul@172.17.0.1:33012|Base64 decoded received command|cat:quiet=true:spartan=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:spartan=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
+TRACE|20211015-055223|paul@172.17.0.1:33012|Base64 decoded received command|cat:quiet=true:plain=true /var/log/dserver/* regex:noop |58|[cat:quiet=true:plain=true /var/log/dserver/* regex:noop ]|at /home/paul/git/dtail/internal/server/handlers/basehandler.go:225
 FATAL|20211015-055223|paul@172.17.0.1:55058|/var/log/dserver/dserver.log|readfiles|Server releaxed auth enabled
 INFO|20211015-055223|paul@172.17.0.1:55058|Start reading file|/var/log/dserver/dserver.log|dserver.log

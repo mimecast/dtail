@@ -19,7 +19,7 @@ func TestDGrep(t *testing.T) {
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
 		"../dgrep",
-		"--spartan",
+		"--plain",
 		"--cfg", "none",
 		"--grep", "20211002-071947",
 		inFile)
@@ -48,7 +48,7 @@ func TestDGrep2(t *testing.T) {
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
 		"../dgrep",
-		"--spartan",
+		"--plain",
 		"--cfg", "none",
 		"--grep", "20211002-071947",
 		"--invert",
@@ -78,7 +78,7 @@ func TestDGrepContext(t *testing.T) {
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
 		"../dgrep",
-		"--spartan",
+		"--plain",
 		"--cfg", "none",
 		"--grep", "20211002-071947",
 		"--after", "3",
@@ -108,7 +108,7 @@ func TestDGrepContext2(t *testing.T) {
 
 	_, err := runCommand(context.TODO(), t, stdoutFile,
 		"../dgrep",
-		"--spartan",
+		"--plain",
 		"--cfg", "none",
 		"--grep", "20211002",
 		"--max", "3",

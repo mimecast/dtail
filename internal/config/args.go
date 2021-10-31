@@ -35,7 +35,7 @@ type Args struct {
 	SSHPrivateKeyPathFile string
 	Serverless            bool
 	ServersStr            string
-	Spartan               bool
+	Plain               bool
 	Timeout               int
 	TrustAllHosts         bool
 	UserName              string
@@ -67,7 +67,7 @@ func (a *Args) String() string {
 	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHPort", a.SSHPort))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Serverless", a.Serverless))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "ServersStr", a.ServersStr))
-	sb.WriteString(fmt.Sprintf("%s:%v,", "Spartan", a.Spartan))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "Plain", a.Plain))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Timeout", a.Timeout))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "TrustAllHosts", a.TrustAllHosts))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "UserName", a.UserName))
@@ -84,8 +84,8 @@ func (a *Args) SerializeOptions() string {
 	if a.Quiet {
 		options["quiet"] = fmt.Sprintf("%v", a.Quiet)
 	}
-	if a.Spartan {
-		options["spartan"] = fmt.Sprintf("%v", a.Spartan)
+	if a.Plain {
+		options["plain"] = fmt.Sprintf("%v", a.Plain)
 	}
 	if a.Serverless {
 		options["serverless"] = fmt.Sprintf("%v", a.Serverless)

@@ -123,8 +123,8 @@ func (in *initializer) optimusPrime(sourceCb transformCb, args *Args,
 	// Source type specific transormations.
 	sourceCb(in, args, additionalArgs)
 
-	// Spartan mode.
-	if args.Spartan {
+	// Plain mode.
+	if args.Plain {
 		args.Quiet = true
 		args.NoColor = true
 		in.Client.TermColorsEnable = false
