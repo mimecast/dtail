@@ -31,8 +31,3 @@ dmap_test:
 	../dmap --servers serverlist.txt --files '/var/log/mapr_testdata.log' --trustAllHosts --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-B.csv'
 	@echo Expecting zero diff!
 	diff -u <(sort dmap2-A.csv) <(sort dmap2-B.csv)
-dmap2_test:
-	../dmap --servers <(head -n 1 serverlist.txt) --files '/var/log/mapr_testdata.log' --trustAllHosts --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-A.csv'
-	../dmap --query 'from stats select count($$time),last($$time) group by $$time order by count($$time) outfile dmap2-serverless.csv' ./mapr_testdata.log
-	@echo Expecting zero diff!
-	diff -u <(sort dmap2-A.csv) <(sort dmap2-serverless.csv)
