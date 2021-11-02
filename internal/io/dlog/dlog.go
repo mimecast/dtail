@@ -210,10 +210,10 @@ func (d *DLog) Devel(args ...interface{}) string {
 // Raw message logging.
 func (d *DLog) Raw(message string) string {
 	if !config.Client.TermColorsEnable || !d.logger.SupportsColors() {
-		d.logger.Log(time.Now(), message)
+		d.logger.Raw(time.Now(), message)
 		return message
 	}
-	d.logger.LogWithColors(time.Now(), message, brush.Colorfy(message))
+	d.logger.RawWithColors(time.Now(), message, brush.Colorfy(message))
 	return message
 }
 

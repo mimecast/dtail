@@ -60,14 +60,7 @@ func (h *baseHandler) SendMessage(command string) error {
 func (h *baseHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
 		switch b {
-		/*
-			// NEXT: Next DTail version make it so that '\n' gets ignored. For now
-			// leave it for compatibility with older DTail server + ability to display
-			// the protocol mismatch warn message.
-			case '\n' {
-				continue
-		*/
-		case '\n', protocol.MessageDelimiter:
+		case protocol.MessageDelimiter:
 			message := h.receiveBuf.String()
 			h.handleMessage(message)
 			h.receiveBuf.Reset()
@@ -75,7 +68,6 @@ func (h *baseHandler) Write(p []byte) (n int, err error) {
 			h.receiveBuf.WriteByte(b)
 		}
 	}
-
 	return len(p), nil
 }
 

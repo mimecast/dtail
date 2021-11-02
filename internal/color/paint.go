@@ -39,9 +39,13 @@ func PaintStrAttr(text string, attr Attribute) string {
 func Paint(sb *strings.Builder, text string, fg FgColor, bg BgColor) {
 	sb.WriteString(string(fg))
 	sb.WriteString(string(bg))
-	sb.WriteString(text)
+	trimmed := strings.TrimSuffix(text, "\n")
+	sb.WriteString(trimmed)
 	sb.WriteString(string(BgDefault))
 	sb.WriteString(string(FgDefault))
+	if trimmed != text {
+		sb.WriteByte('\n')
+	}
 }
 
 // Reset background and foreground colors.
@@ -62,10 +66,14 @@ func PaintWithAttr(sb *strings.Builder, text string, fg FgColor, bg BgColor,
 	sb.WriteString(string(fg))
 	sb.WriteString(string(bg))
 	sb.WriteString(string(attr))
-	sb.WriteString(text)
+	trimmed := strings.TrimSuffix(text, "\n")
+	sb.WriteString(trimmed)
 	sb.WriteString(string(AttrReset))
 	sb.WriteString(string(BgDefault))
 	sb.WriteString(string(FgDefault))
+	if trimmed != text {
+		sb.WriteByte('\n')
+	}
 }
 
 // PaintWithAttrs is similar to PaintWithAttr, but it takes multiple attributes.
@@ -77,10 +85,14 @@ func PaintWithAttrs(sb *strings.Builder, text string, fg FgColor, bg BgColor,
 	for _, attr := range attrs {
 		sb.WriteString(string(attr))
 	}
-	sb.WriteString(text)
+	trimmed := strings.TrimSuffix(text, "\n")
+	sb.WriteString(trimmed)
 	sb.WriteString(string(AttrReset))
 	sb.WriteString(string(BgDefault))
 	sb.WriteString(string(FgDefault))
+	if trimmed != text {
+		sb.WriteByte('\n')
+	}
 }
 
 // ResetWithAttr resets background, foreground and attributes.

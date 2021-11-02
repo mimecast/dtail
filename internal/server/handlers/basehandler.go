@@ -44,7 +44,7 @@ type baseHandler struct {
 	once       sync.Once
 	mutex      sync.Mutex
 	quiet      bool
-	plain    bool
+	plain      bool
 	serverless bool
 }
 

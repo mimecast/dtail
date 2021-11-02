@@ -38,6 +38,16 @@ func (f *fout) LogWithColors(now time.Time, message, coloredMessage string) {
 	f.file.Log(now, message)
 }
 
+func (f *fout) Raw(now time.Time, message string) {
+	f.stdout.Raw(now, message)
+	f.file.Raw(now, message)
+}
+
+func (f *fout) RawWithColors(now time.Time, message, coloredMessage string) {
+	f.stdout.RawWithColors(now, "", coloredMessage)
+	f.file.Raw(now, message)
+}
+
 func (f *fout) Flush()  { f.stdout.Flush(); f.file.Flush() }
 func (f *fout) Pause()  { f.stdout.Pause(); f.file.Pause() }
 func (f *fout) Resume() { f.stdout.Resume(); f.file.Resume() }

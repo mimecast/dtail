@@ -167,7 +167,6 @@ func (f readFile) read(ctx context.Context, fd *os.File, reader *bufio.Reader,
 	rawLines chan *bytes.Buffer, truncate <-chan struct{}) error {
 
 	var offset uint64
-
 	lineLengthThreshold := 1024 * 1024 // 1mb
 	warnedAboutLongLine := false
 	message := pool.BytesBuffer.Get().(*bytes.Buffer)
@@ -190,31 +189,38 @@ func (f readFile) read(ctx context.Context, fd *os.File, reader *bufio.Reader,
 			}
 			if !f.seekEOF {
 				dlog.Common.Info(f.FilePath(), "End of file reached")
+				if len(message.Bytes()) > 0 {
+					select {
+					case rawLines <- message:
+					case <-ctx.Done():
+					}
+				}
 				return nil
 			}
 			time.Sleep(time.Millisecond * 100)
 			continue
 		}
+
 		offset++
+		message.WriteByte(b)
 
 		switch b {
 		case '\n':
 			select {
 			case rawLines <- message:
 				message = pool.BytesBuffer.Get().(*bytes.Buffer)
-				//fmt.Printf("%d %d %p\n", message.Len(), message.Cap(), message)
 				warnedAboutLongLine = false
 			case <-ctx.Done():
 				return nil
 			}
 		default:
+			// TODO: Add integration test with input file having a very long line.
 			if message.Len() >= lineLengthThreshold {
 				if !warnedAboutLongLine {
 					f.serverMessages <- dlog.Common.Warn(f.filePath,
 						"Long log line, splitting into multiple lines")
 					warnedAboutLongLine = true
 				}
-				message.WriteString("\n")
 				select {
 				case rawLines <- message:
 					message = pool.BytesBuffer.Get().(*bytes.Buffer)
@@ -222,7 +228,6 @@ func (f readFile) read(ctx context.Context, fd *os.File, reader *bufio.Reader,
 					return nil
 				}
 			}
-			message.WriteByte(b)
 		}
 	}
 }

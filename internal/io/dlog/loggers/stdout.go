@@ -25,14 +25,22 @@ func (s *stdout) Start(ctx context.Context, wg *sync.WaitGroup) {
 }
 
 func (s *stdout) Log(now time.Time, message string) {
-	s.log(message)
+	s.log(message, true)
 }
 
 func (s *stdout) LogWithColors(now time.Time, message, coloredMessage string) {
-	s.log(coloredMessage)
+	s.log(coloredMessage, true)
 }
 
-func (s *stdout) log(message string) {
+func (s *stdout) Raw(now time.Time, message string) {
+	s.log(message, false)
+}
+
+func (s *stdout) RawWithColors(now time.Time, message, coloredMessage string) {
+	s.log(coloredMessage, false)
+}
+
+func (s *stdout) log(message string, nl bool) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -43,7 +51,11 @@ func (s *stdout) log(message string) {
 	default:
 	}
 
-	fmt.Println(message)
+	if nl {
+		fmt.Println(message)
+		return
+	}
+	fmt.Print(message)
 }
 
 func (s *stdout) Pause()  { s.pauseCh <- struct{}{} }

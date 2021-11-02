@@ -17,6 +17,7 @@ type fileWriter struct{}
 type fileMessageBuf struct {
 	now     time.Time
 	message string
+	nl      bool
 }
 
 type file struct {
@@ -86,10 +87,18 @@ func (f *file) Start(ctx context.Context, wg *sync.WaitGroup) {
 }
 
 func (f *file) Log(now time.Time, message string) {
-	f.bufferCh <- &fileMessageBuf{now, message}
+	f.bufferCh <- &fileMessageBuf{now, message, true}
 }
 
 func (f *file) LogWithColors(now time.Time, message, coloredMessage string) {
+	f.RawWithColors(now, message, coloredMessage)
+}
+
+func (f *file) Raw(now time.Time, message string) {
+	f.bufferCh <- &fileMessageBuf{now, message, false}
+}
+
+func (f *file) RawWithColors(now time.Time, message, coloredMessage string) {
 	panic("Colors not supported in file logger")
 }
 
@@ -116,7 +125,9 @@ func (f *file) write(m *fileMessageBuf) {
 	}
 
 	writer.WriteString(m.message)
-	writer.WriteByte('\n')
+	if m.nl {
+		writer.WriteByte('\n')
+	}
 }
 
 func (f *file) getWriter(name string) *bufio.Writer {

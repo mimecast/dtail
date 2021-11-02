@@ -2,7 +2,7 @@ package protocol
 
 const (
 	// ProtocolCompat -ibility version
-	ProtocolCompat string = "4"
+	ProtocolCompat string = "5"
 	// MessageDelimiter delimits separate messages.
 	MessageDelimiter byte = '¬'
 	// FieldDelimiter delimits messagefields.

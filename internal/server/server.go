@@ -36,7 +36,7 @@ type Server struct {
 
 // New returns a new server.
 func New() *Server {
-	dlog.Server.Info("Creating server", version.String())
+	dlog.Server.Info("Starting server", version.String())
 
 	s := Server{
 		sshServerConfig: &gossh.ServerConfig{},
