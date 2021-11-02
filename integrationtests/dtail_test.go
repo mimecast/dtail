@@ -134,17 +134,17 @@ func TestDTailColorTable(t *testing.T) {
 		t.Log("Skipping")
 		return
 	}
-	stdoutFile := "dtailcolortable.stdout.tmp"
-	expectedStdoutFile := "dtailcolortable.expected"
+	outFile := "dtailcolortable.stdout.tmp"
+	expectedOutFile := "dtailcolortable.expected"
 
-	_, err := runCommand(context.TODO(), t, stdoutFile, "../dtail", "--colorTable")
+	_, err := runCommand(context.TODO(), t, outFile, "../dtail", "--colorTable")
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if err := compareFiles(t, stdoutFile, expectedStdoutFile); err != nil {
+	if err := compareFiles(t, outFile, expectedOutFile); err != nil {
 		t.Error(err)
 		return
 	}
-	os.Remove(stdoutFile)
+	os.Remove(outFile)
 }

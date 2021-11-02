@@ -11,24 +11,24 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 )
 
-func TestDServer(t *testing.T) {
+func TestDServer1(t *testing.T) {
 	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
 	// Testing a scheduled query.
 
-	csvFile := "dserver.csv"
-	expectedCsvFile := "dserver.csv.expected"
+	csvFile := "dserver1.csv"
+	expectedCsvFile := "dserver1.csv.expected"
 	queryFile := fmt.Sprintf("%s.query", csvFile)
-	expectedQueryFile := "dserver.csv.query.expected"
+	expectedQueryFile := "dserver1.csv.query.expected"
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t,
 		"", "../dserver",
-		"--cfg", "dserver.cfg",
+		"--cfg", "dserver1.cfg",
 		"--logger", "stdout",
 		"--logLevel", "info",
 		"--bindAddress", "localhost",

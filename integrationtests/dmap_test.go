@@ -9,30 +9,30 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 )
 
-func TestDMap(t *testing.T) {
+func TestDMap1(t *testing.T) {
 	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
 
 	t.Log("Testing dmap with input file")
-	if err := testDmap(t, false); err != nil {
-		t.Log(err)
+	if err := testDmap1(t, false); err != nil {
+		t.Error(err)
 		return
 	}
 	t.Log("Testing dmap with stdin input pipe")
-	if err := testDmap(t, true); err != nil {
-		t.Log(err)
+	if err := testDmap1(t, true); err != nil {
+		t.Error(err)
 		return
 	}
 }
 
-func testDmap(t *testing.T, usePipe bool) error {
+func testDmap1(t *testing.T, usePipe bool) error {
 	inFile := "mapr_testdata.log"
-	csvFile := "dmap.csv.tmp"
-	expectedCsvFile := "dmap.csv.expected"
+	csvFile := "dmap1.csv.tmp"
+	expectedCsvFile := "dmap1.csv.expected"
 	queryFile := fmt.Sprintf("%s.query", csvFile)
-	expectedQueryFile := "dmap.csv.query.expected"
+	expectedQueryFile := "dmap1.csv.query.expected"
 
 	query := fmt.Sprintf("from STATS select count($line),last($time),"+
 		"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) "+
@@ -88,7 +88,7 @@ func TestDMap2(t *testing.T) {
 		return
 	}
 	inFile := "mapr_testdata.log"
-	stdoutFile := "dmap2.stdout.tmp"
+	outFile := "dmap2.stdout.tmp"
 	csvFile := "dmap2.csv.tmp"
 	expectedCsvFile := "dmap2.csv.expected"
 	queryFile := fmt.Sprintf("%s.query", csvFile)
@@ -98,7 +98,7 @@ func TestDMap2(t *testing.T) {
 		"avg($goroutines),min($goroutines) group by $time order by count($time) "+
 		"outfile %s", csvFile)
 
-	_, err := runCommand(context.TODO(), t, stdoutFile,
+	_, err := runCommand(context.TODO(), t, outFile,
 		"../dmap", "--query", query, "--cfg", "none", inFile)
 	if err != nil {
 		t.Error(err)
@@ -114,7 +114,7 @@ func TestDMap2(t *testing.T) {
 		return
 	}
 
-	os.Remove(stdoutFile)
+	os.Remove(outFile)
 	os.Remove(csvFile)
 	os.Remove(queryFile)
 }
@@ -125,7 +125,7 @@ func TestDMap3(t *testing.T) {
 		return
 	}
 	inFile := "mapr_testdata.log"
-	stdoutFile := "dmap3.stdout.tmp"
+	outFile := "dmap3.stdout.tmp"
 	csvFile := "dmap3.csv.tmp"
 	expectedCsvFile := "dmap3.csv.expected"
 	queryFile := fmt.Sprintf("%s.query", csvFile)
@@ -171,7 +171,7 @@ func TestDMap3(t *testing.T) {
 		return
 	}
 
-	os.Remove(stdoutFile)
+	os.Remove(outFile)
 	os.Remove(csvFile)
 	os.Remove(queryFile)
 }

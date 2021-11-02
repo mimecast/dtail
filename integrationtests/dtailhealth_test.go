@@ -9,38 +9,38 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 )
 
-func TestDTailHealthCheck(t *testing.T) {
+func TestDTailHealth1(t *testing.T) {
 	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
-	stdoutFile := "dtailhealth.stdout.tmp"
-	expectedStdoutFile := "dtailhealth.expected"
+	outFile := "dtailhealth1.stdout.tmp"
+	expectedOutFile := "dtailhealth1.expected"
 
 	t.Log("Serverless check, is supposed to exit with warning state.")
-	exitCode, err := runCommand(context.TODO(), t, stdoutFile, "../dtailhealth")
+	exitCode, err := runCommand(context.TODO(), t, outFile, "../dtailhealth")
 	if exitCode != 1 {
 		t.Error(fmt.Sprintf("Expected exit code '1' but got '%d': %v", exitCode, err))
 		return
 	}
 
-	if err := compareFiles(t, stdoutFile, expectedStdoutFile); err != nil {
+	if err := compareFiles(t, outFile, expectedOutFile); err != nil {
 		t.Error(err)
 		return
 	}
-	os.Remove(stdoutFile)
+	os.Remove(outFile)
 }
 
-func TestDTailHealthCheck2(t *testing.T) {
+func TestDTailHealth2(t *testing.T) {
 	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
 		return
 	}
-	stdoutFile := "dtailhealth2.stdout.tmp"
-	expectedStdoutFile := "dtailhealth2.expected"
+	outFile := "dtailhealth2.stdout.tmp"
+	expectedOutFile := "dtailhealth2.expected"
 
 	t.Log("Negative test, is supposed to exit with a critical state.")
-	exitCode, err := runCommand(context.TODO(), t, stdoutFile,
+	exitCode, err := runCommand(context.TODO(), t, outFile,
 		"../dtailhealth", "--server", "example:1")
 
 	if exitCode != 2 {
@@ -48,12 +48,12 @@ func TestDTailHealthCheck2(t *testing.T) {
 		return
 	}
 
-	if err := compareFiles(t, stdoutFile, expectedStdoutFile); err != nil {
+	if err := compareFiles(t, outFile, expectedOutFile); err != nil {
 		t.Error(err)
 		return
 	}
 
-	os.Remove(stdoutFile)
+	os.Remove(outFile)
 }
 
 func TestDTailHealthCheck3(t *testing.T) {
@@ -61,7 +61,7 @@ func TestDTailHealthCheck3(t *testing.T) {
 		t.Log("Skipping")
 		return
 	}
-	stdoutFile := "dtailhealth3.stdout.tmp"
+	outFile := "dtailhealth3.stdout.tmp"
 	port := getUniquePortNumber()
 	bindAddress := "localhost"
 	expectedOut := fmt.Sprintf("OK: All fine at %s:%d :-)", bindAddress, port)
@@ -82,17 +82,17 @@ func TestDTailHealthCheck3(t *testing.T) {
 		return
 	}
 
-	_, err = runCommandRetry(ctx, t, 10, stdoutFile,
+	_, err = runCommandRetry(ctx, t, 10, outFile,
 		"../dtailhealth", "--server", fmt.Sprintf("%s:%d", bindAddress, port))
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	if err := fileContainsStr(t, stdoutFile, expectedOut); err != nil {
+	if err := fileContainsStr(t, outFile, expectedOut); err != nil {
 		t.Error(err)
 		return
 	}
 
-	os.Remove(stdoutFile)
+	os.Remove(outFile)
 }

@@ -62,12 +62,22 @@ func startCommand(ctx context.Context, t *testing.T, inPipeFile,
 	t.Log(cmdStr, strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, cmdStr, args...)
 
+	var stdinPipe io.WriteCloser
+	if inPipeFile != "" {
+		var err error
+		stdinPipe, err = cmd.StdinPipe()
+		if err != nil {
+			return stdoutCh, stderrCh, nil, err
+		}
+	}
 	cmdStdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return stdoutCh, stderrCh, nil, err
 	}
-
 	cmdStderr, err := cmd.StderrPipe()
+	if err != nil {
+		return stdoutCh, stderrCh, nil, err
+	}
 	err = cmd.Start()
 	if err != nil {
 		return stdoutCh, stderrCh, nil, err
@@ -76,16 +86,15 @@ func startCommand(ctx context.Context, t *testing.T, inPipeFile,
 	// Read input file and send to stdin pipe?
 	if inPipeFile != "" {
 		t.Log(fmt.Sprintf("Piping %s to stdin pipe", inPipeFile))
-		stdinPipe, err := cmd.StdinPipe()
-		if err != nil {
-			return stdoutCh, stderrCh, nil, err
-		}
 		fd, err := os.Open(inPipeFile)
 		if err != nil {
 			return stdoutCh, stderrCh, nil, err
 		}
-		defer fd.Close()
-		go io.Copy(stdinPipe, bufio.NewReader(fd))
+		go func() {
+			io.Copy(stdinPipe, bufio.NewReader(fd))
+			stdinPipe.Close()
+			fd.Close()
+		}()
 	}
 
 	go func() {
