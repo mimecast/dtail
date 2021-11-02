@@ -60,6 +60,11 @@ func (h *baseHandler) SendMessage(command string) error {
 func (h *baseHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
 		switch b {
+		case '\n':
+			// Backwards compatible with DTail 3 (e.g. get error message from server
+			// about protocol missmatch.
+			h.receiveBuf.WriteByte(b)
+			fallthrough
 		case protocol.MessageDelimiter:
 			message := h.receiveBuf.String()
 			h.handleMessage(message)
