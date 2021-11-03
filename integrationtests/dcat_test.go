@@ -68,6 +68,33 @@ func TestDCat2(t *testing.T) {
 	os.Remove(outFile)
 }
 
+func TestDCat3(t *testing.T) {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
+		return
+	}
+	inFile := "dcat3.txt"
+	expectedFile := "dcat3.txt.expected"
+	outFile := "dcat3.out"
+
+	args := []string{"--plain", "--logLevel", "error", "--cfg", "none", inFile}
+
+	// Split up long lines to smaller ones.
+	os.Setenv("DTAIL_MAX_LINE_LENGTH", "1000")
+
+	_, err := runCommand(context.TODO(), t, outFile, "../dcat", args...)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err := compareFilesContents(t, outFile, expectedFile); err != nil {
+		t.Error(err)
+		return
+	}
+
+	os.Remove(outFile)
+}
+
 func TestDCatColors(t *testing.T) {
 	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		return

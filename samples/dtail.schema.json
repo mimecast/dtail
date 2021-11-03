@@ -358,6 +358,11 @@
           "minimum": 1,
           "maximum": 100
         },
+        "MaxLineLength": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 10240000
+        },
         "Permissions": {
           "type": "object",
           "properties": {}

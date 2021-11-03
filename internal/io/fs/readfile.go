@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/pool"
@@ -167,7 +168,6 @@ func (f readFile) read(ctx context.Context, fd *os.File, reader *bufio.Reader,
 	rawLines chan *bytes.Buffer, truncate <-chan struct{}) error {
 
 	var offset uint64
-	lineLengthThreshold := 1024 * 1024 // 1mb
 	warnedAboutLongLine := false
 	message := pool.BytesBuffer.Get().(*bytes.Buffer)
 
@@ -214,13 +214,13 @@ func (f readFile) read(ctx context.Context, fd *os.File, reader *bufio.Reader,
 				return nil
 			}
 		default:
-			// TODO: Add integration test with input file having a very long line.
-			if message.Len() >= lineLengthThreshold {
+			if message.Len() >= config.Server.MaxLineLength {
 				if !warnedAboutLongLine {
 					f.serverMessages <- dlog.Common.Warn(f.filePath,
 						"Long log line, splitting into multiple lines")
 					warnedAboutLongLine = true
 				}
+				message.WriteByte('\n')
 				select {
 				case rawLines <- message:
 					message = pool.BytesBuffer.Get().(*bytes.Buffer)

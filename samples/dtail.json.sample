@@ -96,6 +96,7 @@
     "MaxConcurrentCats": 2,
     "MaxConcurrentTails": 50,
     "MaxConnections": 50,
+    "MaxLineLength": 1048576,
     "Permissions": {
       "Default": [
         "readfiles:^/.*$"
