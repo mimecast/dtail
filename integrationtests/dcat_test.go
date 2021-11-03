@@ -78,9 +78,8 @@ func TestDCat3(t *testing.T) {
 
 	args := []string{"--plain", "--logLevel", "error", "--cfg", "none", inFile}
 
-	// Split up long lines to smaller ones.
-	os.Setenv("DTAIL_MAX_LINE_LENGTH", "1000")
-
+	// Notice, with DTAIL_INTEGRATION_TEST_RUN_MODE the DTail max line length is set
+	// to 1024!
 	_, err := runCommand(context.TODO(), t, outFile, "../dcat", args...)
 	if err != nil {
 		t.Error(err)
