@@ -199,13 +199,13 @@ func (c *MaprClient) printResults() {
 			config.Client.TermColors.MaprTable.RawQueryBg,
 			config.Client.TermColors.MaprTable.RawQueryAttr)
 	}
-	dlog.Client.Raw(rawQuery)
+	dlog.Client.Raw(fmt.Sprintf("%s\n", rawQuery))
 
 	if rowsLimit > 0 && numRows > rowsLimit {
 		dlog.Client.Warn(fmt.Sprintf("Got %d results but limited terminal output "+
 			"to %d rows! Use 'limit' clause to override!", numRows, rowsLimit))
 	}
-	dlog.Client.Raw(result)
+	dlog.Client.Raw(fmt.Sprintf("%s\n", result))
 }
 
 func (c *MaprClient) writeResultsToOutfile() {
