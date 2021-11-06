@@ -22,12 +22,7 @@ func PublicKeyCallback(c gossh.ConnMetadata,
 	if err != nil {
 		return nil, err
 	}
-
 	dlog.Server.Info(user, "Incoming authorization")
-	if config.ServerRelaxedAuthEnable {
-		dlog.Server.Fatal(user, "Granting permissions via relaxed-auth")
-		return nil, nil
-	}
 
 	authorizedKeysFile, err := authorizedKeysFile(user)
 	if err != nil {

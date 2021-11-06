@@ -216,11 +216,6 @@ func (s *Server) Callback(c gossh.ConnMetadata,
 		return nil, err
 	}
 
-	if config.ServerRelaxedAuthEnable {
-		dlog.Server.Fatal(user, "Granting permissions via relaxed-auth")
-		return nil, nil
-	}
-
 	authInfo := string(authPayload)
 	splitted := strings.Split(c.RemoteAddr().String(), ":")
 	remoteIP := splitted[0]

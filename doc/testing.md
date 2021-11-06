@@ -49,7 +49,7 @@ To run the integration test together with all the unit tests simply run `make te
 
 ### Requirements 
 
-This assumes, that you have Docker up and running on your system. The following has been tested only on Fedora Linux. You might need to do some extra setup if you want to run this on Docker for Mac/Windows.
+This assumes, that you have Docker up and running on your system. The following has been tested only on Fedora Linux 35. For other versions of Fedora (or Linux) you might need to change the Docker base image used (see Dockerfile) as otherwise you might run into issues with the `GLIBC` major version used.
 
 This also assumes, that you have compiled all the DTail binaries already (with `make` in the top level source directory).
 

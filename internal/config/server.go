@@ -63,9 +63,6 @@ type ServerConfig struct {
 	Continuous []Continuous `json:",omitempty"`
 }
 
-// ServerRelaxedAuthEnable should be used for development and testing purposes only.
-var ServerRelaxedAuthEnable bool
-
 // Create a new default server configuration.
 func newDefaultServerConfig() *ServerConfig {
 	defaultPermissions := []string{"^/.*"}
