@@ -37,5 +37,5 @@ This will launch a sub-shell to be recorded. Once done, exit the sub-shell with 
 ## Convert the recording to a gif
 
 ```shell
-% docker run --rm -v $PWD:/data asciinema/asciicast2gif -s 2 recording.json recording.gif
+% docker run --rm -v $PWD:/data asciinema/asciicast2gif -t tango -s 2 recording.json recording.gif
 ```

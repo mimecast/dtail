@@ -12,7 +12,7 @@
   "Common": {
     "LogDir": "/var/log/dserver",
     "Logger": "Fout",
-    "LogLevel": "trace",
+    "LogLevel": "Trace",
     "LogRotation": "Daily",
     "CacheDir": "cache",
     "SSHPort": 2222,
