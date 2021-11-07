@@ -7,28 +7,30 @@ This page demonstrates the primary usage of DTail. Please also see ``dtail --hel
 
 ## Tailing logs
 
-The following example demonstrates how to follow logs of multiple servers at once. The server list is provided as a flat text file. The example filters all records containing the string ``STAT``. Any other Go compatible regular expression can be used instead of ``STAT``.
+The following example demonstrates how to follow logs of multiple servers at once. The server list is provided as a flat text file. The example filters all records containing the string ``INFO``. Any other Go compatible regular expression can be used instead of ``INFO``.
 
 ```shell
-% dtail --servers serverlist.txt --files "/var/log/service/*.log" --regex STAT
+% dtail --servers serverlist.txt --grep INFO --files "/var/log/dserver/*.log"
 ```
+
+Hint: you can also provide a comma separated server list, e.g.: `--servers server1.example.org,server2.example.org:PORT,...`.
 
 ![dtail](dtail.gif "Tail example")
 
-You can also use the shorthand version:
+You can also use the shorthand version (omitting the `--files`):
 
 ```shell
-% dtail --servers serverlist.txt --regex STAT "/var/log/service/*.log"
+% dtail --servers serverlist.txt --grep INFO "/var/log/dserver/*.log"
 ```
 
 ## Aggregating logs
 
-To run ad-hoc MapReduce aggregations on newly written log lines, you also must add a query. The following example follows all remote log lines and prints out every 5 seconds the top 10 servers with the most average free memory. To run a MapReduce query across log lines written in the past, please use the ``dmap`` command instead.
+To run ad-hoc MapReduce aggregations on newly written log lines, you also must add a query. The following example follows all remote log lines and prints out every few seconds the top 10 servers with the most average free memory. To run a MapReduce query across log lines written in the past, please use the ``dmap`` command instead.
 
 ```shell
-% dtail --servers serverlist.txt  \
-    --query 'select avg(memfree), $hostname from MCVMSTATS group by $hostname order by avg(memfree) limit 10 interval 5' \
-    --files '/var/log/service/*.log'
+% dtail --servers serverlist.txt \
+    --files '/var/log/dserver/*.log' \
+    --query 'from STATS select sum($goroutines),sum($cgocalls),last($time),max(lifetimeConnections)'
 ```
 
 For MapReduce queries to work, you have to ensure that DTail supports your log format. You can either use the ones already defined in ``internal/mapr/log format`` or add an extension to support a custom log format.
@@ -38,10 +40,19 @@ For MapReduce queries to work, you have to ensure that DTail supports your log f
 You can also use the shorthand version:
 
 ```shell
-% dtail --servers serverlist.txt  \
-    'select avg(memfree), $hostname from MCVMSTATS group by $hostname order by avg(memfree) limit 10 interval 5' \
-    '/var/log/service/*.log'
+% dtail --servers serverlist.txt \
+    --files '/var/log/dserver/*.log' \
+    'from STATS select sum($goroutines),sum($cgocalls),last($time),max(lifetimeConnections)'
 ```
+Here is yet another example:
+
+```shell
+% dtail --servers serverlist.txt \
+    --files '/var/log/dserver/*.log' \
+    --query 'from STATS select $hostname,max($goroutines),max($cgocalls),$loadavg,lifetimeConnections group by $hostname order by max($cgocalls)'
+```
+
+![dtail-map](dtail-map2.gif "Tail mapreduce example 2")
 
 # How to use ``dcat``
 
