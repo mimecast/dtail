@@ -32,10 +32,10 @@ type Args struct {
 	SSHBindAddress        string
 	SSHHostKeyCallback    gossh.HostKeyCallback
 	SSHPort               int
-	SSHPrivateKeyPathFile string
+	SSHPrivateKeyFilePath string
 	Serverless            bool
 	ServersStr            string
-	Plain               bool
+	Plain                 bool
 	Timeout               int
 	TrustAllHosts         bool
 	UserName              string
@@ -63,7 +63,7 @@ func (a *Args) String() string {
 	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHAuthMethods", a.SSHAuthMethods))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHBindAddress", a.SSHBindAddress))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHHostKeyCallback", a.SSHHostKeyCallback))
-	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHPrivateKeyPathFile", a.SSHPrivateKeyPathFile))
+	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHPrivateKeyFilePath", a.SSHPrivateKeyFilePath))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "SSHPort", a.SSHPort))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "Serverless", a.Serverless))
 	sb.WriteString(fmt.Sprintf("%s:%v,", "ServersStr", a.ServersStr))

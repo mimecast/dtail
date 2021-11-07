@@ -37,4 +37,4 @@ Credits
 * Thank you [Mimecast](https://www.mimecast.com) for supporting this Open-Source project.
 * Thank you to **Vlad-Marian Marian** for creating the DTail (dog) logo.
 * The Gopher was generated at https://gopherize.me
-* The animated Gifs were created using `asciinema` with  `asciicast2gif`. Checkout [this](./doc/asciinema/README.md) for more information.
+* The animated Gifs were created using `asciinema` with  `asciicast2gif`. Check out [how this was done](./doc/asciinema/README.md) for more information.

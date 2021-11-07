@@ -65,7 +65,7 @@ func (in *initializer) parseSpecificConfig(configFile string) error {
 func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 	additionalArgs []string) error {
 
-	in.processEnvVars()
+	in.processEnvVars(args)
 
 	switch sourceProcess {
 	case source.Server:
@@ -80,10 +80,14 @@ func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 	}
 }
 
-func (in *initializer) processEnvVars() {
+func (in *initializer) processEnvVars(args *Args) {
 	if Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		os.Setenv("DTAIL_HOSTNAME_OVERRIDE", "integrationtest")
 		in.Server.MaxLineLength = 1024
+	}
+	sshPrivateKeyPathFile := os.Getenv("DTAIL_SSH_PRIVATE_KEYFILE_PATH")
+	if len(sshPrivateKeyPathFile) > 0 && args.SSHPrivateKeyFilePath == "" {
+		args.SSHPrivateKeyFilePath = sshPrivateKeyPathFile
 	}
 }
 
