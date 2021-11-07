@@ -25,7 +25,7 @@ Hint: You can also use the shorthand version (omitting the `--files`):
 
 ## Aggregating logs
 
-To run ad-hoc MapReduce aggregations on newly written log lines, you also must add a query. The following example follows all remote log lines and prints out every few seconds the top 10 servers with the most average free memory. To run a MapReduce query across log lines written in the past, please use the ``dmap`` command instead.
+To run ad-hoc MapReduce aggregations on newly written log lines you must add a query. The following example follows all remote log lines and prints out every few seconds the top 10 servers with the most average free memory. To run a MapReduce query across log lines written in the past, please use the ``dmap`` command instead.
 
 ```shell
 % dtail --servers serverlist.txt \
@@ -88,22 +88,14 @@ Hint: `-regex` is an alias for `-grep`.
 
 # How to use ``dmap``
 
-To run a MapReduce aggregation over logs written in the past, the ``dmap`` command can be used. For example, the following command aggregates all MapReduce fields of all the records and calculates the average memory free grouped by day of the month, hour, minute and the server hostname. ``dmap`` will print interim results every few seconds. The final product, however, will be written to file ``mapreduce.csv``.
+To run a MapReduce aggregation over logs written in the past, the ``dmap`` command has be used. Fhe following example aggregates all MapReduce fields ``dmap`` will print interim results every few seconds. You can also write the result to an CSV file by adding `outfile result.csv` to the query.
 
 ```shell
-% dmap --servers serv-011.lan.example.org,serv-012.lan.example.org,serv-013.lan.example.org,serv-021.lan.example.org,serv-022.lan.example.org,serv-023.lan.example.org \
-    --query 'select avg(memfree), $day, $hour, $minute, $hostname from MCVMSTATS group by $day, $hour, $minute, $hostname order by avg(memfree) limit 10 outfile mapreduce.csv' \
-    --files "/var/log/service/*.log"
+% dmap --servers serverlist.txt \
+    --files '/var/log/dserver/*.log'
+    --query 'from STATS select $hostname,max($goroutines),max($cgocalls),$loadavg,lifetimeConnections group by $hostname order by max($cgocalls)'
 ```
 
-Remember: For that to work, you have to make sure that DTail supports your log format. You can either use the ones already defined in ``internal/mapr/log format`` or add an extension to support a custom log format.
+Remember: For that to work, you have to make sure that DTail supports your log format. You can either use the ones already defined in ``internal/mapr/logformat`` or add an extension to support a custom log format. Te example here works out of the box though, as DTail understands its own log format already. 
 
 ![dmap](dmap.gif "DMap example")
-
-You can also use the shorthand version:
-
-```shell
-% dmap --servers serv-011.lan.example.org,serv-012.lan.example.org,serv-013.lan.example.org,serv-021.lan.example.org,serv-022.lan.example.org,serv-023.lan.example.org \
-    'select avg(memfree), $day, $hour, $minute, $hostname from MCVMSTATS group by $day, $hour, $minute, $hostname order by avg(memfree) limit 10 outfile mapreduce.csv' \
-    "/var/log/service/*.log"
-```
