@@ -17,7 +17,7 @@ Hint: you can also provide a comma separated server list, e.g.: `--servers serve
 
 ![dtail](dtail.gif "Tail example")
 
-You can also use the shorthand version (omitting the `--files`):
+Hint: You can also use the shorthand version (omitting the `--files`):
 
 ```shell
 % dtail --servers serverlist.txt --grep INFO "/var/log/dserver/*.log"
@@ -37,7 +37,7 @@ For MapReduce queries to work, you have to ensure that DTail supports your log f
 
 ![dtail-map](dtail-map.gif "Tail mapreduce example")
 
-You can also use the shorthand version:
+Hint: You can also use the shorthand version:
 
 ```shell
 % dtail --servers serverlist.txt \
@@ -56,20 +56,20 @@ Here is yet another example:
 
 # How to use ``dcat``
 
-The following example demonstrates how to cat files (display the full content of the files) of multiple servers at once. The servers are provided as a comma-separated list this time.
+The following example demonstrates how to cat files (display the full content of the files) of multiple servers at once.
+
+As you can see in this example, a DTail client also creates a local log file of all received data in `~/log`. You can also use the `-noColor` and `-plain` flags (they also work with other commands than `dcat`).
 
 ```shell
-% dcat --servers serv-011.lan.example.org,serv-012.lan.example.org,serv-013.lan.example.org \
-    --files /etc/hostname
+% dcat --servers serverlist.txt --files /etc/hostname
 ```
 
 ![dcat](dcat.gif "Cat example")
 
-You can also use the shorthand version:
+Hint: You can also use the shorthand version:
 
 ```shell
-% dcat --servers serv-011.lan.example.org,serv-012.lan.example.org,serv-013.lan.example.org \
-    /etc/hostname
+% dcat --servers serverlist.txt /etc/hostname
 ```
 
 # How to use ``dgrep``
@@ -86,7 +86,6 @@ The following example demonstrates how to grep files (display only the lines whi
 
 You can also use the shorthand version:
 
-TODO: Auto detect that swap is a regex.
 ```shell
 % dgrep --servers <(head -n 20 serverlist.txt) \
     /etc/fstab swap
