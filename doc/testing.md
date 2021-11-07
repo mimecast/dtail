@@ -45,6 +45,8 @@ To run the integration test together with all the unit tests simply run `make te
 % go test -race -v ./integrationtests
 ```
 
+![testing](testing.gif "Integration tests")
+
 ## Semi-manual tests with DTail server instances running in Docker
 
 ### Requirements 
