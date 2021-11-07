@@ -74,22 +74,17 @@ Hint: You can also use the shorthand version:
 
 # How to use ``dgrep``
 
-The following example demonstrates how to grep files (display only the lines which match a given regular expression) of multiple servers at once. In this example, we look after the swap partition in ``/etc/fstab``. We do that only on the first 20 servers from ``serverlist.txt``. ``dgrep`` is also very useful for searching log files of the past.
+The following example demonstrates how to grep files (display only the lines which match a given regular expression) of multiple servers at once. In this example, we look after some entries in ``/etc/passwd``.  This time, we don't provide the server list via an file but rather via a comma separated list directly on the command line. We also explore the `-before`, `-after` and `-max` flags.
 
 ```shell
-% dgrep --servers <(head -n 20 serverlist.txt) \
-    --files /etc/fstab \
-    --regex swap
+% dgrep --servers server1.example.org:2223 \
+    --files /etc/passwd \
+    --regex nologin
 ```
 
 ![dgrep](dgrep.gif "Grep example")
 
-You can also use the shorthand version:
-
-```shell
-% dgrep --servers <(head -n 20 serverlist.txt) \
-    /etc/fstab swap
-```
+Hint: `-regex` is an alias for `-grep`.
 
 # How to use ``dmap``
 
