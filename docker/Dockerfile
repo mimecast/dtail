@@ -12,8 +12,8 @@ ADD ./dserver /usr/local/bin/dserver
 ADD ./mapr_testdata.log /var/log/mapr_testdata.log
 
 # Normal Linux user (simulates someone who want's to use DTail)
-RUN useradd fred
-ADD ./id_rsa_docker.pub /var/run/dserver/cache/fred.authorized_keys
+RUN useradd paul
+ADD ./id_rsa_docker.pub /var/run/dserver/cache/paul.authorized_keys
 
 # DTail server user
 RUN useradd dserver
