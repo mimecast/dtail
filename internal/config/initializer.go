@@ -69,11 +69,11 @@ func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 
 	switch sourceProcess {
 	case source.Server:
-		return in.optimusPrime(transformServer, args, additionalArgs)
+		return in.setupConfig(transformServer, args, additionalArgs)
 	case source.Client:
-		return in.optimusPrime(transformClient, args, additionalArgs)
+		return in.setupConfig(transformClient, args, additionalArgs)
 	case source.HealthCheck:
-		return in.optimusPrime(transformHealthCheck, args, additionalArgs)
+		return in.setupConfig(transformHealthCheck, args, additionalArgs)
 	default:
 		return fmt.Errorf("Unable to transform config, unknown source '%s'",
 			sourceProcess)
@@ -91,7 +91,7 @@ func (in *initializer) processEnvVars(args *Args) {
 	}
 }
 
-func (in *initializer) optimusPrime(sourceCb transformCb, args *Args,
+func (in *initializer) setupConfig(sourceCb transformCb, args *Args,
 	additionalArgs []string) error {
 
 	// Copy args to config objects.
@@ -115,6 +115,19 @@ func (in *initializer) optimusPrime(sourceCb transformCb, args *Args,
 		args.ConnectionsPerCPU = DefaultConnectionsPerCPU
 	}
 
+	setupLogDirectory(in)
+	sourceCb(in, args, additionalArgs)
+	if args.Plain {
+		setupPlainMode(in, args)
+	}
+	if args.What == "" {
+		setupAdditionalArgs(in, args)
+	}
+
+	return nil
+}
+
+func setupLogDirectory(in *initializer) {
 	// Setup log directory.
 	if strings.Contains(in.Common.LogDir, "~/") {
 		homeDir, err := os.UserHomeDir()
@@ -124,20 +137,19 @@ func (in *initializer) optimusPrime(sourceCb transformCb, args *Args,
 		in.Common.LogDir = strings.ReplaceAll(in.Common.LogDir, "~/",
 			fmt.Sprintf("%s/", homeDir))
 	}
+}
 
-	// Source type specific transormations.
-	sourceCb(in, args, additionalArgs)
-
-	// Plain mode.
-	if args.Plain {
-		args.Quiet = true
-		args.NoColor = true
-		in.Client.TermColorsEnable = false
-		if args.LogLevel == "" {
-			args.LogLevel = "ERROR"
-			in.Common.LogLevel = "ERROR"
-		}
+func setupPlainMode(in *initializer, args *Args) {
+	args.Quiet = true
+	args.NoColor = true
+	in.Client.TermColorsEnable = false
+	if args.LogLevel == "" {
+		args.LogLevel = "ERROR"
+		in.Common.LogLevel = "ERROR"
 	}
+}
+
+func setupAdditionalArgs(in *initializer, args *Args) {
 	// Interpret additional args as file list or as query.
 	if args.What == "" {
 		var files []string
@@ -150,8 +162,6 @@ func (in *initializer) optimusPrime(sourceCb transformCb, args *Args,
 		}
 		args.What = strings.Join(files, ",")
 	}
-
-	return nil
 }
 
 func transformClient(in *initializer, args *Args, additionalArgs []string) error {
