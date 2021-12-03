@@ -136,29 +136,37 @@ func DeserializeOptions(opts []string) (map[string]string, lcontext.LContext, er
 			val = string(decoded)
 		}
 
-		switch key {
-		case "before":
-			iVal, err := strconv.Atoi(val)
-			if err != nil {
-				return options, ltx, err
-			}
-			ltx.BeforeContext = iVal
-		case "after":
-			iVal, err := strconv.Atoi(val)
-			if err != nil {
-				return options, ltx, err
-			}
-			ltx.AfterContext = iVal
-		case "max":
-			iVal, err := strconv.Atoi(val)
-			if err != nil {
-				return options, ltx, err
-			}
-			ltx.MaxCount = iVal
-		default:
-			options[key] = val
+		var err error
+		if options, err = setOption(key, val, options, &ltx); err != nil {
+			return options, ltx, err
 		}
 	}
 
 	return options, ltx, nil
+}
+
+func setOption(key, val string, options map[string]string, ltx *lcontext.LContext) (map[string]string, error) {
+	switch key {
+	case "before":
+		iVal, err := strconv.Atoi(val)
+		if err != nil {
+			return options, err
+		}
+		ltx.BeforeContext = iVal
+	case "after":
+		iVal, err := strconv.Atoi(val)
+		if err != nil {
+			return options, err
+		}
+		ltx.AfterContext = iVal
+	case "max":
+		iVal, err := strconv.Atoi(val)
+		if err != nil {
+			return options, err
+		}
+		ltx.MaxCount = iVal
+	default:
+		options[key] = val
+	}
+	return options, nil
 }
