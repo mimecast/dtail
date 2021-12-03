@@ -60,7 +60,13 @@ func (s *stdout) log(message string, nl bool) {
 
 func (s *stdout) Pause()  { s.pauseCh <- struct{}{} }
 func (s *stdout) Resume() { s.resumeCh <- struct{}{} }
-func (s *stdout) Flush()  {}
-func (s *stdout) Rotate() {}
+
+func (s *stdout) Flush() {
+	// This is empty because it isn't doing anything but has to satisfy the interface.
+}
+
+func (s *stdout) Rotate() {
+	// This is empty because it isn't doing anything but has to satisfy the interface.
+}
 
 func (stdout) SupportsColors() bool { return true }
