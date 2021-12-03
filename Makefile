@@ -37,7 +37,8 @@ vet:
 	  echo ${GO} vet $$dir; \
 	  ${GO} vet $$dir; \
 	done
-	grep -R TODO: .
+	sh -c 'grep -R NEXT: .'
+	sh -c 'grep -R TODO: .'
 lint:
 	${GO} get golang.org/x/lint/golint
 	find . -type d | while read dir; do \

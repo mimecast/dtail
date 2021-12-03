@@ -55,7 +55,7 @@ func main() {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(shutdownAfter)*time.Second)
 	}
 
-	sigCh := make(chan os.Signal)
+	sigCh := make(chan os.Signal, 10)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
