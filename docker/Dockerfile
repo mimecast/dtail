@@ -6,8 +6,7 @@ FROM fedora:35
 RUN mkdir -p /etc/dserver /var/run/dserver/cache /var/log/dserver
 
 ADD ./dtail.json /etc/dserver/dtail.json
-# TODO: Compile dserver in a container as well, as otherwise might have glibc
-# errors.
+# NEXT: Compile dserver in a container as well, as otherwise might have glibc errors.
 ADD ./dserver /usr/local/bin/dserver
 ADD ./mapr_testdata.log /var/log/mapr_testdata.log
 
