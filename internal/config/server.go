@@ -49,7 +49,7 @@ type ServerConfig struct {
 	MaxConcurrentTails int
 	// The max line length until it's split up into multiple smaller lines.
 	MaxLineLength int
-	// The user permissions. TODO: Add to JSON schema
+	// The user permissions.
 	Permissions Permissions `json:",omitempty"`
 	// The mapr log format
 	MapreduceLogFormat string `json:",omitempty"`

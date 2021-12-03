@@ -2,6 +2,20 @@
   "$schema": "https://json-schema.org/2019-09/schema",
   "description": "Schema for dtail.json",
   "definitions": {
+    "userPermission": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "userPermissions": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "$ref": "#/definitions/userPermission"
+        }
+      }
+    },
     "loglevel": {
       "type": "string",
       "enum": [
@@ -365,7 +379,15 @@
         },
         "Permissions": {
           "type": "object",
-          "properties": {}
+          "additionalProperties": true,
+          "patternProperties": {
+            "^Default$": {
+              "$ref": "#/definitions/userPermission"
+            },
+            "^Users$": {
+              "$ref": "#/definitions/userPermissions"
+            }
+          }
         },
         "Schedule": {
           "type": "array",
