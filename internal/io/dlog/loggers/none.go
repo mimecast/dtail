@@ -11,28 +11,36 @@ type none struct{}
 
 func (none) Start(ctx context.Context, wg *sync.WaitGroup) { wg.Done() }
 
-// Log is empty because the none isn't logging but has to statify the interface.
-func (none) Log(now time.Time, message string) {}
+func (none) Log(now time.Time, message string) {
+	// This is empty because the none isn't logging but has to statify the interface.
+}
 
-// LogWithColora is empty because the none isn't logging but has to statify the interface.
-func (none) LogWithColors(now time.Time, message, coloredMessage string) {}
+func (none) LogWithColors(now time.Time, message, coloredMessage string) {
+	// This is empty because the none isn't logging but has to statify the interface.
+}
 
-// Raw is empty because the none isn't logging but has to statify the interface.
-func (none) Raw(now time.Time, message string) {}
+func (none) Raw(now time.Time, message string) {
+	// This is empty because the none isn't logging but has to statify the interface.
+}
 
-// RawWithColors is empty because the none isn't logging but has to statify the interface.
-func (none) RawWithColors(now time.Time, message, coloredMessage string) {}
+func (none) RawWithColors(now time.Time, message, coloredMessage string) {
+	// This is empty because the none isn't logging but has to statify the interface.
+}
 
-// Flush is empty because the none isn't logging but has to statify the interface.
-func (none) Flush() {}
+func (none) Flush() {
+	// This is empty because the none isn't logging but has to statify the interface.
+}
 
-// Pause is empty because the none isn't logging but has to statify the interface.
-func (none) Pause() {}
+func (none) Pause() {
+	// This is empty because the none isn't logging but has to statify the interface.
+}
 
-// Resume is empty because the none isn't logging but has to statify the interface.
-func (none) Resume() {}
+func (none) Resume() {
+	// This is empty because the none isn't logging but has to statify the interface.
+}
 
-// Rotate is empty because the none isn't logging but has to statify the interface.
-func (none) Rotate() {}
+func (none) Rotate() {
+	// This is empty because the none isn't logging but has to statify the interface.
+}
 
 func (none) SupportsColors() bool { return false }
