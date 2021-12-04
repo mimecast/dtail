@@ -52,47 +52,52 @@ func (s *scheduler) runJobs(ctx context.Context) {
 			dlog.Server.Debug(job.Name, "Not running job out of time range")
 			continue
 		}
-
-		files := fillDates(job.Files)
-		outfile := fillDates(job.Outfile)
-		_, err = os.Stat(outfile)
-		if !os.IsNotExist(err) {
-			dlog.Server.Debug(job.Name, "Not running job as outfile already exists", outfile)
-			continue
-		}
-
-		servers := strings.Join(job.Servers, ",")
-		if servers == "" {
-			servers = config.Server.SSHBindAddress
-		}
-		args := config.Args{
-			ConnectionsPerCPU: config.DefaultConnectionsPerCPU,
-			Discovery:         job.Discovery,
-			ServersStr:        servers,
-			What:              files,
-			Mode:              omode.MapClient,
-			UserName:          config.ScheduleUser,
-		}
-
-		args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(job.Name))
-		args.QueryStr = fmt.Sprintf("%s outfile %s", job.Query, outfile)
-		client, err := clients.NewMaprClient(args, clients.CumulativeMode)
-		if err != nil {
-			dlog.Server.Error(fmt.Sprintf("Unable to create job %s", job.Name), err)
-			continue
-		}
-
-		jobCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
-
-		dlog.Server.Info(fmt.Sprintf("Starting job %s", job.Name))
-		status := client.Start(jobCtx, make(chan string))
-		logMessage := fmt.Sprintf("Job exited with status %d", status)
-
-		if status != 0 {
-			dlog.Server.Warn(logMessage)
-			continue
-		}
-		dlog.Server.Info(logMessage)
+		s.runJob(ctx, job)
 	}
+}
+
+func (s *scheduler) runJob(ctx context.Context, job config.Scheduled) {
+	files := fillDates(job.Files)
+	outfile := fillDates(job.Outfile)
+
+	_, err := os.Stat(outfile)
+	if !os.IsNotExist(err) {
+		dlog.Server.Debug(job.Name, "Not running job as outfile already exists", outfile)
+		return
+	}
+
+	servers := strings.Join(job.Servers, ",")
+	if servers == "" {
+		servers = config.Server.SSHBindAddress
+	}
+	args := config.Args{
+		ConnectionsPerCPU: config.DefaultConnectionsPerCPU,
+		Discovery:         job.Discovery,
+		ServersStr:        servers,
+		What:              files,
+		Mode:              omode.MapClient,
+		UserName:          config.ScheduleUser,
+	}
+
+	args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(job.Name))
+	args.QueryStr = fmt.Sprintf("%s outfile %s", job.Query, outfile)
+	client, err := clients.NewMaprClient(args, clients.CumulativeMode)
+	if err != nil {
+		dlog.Server.Error(fmt.Sprintf("Unable to create job %s", job.Name), err)
+		return
+	}
+
+	jobCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	dlog.Server.Info(fmt.Sprintf("Starting job %s", job.Name))
+	status := client.Start(jobCtx, make(chan string))
+	logMessage := fmt.Sprintf("Job exited with status %d", status)
+
+	if status != 0 {
+		dlog.Server.Warn(logMessage)
+		return
+	}
+
+	dlog.Server.Info(logMessage)
 }
