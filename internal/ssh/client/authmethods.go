@@ -11,6 +11,8 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
+const addedPathStr string = "Added path to list of auth methods, not adding further methods"
+
 // InitSSHAuthMethods initialises all known SSH auth methods on the client side.
 func InitSSHAuthMethods(sshAuthMethods []gossh.AuthMethod,
 	hostKeyCallback gossh.HostKeyCallback, trustAllHosts bool, throttleCh chan struct{},
@@ -37,8 +39,7 @@ func initIntegrationTestKnownHostsAuthMethods() []gossh.AuthMethod {
 	}
 
 	sshAuthMethods = append(sshAuthMethods, authMethod)
-	dlog.Client.Debug("initKnownHostsAuthMethods",
-		"Added path to list of auth methods, not adding further methods", privateKeyPath)
+	dlog.Client.Debug("initKnownHostsAuthMethods", addedPathStr, privateKeyPath)
 	return sshAuthMethods
 }
 
@@ -67,8 +68,7 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 		authMethod, err := ssh.PrivateKey(privateKeyPath)
 		if err == nil {
 			sshAuthMethods = append(sshAuthMethods, authMethod)
-			dlog.Client.Debug("initKnownHostsAuthMethods",
-				"Added path to list of auth methods, not adding further methods", privateKeyPath)
+			dlog.Client.Debug("initKnownHostsAuthMethods", addedPathStr, privateKeyPath)
 			return sshAuthMethods, knownHostsCallback
 		}
 		dlog.Client.FatalPanic("Unable to use private SSH key", privateKeyPath, err)
@@ -89,8 +89,7 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 	authMethod, err = ssh.PrivateKey(privateKeyPath)
 	if err == nil {
 		sshAuthMethods = append(sshAuthMethods, authMethod)
-		dlog.Client.Debug("initKnownHostsAuthmethods",
-			"Added path to list of auth methods, not adding further methods", privateKeyPath)
+		dlog.Client.Debug("initKnownHostsAuthmethods", addedPathStr, privateKeyPath)
 		return sshAuthMethods, knownHostsCallback
 	}
 	dlog.Client.Debug("initKnownHostsAuthMethods", "Unable to use private key", privateKeyPath, err)
@@ -99,8 +98,7 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 	authMethod, err = ssh.PrivateKey(privateKeyPath)
 	if err == nil {
 		sshAuthMethods = append(sshAuthMethods, authMethod)
-		dlog.Client.Debug("initKnownHostsAuthmethods",
-			"Added path to list of auth methods, not adding further methods", privateKeyPath)
+		dlog.Client.Debug("initKnownHostsAuthmethods", addedPathStr, privateKeyPath)
 		return sshAuthMethods, knownHostsCallback
 	}
 
@@ -108,8 +106,7 @@ func initKnownHostsAuthMethods(trustAllHosts bool, throttleCh chan struct{},
 	authMethod, err = ssh.PrivateKey(privateKeyPath)
 	if err == nil {
 		sshAuthMethods = append(sshAuthMethods, authMethod)
-		dlog.Client.Debug("initKnownHostsAuthmethods",
-			"Added path to list of auth methods, not adding further methods", privateKeyPath)
+		dlog.Client.Debug("initKnownHostsAuthmethods", addedPathStr, privateKeyPath)
 		return sshAuthMethods, knownHostsCallback
 	}
 
