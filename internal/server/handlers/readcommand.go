@@ -129,12 +129,11 @@ func (r *readCommand) read(ctx context.Context, ltx lcontext.LContext,
 	var limiter chan struct{}
 
 	switch r.mode {
-	case omode.TailClient:
-		reader = fs.NewTailFile(path, globID, r.server.serverMessages)
-		limiter = r.server.tailLimiter
 	case omode.GrepClient, omode.CatClient:
 		reader = fs.NewCatFile(path, globID, r.server.serverMessages)
 		limiter = r.server.catLimiter
+	case omode.TailClient:
+		fallthrough
 	default:
 		reader = fs.NewTailFile(path, globID, r.server.serverMessages)
 		limiter = r.server.tailLimiter
