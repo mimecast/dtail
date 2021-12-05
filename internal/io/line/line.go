@@ -3,7 +3,16 @@ package line
 import (
 	"bytes"
 	"fmt"
+	"sync"
 )
+
+// lineBuffer is there to optimize memory allocations. DTail otherwise allocates
+// a lot of memory while reading logs.
+var lineBuffer = sync.Pool{
+	New: func() interface{} {
+		return &Line{}
+	},
+}
 
 // Line represents a read log line.
 type Line struct {
@@ -23,6 +32,22 @@ type Line struct {
 	SourceID string
 }
 
+func New(content *bytes.Buffer, count uint64, transmittedPerc int, sourceID string) *Line {
+	l := lineBuffer.Get().(*Line)
+	l.Content = content
+	l.Count = count
+	l.TransmittedPerc = transmittedPerc
+	l.SourceID = sourceID
+	return l
+}
+
+// Null returns a new line with all members initialized to their null value.
+func Null() *Line {
+	l := lineBuffer.Get().(*Line)
+	l.NullValues()
+	return l
+}
+
 // Return a human readable representation of the followed line.
 func (l Line) String() string {
 	return fmt.Sprintf("Line(Content:%s,TransmittedPerc:%v,Count:%v,SourceID:%s)",
@@ -30,4 +55,20 @@ func (l Line) String() string {
 		l.TransmittedPerc,
 		l.Count,
 		l.SourceID)
+}
+
+// Recycle the line. Once done, don't reuse this instance!!!
+func (l *Line) Recycle() {
+	// No explicit reset required, as NewLine overrides all elements
+	// already takes care of it.
+	//l.Reset()
+	lineBuffer.Put(l)
+}
+
+// NullValues nulls all line struct members to their default state.
+func (l *Line) NullValues() {
+	l.Content = nil
+	l.Count = 0
+	l.TransmittedPerc = 0
+	l.SourceID = ""
 }

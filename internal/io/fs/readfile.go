@@ -73,7 +73,7 @@ func (f readFile) Retry() bool {
 
 // Start tailing a log file.
 func (f readFile) Start(ctx context.Context, ltx lcontext.LContext,
-	lines chan<- line.Line, re regex.Regex) error {
+	lines chan<- *line.Line, re regex.Regex) error {
 
 	reader, fd, err := f.makeReader()
 	if fd != nil {
@@ -203,7 +203,7 @@ func (f *readFile) read(ctx context.Context, fd *os.File, reader *bufio.Reader,
 
 // Filter log lines matching a given regular expression.
 func (f *readFile) filter(ctx context.Context, ltx lcontext.LContext,
-	rawLines <-chan *bytes.Buffer, lines chan<- line.Line, re regex.Regex) {
+	rawLines <-chan *bytes.Buffer, lines chan<- *line.Line, re regex.Regex) {
 
 	// Do we have any kind of local context settings? If so then run the more complex
 	// filterWithLContext method.
@@ -218,31 +218,25 @@ func (f *readFile) filter(ctx context.Context, ltx lcontext.LContext,
 	f.filterWithoutLContext(ctx, rawLines, lines, re)
 }
 
-func (f *readFile) transmittable(lineBytesBuffer *bytes.Buffer, length, capacity int,
-	re regex.Regex) (line.Line, bool) {
+func (f *readFile) transmittable(rawLine *bytes.Buffer, length, capacity int,
+	re regex.Regex) (*line.Line, bool) {
 
-	var read line.Line
-	if !re.Match(lineBytesBuffer.Bytes()) {
+	newLine := line.Null()
+	if !re.Match(rawLine.Bytes()) {
 		f.updateLineNotMatched()
 		f.updateLineNotTransmitted()
-		return read, false
+		return newLine, false
 	}
 	f.updateLineMatched()
 
 	// Can we actually send more messages, channel capacity reached?
 	if f.canSkipLines && length >= capacity {
 		f.updateLineNotTransmitted()
-		return read, false
+		return newLine, false
 	}
 	f.updateLineTransmitted()
 
-	read = line.Line{
-		Content:         lineBytesBuffer,
-		SourceID:        f.globID,
-		Count:           f.totalLineCount(),
-		TransmittedPerc: f.transmittedPerc(),
-	}
-	return read, true
+	return line.New(rawLine, f.totalLineCount(), f.transmittedPerc(), f.globID), true
 }
 
 // Check wether log file is truncated. Returns nil if not.

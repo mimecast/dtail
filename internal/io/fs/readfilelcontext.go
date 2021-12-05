@@ -29,18 +29,18 @@ type ltxState struct {
 
 // We don't have any local grep context, which makes life much simpler and more efficient.
 func (f *readFile) filterWithoutLContext(ctx context.Context, rawLines <-chan *bytes.Buffer,
-	lines chan<- line.Line, re regex.Regex) {
+	lines chan<- *line.Line, re regex.Regex) {
 
 	for {
 		select {
-		case line, ok := <-rawLines:
+		case rawLine, ok := <-rawLines:
 			f.updatePosition()
 			if !ok {
 				return
 			}
-			if filteredLine, ok := f.transmittable(line, len(lines), cap(lines), re); ok {
+			if newLine, ok := f.transmittable(rawLine, len(lines), cap(lines), re); ok {
 				select {
-				case lines <- filteredLine:
+				case lines <- newLine:
 				case <-ctx.Done():
 					return
 				}
@@ -51,7 +51,7 @@ func (f *readFile) filterWithoutLContext(ctx context.Context, rawLines <-chan *b
 
 // Filter log lines matching a given regular expression, however with local grep context.
 func (f *readFile) filterWithLContext(ctx context.Context, ltx lcontext.LContext,
-	rawLines <-chan *bytes.Buffer, lines chan<- line.Line, re regex.Regex) {
+	rawLines <-chan *bytes.Buffer, lines chan<- *line.Line, re regex.Regex) {
 
 	var ls ltxState
 
@@ -73,8 +73,8 @@ func (f *readFile) filterWithLContext(ctx context.Context, ltx lcontext.LContext
 	ls.after = 0
 	ls.processAfter = ltx.AfterContext > 0
 
-	for lineBytesBuffer := range rawLines {
-		status := f.filterLineWithLContext(ctx, &ltx, &ls, rawLines, lines, &re, lineBytesBuffer)
+	for rawLine := range rawLines {
+		status := f.filterLineWithLContext(ctx, &ltx, &ls, rawLines, lines, &re, rawLine)
 		if status == abortReading {
 			return
 		}
@@ -83,21 +83,16 @@ func (f *readFile) filterWithLContext(ctx context.Context, ltx lcontext.LContext
 
 // Filter log lines matching a given regular expression, however with local grep context.
 func (f *readFile) filterLineWithLContext(ctx context.Context, ltx *lcontext.LContext,
-	ls *ltxState, rawLines <-chan *bytes.Buffer, lines chan<- line.Line, re *regex.Regex,
-	lineBytesBuffer *bytes.Buffer) readStatus {
+	ls *ltxState, rawLines <-chan *bytes.Buffer, lines chan<- *line.Line, re *regex.Regex,
+	rawLine *bytes.Buffer) readStatus {
 
 	f.updatePosition()
-	if !re.Match(lineBytesBuffer.Bytes()) {
+	if !re.Match(rawLine.Bytes()) {
 		f.updateLineNotMatched()
 
 		if ls.processAfter && ls.after > 0 {
 			ls.after--
-			myLine := line.Line{
-				Content:         lineBytesBuffer,
-				SourceID:        f.globID,
-				Count:           f.totalLineCount(),
-				TransmittedPerc: 100,
-			}
+			myLine := line.New(rawLine, f.totalLineCount(), 100, f.globID)
 
 			select {
 			case lines <- myLine:
@@ -108,10 +103,10 @@ func (f *readFile) filterLineWithLContext(ctx context.Context, ltx *lcontext.LCo
 		} else if ls.processBefore {
 			// Keep last num BeforeContext raw messages.
 			select {
-			case ls.beforeBuf <- lineBytesBuffer:
+			case ls.beforeBuf <- rawLine:
 			default:
 				pool.RecycleBytesBuffer(<-ls.beforeBuf)
-				ls.beforeBuf <- lineBytesBuffer
+				ls.beforeBuf <- rawLine
 			}
 		}
 		return continueReading
@@ -130,13 +125,8 @@ func (f *readFile) filterLineWithLContext(ctx context.Context, ltx *lcontext.LCo
 		i := uint64(len(ls.beforeBuf))
 		for {
 			select {
-			case lineBytesBuffer := <-ls.beforeBuf:
-				myLine := line.Line{
-					Content:         lineBytesBuffer,
-					SourceID:        f.globID,
-					Count:           f.totalLineCount() - i,
-					TransmittedPerc: 100,
-				}
+			case rawLine := <-ls.beforeBuf:
+				myLine := line.New(rawLine, f.totalLineCount()-i, 100, f.globID)
 				i--
 
 				select {
@@ -153,12 +143,7 @@ func (f *readFile) filterLineWithLContext(ctx context.Context, ltx *lcontext.LCo
 		}
 	}
 
-	line := line.Line{
-		Content:         lineBytesBuffer,
-		SourceID:        f.globID,
-		Count:           f.totalLineCount(),
-		TransmittedPerc: 100,
-	}
+	line := line.New(rawLine, f.totalLineCount(), 100, f.globID)
 
 	select {
 	case lines <- line:
@@ -178,3 +163,10 @@ func (f *readFile) filterLineWithLContext(ctx context.Context, ltx *lcontext.LCo
 
 	return continueReading
 }
+
+/*
+func (f *readFile) filterLineWithLContextNoMatch(ctx context.Context, ltx *lcontext.LContext,
+	ls *ltxState, rawLines <-chan *bytes.Buffer, lines chan<- line.Line, re *regex.Regex,
+	rawLine *bytes.Buffer) readStatus {
+}
+*/

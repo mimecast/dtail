@@ -165,7 +165,7 @@ func (r *readCommand) read(ctx context.Context, ltx lcontext.LContext,
 
 	for {
 		if aggregate != nil {
-			lines = make(chan line.Line, 100)
+			lines = make(chan *line.Line, 100)
 			aggregate.NextLinesCh <- lines
 		}
 		if err := reader.Start(ctx, ltx, lines, re); err != nil {

@@ -31,7 +31,7 @@ func NewServerHandler(user *user.User, catLimiter,
 	h := ServerHandler{
 		baseHandler: baseHandler{
 			done:             internal.NewDone(),
-			lines:            make(chan line.Line, 100),
+			lines:            make(chan *line.Line, 100),
 			serverMessages:   make(chan string, 10),
 			maprMessages:     make(chan string, 10),
 			ackCloseReceived: make(chan struct{}),

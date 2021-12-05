@@ -29,7 +29,7 @@ type handleCommandCb func(context.Context, lcontext.LContext, int, []string, str
 type baseHandler struct {
 	done             *internal.Done
 	handleCommandCb  handleCommandCb
-	lines            chan line.Line
+	lines            chan *line.Line
 	aggregate        *server.Aggregate
 	maprMessages     chan string
 	serverMessages   chan string
@@ -112,6 +112,7 @@ func (h *baseHandler) Read(p []byte) (n int, err error) {
 		h.readBuf.WriteByte(protocol.MessageDelimiter)
 		n = copy(p, h.readBuf.Bytes())
 		pool.RecycleBytesBuffer(line.Content)
+		line.Recycle()
 
 	case <-time.After(time.Second):
 		select {
