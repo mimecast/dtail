@@ -26,6 +26,7 @@ import (
 type readStatus int
 
 const (
+	nothing         readStatus = iota
 	abortReading    readStatus = iota
 	continueReading readStatus = iota
 )
@@ -300,7 +301,7 @@ func (f *readFile) handleReadError(ctx context.Context, err error, fd *os.File,
 		return abortReading, nil
 	}
 
-	return continueReading, nil
+	return nothing, nil
 }
 
 // Now process the byte we just read from the fd.
@@ -333,5 +334,5 @@ func (f *readFile) handleReadByte(ctx context.Context, b byte,
 		}
 	}
 
-	return continueReading, message
+	return nothing, message
 }
