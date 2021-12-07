@@ -9,6 +9,6 @@ DTail Documentation
 
 ## Advanced topics
 
-* The [DTail Query Language)(./querylanguage.md) is the starting point to dig deeper into DTail's own SQL-like mapreduce language for extracting stats from log files.
+* The [DTail Query Language](./querylanguage.md) is the starting point to dig deeper into DTail's own SQL-like mapreduce language for extracting stats from log files.
 * [Log Formats](./logformats.md) explains how to create your own custom log format for use with mapreduce queries.
 * Check out the [Testing Guide](./testing.md) for unit and integration testing.
