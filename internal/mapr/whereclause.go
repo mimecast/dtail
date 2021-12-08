@@ -11,14 +11,7 @@ func (q *Query) WhereClause(fields map[string]string) bool {
 	for _, wc := range q.Where {
 		var ok bool
 		if wc.Operation > FloatOperation {
-			var lValue, rValue float64
-			if lValue, ok = whereClauseFloatValue(fields, wc.lString, wc.lFloat, wc.lType); !ok {
-				return false
-			}
-			if rValue, ok = whereClauseFloatValue(fields, wc.rString, wc.rFloat, wc.rType); !ok {
-				return false
-			}
-			if ok = wc.floatClause(lValue, rValue); !ok {
+			if !whereClauseFloatValues(fields, wc) {
 				return false
 			}
 			continue
@@ -35,6 +28,23 @@ func (q *Query) WhereClause(fields map[string]string) bool {
 			return false
 		}
 	}
+	return true
+}
+
+func whereClauseFloatValues(fields map[string]string, wc whereCondition) bool {
+	var lValue, rValue float64
+	var ok bool
+
+	if lValue, ok = whereClauseFloatValue(fields, wc.lString, wc.lFloat, wc.lType); !ok {
+		return false
+	}
+	if rValue, ok = whereClauseFloatValue(fields, wc.rString, wc.rFloat, wc.rType); !ok {
+		return false
+	}
+	if ok = wc.floatClause(lValue, rValue); !ok {
+		return false
+	}
+
 	return true
 }
 
