@@ -22,6 +22,9 @@ func TestDMap1(t *testing.T) {
 		"b": "from STATS select count($line),last($time)," +
 			"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) " +
 			"group by $hostname where lifetimeConnections >= 3",
+		"c": "from STATS select count($line),last($time)," +
+			"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) " +
+			"group by $hostname where $time eq \"20211002-071949\"",
 	}
 
 	for subtestName, query := range testTable {
