@@ -1,0 +1,1 @@
+from STATS select count($line),last($time),avg($goroutines),min(concurrentConnections),max(lifetimeConnections) group by $hostname outfile dmap1a.csv.tmp

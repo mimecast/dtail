@@ -15,28 +15,29 @@ func TestDMap1(t *testing.T) {
 		return
 	}
 
+	query := fmt.Sprintf("from STATS select count($line),last($time)," +
+		"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) " +
+		"group by $hostname")
+
 	t.Log("Testing dmap with input file")
-	if err := testDmap1(t, false); err != nil {
+	if err := testDmap1(t, query, "a", false); err != nil {
 		t.Error(err)
 		return
 	}
 	t.Log("Testing dmap with stdin input pipe")
-	if err := testDmap1(t, true); err != nil {
+	if err := testDmap1(t, query, "a", true); err != nil {
 		t.Error(err)
 		return
 	}
 }
 
-func testDmap1(t *testing.T, usePipe bool) error {
+func testDmap1(t *testing.T, query, subtestName string, usePipe bool) error {
 	inFile := "mapr_testdata.log"
-	csvFile := "dmap1.csv.tmp"
-	expectedCsvFile := "dmap1.csv.expected"
+	csvFile := fmt.Sprintf("dmap1%s.csv.tmp", subtestName)
+	expectedCsvFile := fmt.Sprintf("dmap1%s.csv.expected", subtestName)
 	queryFile := fmt.Sprintf("%s.query", csvFile)
-	expectedQueryFile := "dmap1.csv.query.expected"
-
-	query := fmt.Sprintf("from STATS select count($line),last($time),"+
-		"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) "+
-		"group by $hostname outfile %s", csvFile)
+	expectedQueryFile := fmt.Sprintf("dmap1%s.csv.query.expected", subtestName)
+	query = fmt.Sprintf("%s outfile %s", query, csvFile)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
