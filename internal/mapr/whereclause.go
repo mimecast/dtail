@@ -9,22 +9,13 @@ import (
 // WhereClause interprets the where clause of the mapreduce query.
 func (q *Query) WhereClause(fields map[string]string) bool {
 	for _, wc := range q.Where {
-		var ok bool
 		if wc.Operation > FloatOperation {
 			if !whereClauseFloatValues(fields, wc) {
 				return false
 			}
 			continue
 		}
-
-		var lValue, rValue string
-		if lValue, ok = whereClauseStringValue(fields, wc.lString, wc.lType); !ok {
-			return false
-		}
-		if rValue, ok = whereClauseStringValue(fields, wc.rString, wc.rType); !ok {
-			return false
-		}
-		if ok = wc.stringClause(lValue, rValue); !ok {
+		if !whereClauseStringValues(fields, wc) {
 			return false
 		}
 	}
@@ -68,6 +59,23 @@ func whereClauseFloatValue(fields map[string]string, str string, float float64,
 		dlog.Common.Error("Unexpected argument in 'where' clause", str, float, t)
 		return 0, false
 	}
+}
+
+func whereClauseStringValues(fields map[string]string, wc whereCondition) bool {
+	var lValue, rValue string
+	var ok bool
+
+	if lValue, ok = whereClauseStringValue(fields, wc.lString, wc.lType); !ok {
+		return false
+	}
+	if rValue, ok = whereClauseStringValue(fields, wc.rString, wc.rType); !ok {
+		return false
+	}
+	if ok = wc.stringClause(lValue, rValue); !ok {
+		return false
+	}
+
+	return true
 }
 
 func whereClauseStringValue(fields map[string]string, str string,

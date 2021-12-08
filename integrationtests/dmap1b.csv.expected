@@ -1,0 +1,2 @@
+count($line),last($time),avg($goroutines),min(concurrentconnections),max(lifetimeconnections)
+527,20211002-071949,11.411765,0.000000,6.000000
