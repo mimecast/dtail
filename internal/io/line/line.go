@@ -32,6 +32,7 @@ type Line struct {
 	SourceID string
 }
 
+// New creaters a new line object. This is a DTail internal helper structure for reading files.
 func New(content *bytes.Buffer, count uint64, transmittedPerc int, sourceID string) *Line {
 	l := lineBuffer.Get().(*Line)
 	l.Content = content
