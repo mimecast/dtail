@@ -54,6 +54,7 @@ func (wc *whereCondition) String() string {
 
 func makeWhereConditions(tokens []token) (where []whereCondition, err error) {
 	parse := func(tokens []token) (whereCondition, []token, error) {
+
 		var wc whereCondition
 		if len(tokens) < 3 {
 			err := errors.New(invalidQuery + "Not enough arguments in 'where' clause")

@@ -15,19 +15,26 @@ func TestDMap1(t *testing.T) {
 		return
 	}
 
-	query := fmt.Sprintf("from STATS select count($line),last($time)," +
-		"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) " +
-		"group by $hostname")
-
-	t.Log("Testing dmap with input file")
-	if err := testDmap1(t, query, "a", false); err != nil {
-		t.Error(err)
-		return
+	testTable := map[string]string{
+		"a": "from STATS select count($line),last($time)," +
+			"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) " +
+			"group by $hostname",
+		"b": "from STATS select count($line),last($time)," +
+			"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) " +
+			"group by $hostname where lifetimeConnections >= 3",
 	}
-	t.Log("Testing dmap with stdin input pipe")
-	if err := testDmap1(t, query, "a", true); err != nil {
-		t.Error(err)
-		return
+
+	for subtestName, query := range testTable {
+		t.Log("Testing dmap with input file")
+		if err := testDmap1(t, query, subtestName, false); err != nil {
+			t.Error(err)
+			return
+		}
+		t.Log("Testing dmap with stdin input pipe")
+		if err := testDmap1(t, query, subtestName, true); err != nil {
+			t.Error(err)
+			return
+		}
 	}
 }
 
