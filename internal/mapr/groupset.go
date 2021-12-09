@@ -218,6 +218,12 @@ func (g *GroupSet) WriteResult(query *Query) error {
 	}
 	defer fd.Close()
 
+	return g.writeResult(query, rows, tmpOutfile, fd)
+}
+
+func (g *GroupSet) writeResult(query *Query, rows []result, tmpOutfile string,
+	fd *os.File) error {
+
 	// Generate header now
 	lastIndex := len(query.Select) - 1
 	for i, sc := range query.Select {
