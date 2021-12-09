@@ -260,68 +260,89 @@ func (g *GroupSet) writeResult(query *Query, rows []result, tmpOutfile string,
 
 // Return a sorted result slice of the query from the group set.
 func (g *GroupSet) result(query *Query, gatherWidths bool) ([]result, []int, error) {
+	var err error
 	var rows []result
+
+	// Helpers for calculating the ASCII table output (output is the terminal and
+	// not a CSV file).
 	widths := make([]int, len(query.Select))
-	var valueStr string
-	var value float64
+	var valueStrLen int
 
 	for groupKey, set := range g.sets {
-		r := result{groupKey: groupKey}
+		result := result{groupKey: groupKey}
 
 		for i, sc := range query.Select {
-			switch sc.Operation {
-			case Count:
-				value = set.FValues[sc.FieldStorage]
-				valueStr = fmt.Sprintf("%d", int(value))
-			case Len:
-				fallthrough
-			case Sum:
-				fallthrough
-			case Min:
-				fallthrough
-			case Max:
-				value = set.FValues[sc.FieldStorage]
-				valueStr = fmt.Sprintf("%f", value)
-			case Last:
-				valueStr = set.SValues[sc.FieldStorage]
-				value, _ = strconv.ParseFloat(valueStr, 64)
-			case Avg:
-				value = set.FValues[sc.FieldStorage] / float64(set.Samples)
-				valueStr = fmt.Sprintf("%f", value)
-			default:
-				return rows, widths, fmt.Errorf("Unknown aggregation method '%v'",
-					sc.Operation)
+			if valueStrLen, err = g.resultSelect(query, &sc, set, &result); err != nil {
+				return rows, widths, err
 			}
 
-			if sc.FieldStorage == query.OrderBy {
-				r.orderBy = value
-			}
-			r.values = append(r.values, valueStr)
-
+			// Do we want to gather the table withs? This is required to print out a decent
+			// ASCII formated table (table output is the terminal and not a CSV file).
 			if !gatherWidths {
 				continue
 			}
 			if widths[i] < len(sc.FieldStorage) {
 				widths[i] = len(sc.FieldStorage)
 			}
-			if widths[i] < len(valueStr) {
-				widths[i] = len(valueStr)
+			if widths[i] < valueStrLen {
+				widths[i] = valueStrLen
 			}
 		}
-		rows = append(rows, r)
+		rows = append(rows, result)
 	}
 
 	if query.OrderBy != "" {
-		if query.ReverseOrder {
-			sort.SliceStable(rows, func(i, j int) bool {
-				return rows[i].orderBy < rows[j].orderBy
-			})
-		} else {
-			sort.SliceStable(rows, func(i, j int) bool {
-				return rows[i].orderBy > rows[j].orderBy
-			})
-		}
+		g.resultOrderBy(query, rows)
 	}
 
 	return rows, widths, nil
+}
+
+func (*GroupSet) resultSelect(query *Query, sc *selectCondition, set *AggregateSet,
+	result *result) (int, error) {
+
+	var valueStr string
+	var value float64
+
+	switch sc.Operation {
+	case Count:
+		value = set.FValues[sc.FieldStorage]
+		valueStr = fmt.Sprintf("%d", int(value))
+	case Len:
+		fallthrough
+	case Sum:
+		fallthrough
+	case Min:
+		fallthrough
+	case Max:
+		value = set.FValues[sc.FieldStorage]
+		valueStr = fmt.Sprintf("%f", value)
+	case Last:
+		valueStr = set.SValues[sc.FieldStorage]
+		value, _ = strconv.ParseFloat(valueStr, 64)
+	case Avg:
+		value = set.FValues[sc.FieldStorage] / float64(set.Samples)
+		valueStr = fmt.Sprintf("%f", value)
+	default:
+		return 0, fmt.Errorf("Unknown aggregation method '%v'", sc.Operation)
+	}
+
+	if sc.FieldStorage == query.OrderBy {
+		result.orderBy = value
+	}
+	result.values = append(result.values, valueStr)
+
+	return len(valueStr), nil
+}
+
+func (*GroupSet) resultOrderBy(query *Query, rows []result) {
+	if query.ReverseOrder {
+		sort.SliceStable(rows, func(i, j int) bool {
+			return rows[i].orderBy < rows[j].orderBy
+		})
+	} else {
+		sort.SliceStable(rows, func(i, j int) bool {
+			return rows[i].orderBy > rows[j].orderBy
+		})
+	}
 }
