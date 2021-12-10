@@ -165,35 +165,47 @@ func (a *Aggregate) fieldsFromLines(ctx context.Context) <-chan map[string]strin
 			line, ok, noMoreChannels := a.nextLine()
 			if !ok {
 				if noMoreChannels {
-					break
+					return
 				}
 				time.Sleep(time.Millisecond * 100)
 				continue
 			}
 
-			maprLine := strings.TrimSpace(line.Content.String())
-			line.Recycle() // after this, don't use line object anymore!!!
-			fields, err := a.parser.MakeFields(maprLine)
-
-			if err != nil {
-				// Should fields be ignored anyway?
-				if err != logformat.ErrIgnoreFields {
-					dlog.Server.Error(fields, err)
-				}
-				continue
-			}
-			if !a.query.WhereClause(fields) {
-				continue
-			}
-
-			select {
-			case fieldsCh <- fields:
-			case <-ctx.Done():
+			if err := a.fieldFromLine(ctx, line, fieldsCh); err != nil {
+				dlog.Server.Error(err)
 			}
 		}
 	}()
 
 	return fieldsCh
+}
+
+func (a *Aggregate) fieldFromLine(ctx context.Context, line *line.Line,
+	fieldsCh chan<- map[string]string) error {
+
+	maprLine := strings.TrimSpace(line.Content.String())
+
+	// after recycling it, don't use line object anymore!!!
+	line.Recycle()
+	fields, err := a.parser.MakeFields(maprLine)
+
+	if err != nil {
+		// Should fields be ignored anyway?
+		if err != logformat.ErrIgnoreFields {
+			return err
+		}
+		return nil
+	}
+	if !a.query.WhereClause(fields) {
+		return nil
+	}
+
+	select {
+	case fieldsCh <- fields:
+	case <-ctx.Done():
+	}
+
+	return nil
 }
 
 func (a *Aggregate) setAdditionalFields(ctx context.Context,
