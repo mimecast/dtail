@@ -29,8 +29,8 @@ COND := ARG1 OPERATOR ARG2
 ARG := This is either
     a string: "foo bar"
     a float number: 3.14
-    a bareword e.g.: responsecode
-    a field or a $variable
+    a bareword (aka a field) e.g.: responsecode
+    or a $variable
 OPERATOR := This is one of ...
     Floating point operators:
         == != < <= > >=
@@ -39,7 +39,7 @@ OPERATOR := This is one of ...
 GROUPFIELD := bareword|$variable       
 ORDERFIELD := This must be a AGGREGATION(FIELD) or FIELD which was specified in
               select clause already.
-LOGFORMAT := The name of the log format implementation. It's 'default' by default.
+LOGFORMAT := The name of the log format implementation. It's "default" by default.
 ```
 
 Note, that the available fields and variables vary from the log format used. There is also a subtle difference between a field and a variable. Check out the [log format](./logformats.md) documentation for more information.

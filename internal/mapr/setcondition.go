@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/mapr/funcs"
 )
 
@@ -68,7 +67,6 @@ func makeSetConditions(tokens []token) (set []setCondition, err error) {
 		if err != nil {
 			return nil, err
 		}
-		dlog.Client.Trace(sc)
 		set = append(set, sc)
 		tokens = tokensConsumeOptional(tokens, ",")
 	}
