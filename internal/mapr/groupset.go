@@ -291,10 +291,7 @@ func (g *GroupSet) result(query *Query, gatherWidths bool) ([]result, []int, err
 		rows = append(rows, result)
 	}
 
-	if query.OrderBy != "" {
-		g.resultOrderBy(query, rows)
-	}
-
+	g.resultOrderBy(query, rows)
 	return rows, widths, nil
 }
 
@@ -336,6 +333,9 @@ func (*GroupSet) resultSelect(query *Query, sc *selectCondition, set *AggregateS
 }
 
 func (*GroupSet) resultOrderBy(query *Query, rows []result) {
+	if query.OrderBy == "" {
+		return
+	}
 	if query.ReverseOrder {
 		sort.SliceStable(rows, func(i, j int) bool {
 			return rows[i].orderBy < rows[j].orderBy
