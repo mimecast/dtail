@@ -44,7 +44,7 @@ Hint: To run a map-reduce query across log lines written in the past, please use
     --query 'from STATS select sum($goroutines),sum($cgocalls),last($time),max(lifetimeConnections)'
 ```
 
-Beware: For map-reduce queries to work, you have to ensure that DTail supports your log format. You can either use the ones already defined in `internal/mapr/logformat` or add an extension to support a custom log format.
+Beware: For map-reduce queries to work, you have to ensure that DTail supports your log format. Check out the [query language](./querylanguage.md) and [log formats](./logformats.md) for more information.
 
 ![dtail-map](dtail-map.gif "Tail mapreduce example")
 

@@ -58,5 +58,6 @@ FUNCTION := md5sum|maskdigits
 
 *Notes:*
 
-* `lacks` is the inverse of `contains`)
+* `lacks` is the inverse of `contains`
+* `rorder` stands for reverse order and is the inverse of `order`
 * Available fields (variables and barewords) vary from the log format used. Check out the [log format](./logformats.md) documentation for more information.
