@@ -28,7 +28,6 @@ func (sc *setCondition) String() string {
 		sc.lString, sc.rString, sc.rType.String(), sc.functionStack)
 }
 
-// TODO: Add integration tests for the set conditions.
 func makeSetConditions(tokens []token) (set []setCondition, err error) {
 
 	parse := func(tokens []token) (setCondition, []token, error) {

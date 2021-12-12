@@ -25,6 +25,9 @@ func TestDMap1(t *testing.T) {
 		"c": "from STATS select count($line),last($time)," +
 			"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) " +
 			"group by $hostname where $time eq \"20211002-071949\"",
+		"d": "from STATS select $mask,$md5,$foo,$bar,$baz,last($time)," +
+			" set $mask = maskdigits($time), $md5 = md5sum($time), " +
+			"$foo = 42, $bar = \"baz\", $baz = $time group by $hostname",
 	}
 
 	for subtestName, query := range testTable {
