@@ -9,37 +9,54 @@ For this to work, DTail needs to understand your log format. DTail already under
 
 DTail also ships with a generic log format, which only allows you to run very basic queries. Check out the [log format](./logformats.md) documentation for this. To implement your own log format, please also check out the log format documentation.
 
-## The complete language
+## The language
+
+These are the fundamental types of the query language:
 
 ```shell
-QUERY :=
-    select SELECT1[,SELECT2...]
-    from TABLE
-    [where COND1[,COND2...]]
-    [group by GROUPFIELD1[,GROUPFIELD2...]]
-    [order|rorder by ORDERFIELD]
-    [interval SECONDS]
-    [limit NUM]
-    [outfile "FILENAME.csv"]
-    [logformat LOGFORMAT]
-SELECT := FIELD|AGGREGATION(FIELD)
-TABLE := The mapreduce table name, e.g. WRITE in MAPREDUCE:WRITE
-AGGREGATION := count|sum|min|max|avg|last|len
-COND := ARG1 OPERATOR ARG2
-ARG := This is either
-    a string: "foo bar"
-    a float number: 3.14
-    a bareword (aka a field) e.g.: responsecode
-    or a $variable
-OPERATOR := This is one of ...
-    Floating point operators:
-        == != < <= > >=
-    String operators:
-        eq ne contains lacks (lacks is the opposite of contains, e.g. "not contains")
-GROUPFIELD := bareword|$variable       
-ORDERFIELD := This must be a AGGREGATION(FIELD) or FIELD which was specified in
-              select clause already.
-LOGFORMAT := The name of the log format implementation. It's "default" by default.
+NUMBER := A whole number (e.g. 42)
+FLOAT := A float number, e.g. 3.14
+STRING := A quoted string, e.g. "foo"
+FIELD := BAREWORD|VARIABLE
+BAREWORD := A bare string without quotes, e.g. foo. This usually contains a value
+            extracted from a log line.
+VARIABLE := Like a bareword, but with a $ prefix, e.g. $foo. This usually contains
+            a special value set by DTail itself (not necessary from the log line).
 ```
 
-Note, that the available fields and variables vary from the log format used. There is also a subtle difference between a field and a variable. Check out the [log format](./logformats.md) documentation for more information.
+This is the overall structure of a query:
+
+```shell
+QUERY := from TABLE
+         select SELECT1[,SELECT2...]
+         [where CONDITION1[,CONDITION2...]]
+         [group by FIELD1[,FIELD2...]]
+         [order|rorder by ORDERFIELD]
+         [set SET1,[,SET2...]]
+         [interval NUMBER]
+         [limit NUMBER]
+         [outfile STRING]
+         [logformat LOGFORMAT]
+```
+
+Whereas....
+
+```shell
+TABLE := The mapreduce table name, e.g. STATS in MAPREDUCE:STATS
+SELECT := FIELD|AGGREGATION(FIELD)
+CONDITION := ARG1 OPERATOR ARG2
+ARG := FIELD|FLOAT|STRING
+OPERATOR := FLOATOPERATOR|STRINGOPERATOR
+FLOATOPERATOR := One of: == != < <= > >=
+STRINGOPERATOR := eq|ne|contains|lacks
+ORDERFIELD := FIELD|AGGREGATION(FIELD)
+SET := VARIABLE = FLOAT|STRING|FIELD|FUNCTION(FIELD)
+LOGFORMAT := default|generic|generickv|...
+AGGREGATION := count|sum|min|max|avg|last|len
+FUNCTION := md5sum|maskdigits
+```
+
+*Notes:*
+
+* `lacks` is the inverse of `contains`)
+* Available fields (variables and barewords) vary from the log format used. Check out the [log format](./logformats.md) documentation for more information.
