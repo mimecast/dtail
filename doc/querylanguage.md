@@ -48,7 +48,7 @@ CONDITION := ARG1 OPERATOR ARG2
 ARG := FIELD|FLOAT|STRING
 OPERATOR := FLOATOPERATOR|STRINGOPERATOR
 FLOATOPERATOR := One of: == != < <= > >=
-STRINGOPERATOR := eq|ne|contains|lacks
+STRINGOPERATOR := eq|ne|contains|ncontains|lacks|hasprefix|nhasprefix|hassuffix|nhassuffix
 ORDERFIELD := FIELD|AGGREGATION(FIELD)
 SET := VARIABLE = FLOAT|STRING|FIELD|FUNCTION(FIELD)
 LOGFORMAT := default|generic|generickv|...
@@ -58,6 +58,6 @@ FUNCTION := md5sum|maskdigits
 
 *Notes:*
 
-* `lacks` is the inverse of `contains`
+* `lacks` is an alias for `ncontains` (not contains)
 * `rorder` stands for reverse order and is the inverse of `order`
 * Available fields (variables and barewords) vary from the log format used. Check out the [log format](./logformats.md) documentation for more information.

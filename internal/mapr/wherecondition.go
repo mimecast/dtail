@@ -53,12 +53,12 @@ func (wc *whereCondition) String() string {
 }
 
 func makeWhereConditions(tokens []token) (where []whereCondition, err error) {
-	parse := func(tokens []token) (whereCondition, []token, error) {
 
+	// Helper to parse a where condition.
+	parse := func(tokens []token) (whereCondition, []token, error) {
 		var wc whereCondition
 		if len(tokens) < 3 {
-			err := errors.New(invalidQuery + "Not enough arguments in 'where' clause")
-			return wc, nil, err
+			return wc, nil, errors.New(invalidQuery + "Not enough arguments in 'where' clause")
 		}
 
 		whereOp := strings.ToLower(tokens[1].str)
@@ -102,47 +102,12 @@ func makeWhereConditions(tokens []token) (where []whereCondition, err error) {
 				"Unknown operation in 'where' clause: " + whereOp)
 		}
 
-		wc.lString = tokens[0].str
-		wc.rString = tokens[2].str
-
-		if wc.Operation > FloatOperation {
-			if !tokens[0].isBareword {
-				return wc, nil, errors.New(invalidQuery +
-					"Expected bareword at 'where' clause's lValue: " + tokens[0].str)
-			}
-			if f, err := strconv.ParseFloat(wc.lString, 64); err == nil {
-				wc.lFloat = f
-				wc.lType = Float
-			} else {
-				wc.lType = Field
-			}
-
-			if !tokens[2].isBareword {
-				return wc, nil, errors.New(invalidQuery +
-					"Expected bareword at 'where' clause's rValue: " + tokens[2].str)
-			}
-			if f, err := strconv.ParseFloat(wc.rString, 64); err == nil {
-				wc.rFloat = f
-				wc.rType = Float
-			} else {
-				wc.rType = Field
-			}
-			return wc, tokens[3:], nil
-		}
-
-		if tokens[0].isBareword {
-			wc.lType = Field
-		} else {
-			wc.lType = String
-		}
-		if tokens[2].isBareword {
-			wc.rType = Field
-		} else {
-			wc.rType = String
-		}
-		return wc, tokens[3:], nil
+		var err error
+		tokens, err = wc.fill(tokens)
+		return wc, tokens, err
 	}
 
+	// Consume all where conditions.
 	for len(tokens) > 0 {
 		var wc whereCondition
 		var err error
@@ -154,6 +119,52 @@ func makeWhereConditions(tokens []token) (where []whereCondition, err error) {
 		tokens = tokensConsumeOptional(tokens, "and")
 	}
 	return
+}
+
+// Fill a where condition.
+func (wc *whereCondition) fill(tokens []token) ([]token, error) {
+	wc.lString = tokens[0].str
+	wc.rString = tokens[2].str
+
+	if wc.Operation > FloatOperation {
+		if !tokens[0].isBareword {
+			return nil, errors.New(invalidQuery +
+				"Expected bareword at 'where' clause's lValue: " + tokens[0].str)
+		}
+
+		if f, err := strconv.ParseFloat(wc.lString, 64); err == nil {
+			wc.lFloat = f
+			wc.lType = Float
+		} else {
+			wc.lType = Field
+		}
+
+		if !tokens[2].isBareword {
+			return nil, errors.New(invalidQuery +
+				"Expected bareword at 'where' clause's rValue: " + tokens[2].str)
+		}
+		if f, err := strconv.ParseFloat(wc.rString, 64); err == nil {
+			wc.rFloat = f
+			wc.rType = Float
+		} else {
+			wc.rType = Field
+		}
+		return tokens[3:], nil
+	}
+
+	if tokens[0].isBareword {
+		wc.lType = Field
+	} else {
+		wc.lType = String
+	}
+
+	if tokens[2].isBareword {
+		wc.rType = Field
+	} else {
+		wc.rType = String
+	}
+
+	return tokens[3:], nil
 }
 
 func (wc *whereCondition) floatClause(lValue float64, rValue float64) bool {
