@@ -15,6 +15,7 @@ func (p *Parser) MakeFieldsGENERIGKV(maprLine string) (map[string]string, error)
 	fields["$line"] = maprLine
 	fields["$empty"] = ""
 	fields["$hostname"] = p.hostname
+	fields["$server"] = p.hostname
 	fields["$timezone"] = p.timeZoneName
 	fields["$timeoffset"] = p.timeZoneOffset
 

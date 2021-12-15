@@ -7,7 +7,9 @@ Currently, there are 3 different ways of how DTail can be tested.
 2. Integration tests (automatic)
 3. Semi-manual tests with DTail server instances running in Docker.
 
-Also, not actually testing, DTail is being linted and vetted before each release. For this run `make lint` and `make vet` at the top level source directory.
+## Quality control
+
+Also, not actually testing, DTail is being linted and vetted before each release. For this run `make lint` and `make vet` at the top level source directory. Furthermore, to improve the quality of the software even more, the code is being scanned by SonarQube and Black Duck periodically. DTail is also audited and pen-tested by Mimecast staff. And, of course, new features are peer reviewed as well...
 
 ## Unit tests
 
@@ -21,7 +23,7 @@ It will run unit tests for each source directory one after another and abort imm
 
 ## Integration tests
 
-Other than the unit tests, which only test the internal code, the integration tests will run a set of DTail commands externally and thus simulating common end user use cases.
+Other than the unit tests, which only test the internal code, the integration tests will run a set of DTail commands externally and thus simulating common end user scenarios.
 
 This means, that you will need to compile all DTail binaries prior to running these tests:
 
@@ -38,7 +40,7 @@ The integration tests can be enabled setting the following environment variable:
 % export DTAIL_INTEGRATION_TEST_RUN_MODE=yes
 ```
 
-To run the integration test together with all the unit tests simply run `make test` in the top level source tree. In case you only want to run the integration tests without the normal unit tests, then just do:
+To run the integration test together with all the unit tests, simply run `make test` in the top level source tree. In case you only want to run the integration tests without the normal unit tests, then just do:
 
 ```shell
 % go clean -testcache
@@ -51,7 +53,7 @@ To run the integration test together with all the unit tests simply run `make te
 
 ### Requirements 
 
-This assumes, that you have Docker up and running on your system. The following has been tested only on Fedora Linux 35. For other versions of Fedora (or Linux) you might need to change the Docker base image used (see Dockerfile) as otherwise you might run into issues with the `GLIBC` major version used.
+This assumes, that you have Docker up and running on your system. The following has been tested only on Fedora Linux 35. For other versions of Fedora (or Linux) you might need to change the Docker base image used (see Dockerfile) as otherwise you might run into issues with a different `GLIBC` major version used.
 
 This also assumes, that you have compiled all the DTail binaries already (with `make` in the top level source directory).
 
@@ -81,7 +83,7 @@ make: Leaving directory '/home/paul/git/dtail/docker'
 
 ### Starting a DTail server farm
 
-To spin up 10 instances of `dserver` run:
+To spin up 10 instances of the `dserver` Docker image, run:
 
 ```shell
 % make -C docker spinup
