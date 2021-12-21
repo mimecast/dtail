@@ -24,7 +24,7 @@ func TestDMap1(t *testing.T) {
 			"group by $hostname where lifetimeConnections >= 3",
 		"c": "from STATS select count($line),last($time)," +
 			"avg($goroutines),min(concurrentConnections),max(lifetimeConnections) " +
-			"group by $hostname where $time eq \"20211002-071949\"",
+			"group by $hostname where $time eq \"1002-071949\"",
 		"d": "from STATS select $mask,$md5,$foo,$bar,$baz,last($time)," +
 			" set $mask = maskdigits($time), $md5 = md5sum($time), " +
 			"$foo = 42, $bar = \"baz\", $baz = $time group by $hostname",

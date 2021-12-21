@@ -21,7 +21,7 @@ func TestDGrep1(t *testing.T) {
 		"../dgrep",
 		"--plain",
 		"--cfg", "none",
-		"--grep", "20211002-071947",
+		"--grep", "1002-071947",
 		inFile)
 
 	if err != nil {
@@ -50,7 +50,7 @@ func TestDGrep2(t *testing.T) {
 		"../dgrep",
 		"--plain",
 		"--cfg", "none",
-		"--grep", "20211002-071947",
+		"--grep", "1002-071947",
 		"--invert",
 		inFile)
 
@@ -80,7 +80,7 @@ func TestDGrepContext1(t *testing.T) {
 		"../dgrep",
 		"--plain",
 		"--cfg", "none",
-		"--grep", "20211002-071947",
+		"--grep", "1002-071947",
 		"--after", "3",
 		"--before", "3", inFile)
 
@@ -110,7 +110,7 @@ func TestDGrepContext2(t *testing.T) {
 		"../dgrep",
 		"--plain",
 		"--cfg", "none",
-		"--grep", "20211002",
+		"--grep", "1002",
 		"--max", "3",
 		inFile)
 

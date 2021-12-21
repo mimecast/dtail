@@ -1,3 +1,3 @@
-INFO|20211002-071947|1|stats.go:56|8|11|7|0.67|471h8m24s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
-INFO|20211002-071947|1|stats.go:56|8|11|7|0.67|471h8m25s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
-INFO|20211002-071947|1|stats.go:56|8|11|7|0.67|471h8m25s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
+INFO|1002-071947|1|stats.go:56|8|11|7|0.67|471h8m24s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
+INFO|1002-071947|1|stats.go:56|8|11|7|0.67|471h8m25s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
+INFO|1002-071947|1|stats.go:56|8|11|7|0.67|471h8m25s|MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=5
