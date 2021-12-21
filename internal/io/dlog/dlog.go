@@ -122,7 +122,7 @@ func (d *DLog) log(level level, args []interface{}) string {
 	default:
 		sb.WriteString(level.String())
 		sb.WriteString(protocol.FieldDelimiter)
-		sb.WriteString(now.Format("20060102-150405"))
+		sb.WriteString(now.Format("0102-150405"))
 	}
 	sb.WriteString(protocol.FieldDelimiter)
 	d.writeArgStrings(sb, args)
