@@ -77,108 +77,21 @@ func (q *Query) Has(what string) bool {
 }
 
 func (q *Query) parse(tokens []token) error {
-	var found []token
-	var err error
-
-	for tokens != nil && len(tokens) > 0 {
-		switch strings.ToLower(tokens[0].str) {
-		case "select":
-			tokens, found = tokensConsume(tokens[1:])
-			q.Select, err = makeSelectConditions(found)
-			if err != nil {
-				return err
-			}
-		case "from":
-			tokens, found = tokensConsume(tokens[1:])
-			if len(found) == 0 {
-				return errors.New(invalidQuery + "expected table name after 'from'")
-			}
-			if len(found) > 1 {
-				return errors.New(invalidQuery + "expected only one table name after 'from'")
-			}
-			q.Table = strings.ToUpper(found[0].str)
-		case "where":
-			tokens, found = tokensConsume(tokens[1:])
-			if q.Where, err = makeWhereConditions(found); err != nil {
-				return err
-			}
-		case "set":
-			tokens, found = tokensConsume(tokens[1:])
-			if q.Set, err = makeSetConditions(found); err != nil {
-				return err
-			}
-		case "group":
-			tokens = tokensConsumeOptional(tokens[1:], "by")
-			if tokens == nil || len(tokens) < 1 {
-				return errors.New(invalidQuery + unexpectedEnd)
-			}
-			tokens, q.GroupBy = tokensConsumeStr(tokens)
-			q.GroupKey = strings.Join(q.GroupBy, ",")
-		case "rorder":
-			tokens = tokensConsumeOptional(tokens[1:], "by")
-			if tokens == nil || len(tokens) < 1 {
-				return errors.New(invalidQuery + unexpectedEnd)
-			}
-			tokens, found = tokensConsume(tokens)
-			if len(found) == 0 {
-				return errors.New(invalidQuery + unexpectedEnd)
-			}
-			q.OrderBy = found[0].str
-			q.ReverseOrder = true
-		case "order":
-			tokens = tokensConsumeOptional(tokens[1:], "by")
-			if tokens == nil || len(tokens) < 1 {
-				return errors.New(invalidQuery + unexpectedEnd)
-			}
-			tokens, found = tokensConsume(tokens)
-			if len(found) == 0 {
-				return errors.New(invalidQuery + unexpectedEnd)
-			}
-			q.OrderBy = found[0].str
-		case "interval":
-			tokens, found = tokensConsume(tokens[1:])
-			if len(found) > 0 {
-				i, err := strconv.Atoi(found[0].str)
-				if err != nil {
-					return errors.New(invalidQuery + err.Error())
-				}
-				q.Interval = time.Second * time.Duration(i)
-			}
-		case "limit":
-			tokens, found = tokensConsume(tokens[1:])
-			if len(found) == 0 {
-				return errors.New(invalidQuery + unexpectedEnd)
-			}
-			i, err := strconv.Atoi(found[0].str)
-			if err != nil {
-				return errors.New(invalidQuery + err.Error())
-			}
-			q.Limit = i
-		case "outfile":
-			tokens, found = tokensConsume(tokens[1:])
-			if len(found) == 0 {
-				return errors.New(invalidQuery + unexpectedEnd)
-			}
-			q.Outfile = found[0].str
-		case "logformat":
-			tokens, found = tokensConsume(tokens[1:])
-			if len(found) == 0 {
-				return errors.New(invalidQuery + unexpectedEnd)
-			}
-			q.LogFormat = found[0].str
-		default:
-			return errors.New(invalidQuery + "Unexpected keyword " + tokens[0].str)
-		}
+	tokens, err := q.parseTokens(tokens)
+	if err != nil {
+		return err
 	}
 
 	if len(q.Select) < 1 {
 		return errors.New(invalidQuery + "Expected at least one field in 'select' " +
 			"clause but got none")
 	}
+
 	if len(q.GroupBy) == 0 {
 		field := q.Select[0].Field
 		q.GroupBy = append(q.GroupBy, field)
 	}
+
 	if q.OrderBy != "" {
 		var orderFieldIsValid bool
 		for _, sc := range q.Select {
@@ -194,4 +107,106 @@ func (q *Query) parse(tokens []token) error {
 	}
 
 	return nil
+}
+
+// One can argue that this function is too large (as reported by automatic tools such
+// as SonarQube). However, refactoring this method into several smaller ones would make
+// the code as a matter of fact less readable. Also, I want to have at least one issue
+// reported in SonarQube, just to make sure that SonarQube still works ;-)
+func (q *Query) parseTokens(tokens []token) ([]token, error) {
+	var err error
+	var found []token
+
+	for tokens != nil && len(tokens) > 0 {
+		switch strings.ToLower(tokens[0].str) {
+		case "select":
+			tokens, found = tokensConsume(tokens[1:])
+			q.Select, err = makeSelectConditions(found)
+			if err != nil {
+				return tokens, err
+			}
+		case "from":
+			tokens, found = tokensConsume(tokens[1:])
+			if len(found) == 0 {
+				return tokens, errors.New(invalidQuery + "expected table name after 'from'")
+			}
+			if len(found) > 1 {
+				return tokens, errors.New(invalidQuery + "expected only one table name after 'from'")
+			}
+			q.Table = strings.ToUpper(found[0].str)
+		case "where":
+			tokens, found = tokensConsume(tokens[1:])
+			if q.Where, err = makeWhereConditions(found); err != nil {
+				return tokens, err
+			}
+		case "set":
+			tokens, found = tokensConsume(tokens[1:])
+			if q.Set, err = makeSetConditions(found); err != nil {
+				return tokens, err
+			}
+		case "group":
+			tokens = tokensConsumeOptional(tokens[1:], "by")
+			if tokens == nil || len(tokens) < 1 {
+				return tokens, errors.New(invalidQuery + unexpectedEnd)
+			}
+			tokens, q.GroupBy = tokensConsumeStr(tokens)
+			q.GroupKey = strings.Join(q.GroupBy, ",")
+		case "rorder":
+			tokens = tokensConsumeOptional(tokens[1:], "by")
+			if tokens == nil || len(tokens) < 1 {
+				return tokens, errors.New(invalidQuery + unexpectedEnd)
+			}
+			tokens, found = tokensConsume(tokens)
+			if len(found) == 0 {
+				return tokens, errors.New(invalidQuery + unexpectedEnd)
+			}
+			q.OrderBy = found[0].str
+			q.ReverseOrder = true
+		case "order":
+			tokens = tokensConsumeOptional(tokens[1:], "by")
+			if tokens == nil || len(tokens) < 1 {
+				return tokens, errors.New(invalidQuery + unexpectedEnd)
+			}
+			tokens, found = tokensConsume(tokens)
+			if len(found) == 0 {
+				return tokens, errors.New(invalidQuery + unexpectedEnd)
+			}
+			q.OrderBy = found[0].str
+		case "interval":
+			tokens, found = tokensConsume(tokens[1:])
+			if len(found) > 0 {
+				i, err := strconv.Atoi(found[0].str)
+				if err != nil {
+					return tokens, errors.New(invalidQuery + err.Error())
+				}
+				q.Interval = time.Second * time.Duration(i)
+			}
+		case "limit":
+			tokens, found = tokensConsume(tokens[1:])
+			if len(found) == 0 {
+				return tokens, errors.New(invalidQuery + unexpectedEnd)
+			}
+			i, err := strconv.Atoi(found[0].str)
+			if err != nil {
+				return tokens, errors.New(invalidQuery + err.Error())
+			}
+			q.Limit = i
+		case "outfile":
+			tokens, found = tokensConsume(tokens[1:])
+			if len(found) == 0 {
+				return tokens, errors.New(invalidQuery + unexpectedEnd)
+			}
+			q.Outfile = found[0].str
+		case "logformat":
+			tokens, found = tokensConsume(tokens[1:])
+			if len(found) == 0 {
+				return tokens, errors.New(invalidQuery + unexpectedEnd)
+			}
+			q.LogFormat = found[0].str
+		default:
+			return tokens, errors.New(invalidQuery + "Unexpected keyword " + tokens[0].str)
+		}
+	}
+
+	return tokens, nil
 }
