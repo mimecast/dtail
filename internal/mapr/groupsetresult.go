@@ -28,7 +28,7 @@ func (g *GroupSet) Result(query *Query, rowsLimit int) (string, int, error) {
 	defer pool.RecycleBuilderBuffer(sb)
 
 	g.resultWriteFormattedHeader(query, sb, lastColumn, rowsLimit, columnWidths)
-	g.resultWriteFormattedHeaderSeparator(query, sb, lastColumn, columnWidths)
+	g.resultWriteFormattedHeaderRowSeparator(query, sb, lastColumn, columnWidths)
 	g.resultWriteFormattedData(query, sb, lastColumn, rowsLimit, columnWidths, rows)
 
 	return sb.String(), len(rows), nil
@@ -41,44 +41,54 @@ func (g *GroupSet) resultWriteFormattedHeader(query *Query, sb *strings.Builder,
 	for i, sc := range query.Select {
 		format := fmt.Sprintf(" %%%ds ", columnWidths[i])
 		str := fmt.Sprintf(format, sc.FieldStorage)
-		if config.Client.TermColorsEnable {
-			attrs := []color.Attribute{config.Client.TermColors.MaprTable.HeaderAttr}
-			if sc.FieldStorage == query.OrderBy {
-				attrs = append(attrs, config.Client.TermColors.MaprTable.HeaderSortKeyAttr)
-			}
 
-			for _, groupBy := range query.GroupBy {
-				if sc.FieldStorage == groupBy {
-					attrs = append(attrs, config.Client.TermColors.MaprTable.HeaderGroupKeyAttr)
-					break
-				}
-			}
-
-			color.PaintWithAttrs(sb, str,
-				config.Client.TermColors.MaprTable.HeaderFg,
-				config.Client.TermColors.MaprTable.HeaderBg,
-				attrs)
-		} else {
-			sb.WriteString(str)
-		}
-
+		g.resultWriteFormattedHeaderEntry(query, sb, sc, str)
 		if i == lastColumn {
 			continue
 		}
-		if config.Client.TermColorsEnable {
-			color.PaintWithAttr(sb, protocol.FieldDelimiter,
-				config.Client.TermColors.MaprTable.HeaderDelimiterFg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterBg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterAttr)
-		} else {
-			sb.WriteString(protocol.FieldDelimiter)
-		}
+		g.resultWriteFormattedHeaderEntrySeparator(query, sb)
+
 	}
 	sb.WriteString("\n")
 }
 
+func (g *GroupSet) resultWriteFormattedHeaderEntry(query *Query, sb *strings.Builder,
+	sc selectCondition, str string) {
+
+	if config.Client.TermColorsEnable {
+		attrs := []color.Attribute{config.Client.TermColors.MaprTable.HeaderAttr}
+		if sc.FieldStorage == query.OrderBy {
+			attrs = append(attrs, config.Client.TermColors.MaprTable.HeaderSortKeyAttr)
+		}
+		for _, groupBy := range query.GroupBy {
+			if sc.FieldStorage == groupBy {
+				attrs = append(attrs, config.Client.TermColors.MaprTable.HeaderGroupKeyAttr)
+				break
+			}
+		}
+		color.PaintWithAttrs(sb, str,
+			config.Client.TermColors.MaprTable.HeaderFg,
+			config.Client.TermColors.MaprTable.HeaderBg,
+			attrs)
+
+	} else {
+		sb.WriteString(str)
+	}
+}
+
+func (g *GroupSet) resultWriteFormattedHeaderEntrySeparator(query *Query, sb *strings.Builder) {
+	if config.Client.TermColorsEnable {
+		color.PaintWithAttr(sb, protocol.FieldDelimiter,
+			config.Client.TermColors.MaprTable.HeaderDelimiterFg,
+			config.Client.TermColors.MaprTable.HeaderDelimiterBg,
+			config.Client.TermColors.MaprTable.HeaderDelimiterAttr)
+	} else {
+		sb.WriteString(protocol.FieldDelimiter)
+	}
+}
+
 // This writes a nicely formatted line separating the header and the data.
-func (g *GroupSet) resultWriteFormattedHeaderSeparator(query *Query, sb *strings.Builder,
+func (g *GroupSet) resultWriteFormattedHeaderRowSeparator(query *Query, sb *strings.Builder,
 	lastColumn int, columnWidths []int) {
 
 	for i := 0; i < len(query.Select); i++ {
@@ -115,20 +125,11 @@ func (g *GroupSet) resultWriteFormattedData(query *Query, sb *strings.Builder,
 			break
 		}
 		for j, value := range r.values {
-			format := fmt.Sprintf(" %%%ds ", columnWidths[j])
-			str := fmt.Sprintf(format, value)
-			if config.Client.TermColorsEnable {
-				color.PaintWithAttr(sb, str,
-					config.Client.TermColors.MaprTable.DataFg,
-					config.Client.TermColors.MaprTable.DataBg,
-					config.Client.TermColors.MaprTable.DataAttr)
-			} else {
-				sb.WriteString(str)
-			}
-
+			g.resultWriteFormattedDataEntry(query, sb, columnWidths, j, value)
 			if j == lastColumn {
 				continue
 			}
+			// Now, write the data entry separator.
 			if config.Client.TermColorsEnable {
 				color.PaintWithAttr(sb, protocol.FieldDelimiter,
 					config.Client.TermColors.MaprTable.DelimiterFg,
@@ -139,6 +140,21 @@ func (g *GroupSet) resultWriteFormattedData(query *Query, sb *strings.Builder,
 			}
 		}
 		sb.WriteString("\n")
+	}
+}
+
+func (g *GroupSet) resultWriteFormattedDataEntry(query *Query, sb *strings.Builder,
+	columnWidths []int, j int, value string) {
+
+	format := fmt.Sprintf(" %%%ds ", columnWidths[j])
+	str := fmt.Sprintf(format, value)
+	if config.Client.TermColorsEnable {
+		color.PaintWithAttr(sb, str,
+			config.Client.TermColors.MaprTable.DataFg,
+			config.Client.TermColors.MaprTable.DataBg,
+			config.Client.TermColors.MaprTable.DataAttr)
+	} else {
+		sb.WriteString(str)
 	}
 }
 
@@ -166,7 +182,6 @@ func (g *GroupSet) WriteResult(query *Query) error {
 	if err := g.writeQueryFile(query); err != nil {
 		return err
 	}
-
 	rows, _, err := g.result(query, false)
 	if err != nil {
 		return err
