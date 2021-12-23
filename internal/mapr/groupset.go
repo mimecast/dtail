@@ -2,18 +2,9 @@ package mapr
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
-	"strings"
-
-	"github.com/mimecast/dtail/internal/color"
-	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/dlog"
-	"github.com/mimecast/dtail/internal/io/pool"
-	"github.com/mimecast/dtail/internal/protocol"
 )
 
 // GroupSet represents a map of aggregate sets. The group sets
@@ -27,10 +18,10 @@ type GroupSet struct {
 
 // Internal helper type
 type result struct {
-	groupKey string
-	values   []string
-	widths   []int
-	orderBy  float64
+	groupKey     string
+	values       []string
+	columnWidths []int
+	orderBy      float64
 }
 
 // NewGroupSet returns a new empty group set.
@@ -67,205 +58,14 @@ func (g *GroupSet) Serialize(ctx context.Context, ch chan<- string) {
 	}
 }
 
-// Result returns a nicely formated result of the query from the group set.
-func (g *GroupSet) Result(query *Query, rowsLimit int) (string, int, error) {
-	rows, widths, err := g.result(query, true)
-	if err != nil {
-		return "", 0, err
-	}
-	if query.Limit != -1 {
-		rowsLimit = query.Limit
-	}
-
-	sb := pool.BuilderBuffer.Get().(*strings.Builder)
-	defer pool.RecycleBuilderBuffer(sb)
-
-	// Generate header now
-	lastIndex := len(query.Select) - 1
-	for i, sc := range query.Select {
-		format := fmt.Sprintf(" %%%ds ", widths[i])
-		str := fmt.Sprintf(format, sc.FieldStorage)
-		if config.Client.TermColorsEnable {
-			attrs := []color.Attribute{config.Client.TermColors.MaprTable.HeaderAttr}
-			if sc.FieldStorage == query.OrderBy {
-				attrs = append(attrs, config.Client.TermColors.MaprTable.HeaderSortKeyAttr)
-			}
-
-			for _, groupBy := range query.GroupBy {
-				if sc.FieldStorage == groupBy {
-					attrs = append(attrs, config.Client.TermColors.MaprTable.HeaderGroupKeyAttr)
-					break
-				}
-			}
-
-			color.PaintWithAttrs(sb, str,
-				config.Client.TermColors.MaprTable.HeaderFg,
-				config.Client.TermColors.MaprTable.HeaderBg,
-				attrs)
-		} else {
-			sb.WriteString(str)
-		}
-
-		if i == lastIndex {
-			continue
-		}
-		if config.Client.TermColorsEnable {
-			color.PaintWithAttr(sb, protocol.FieldDelimiter,
-				config.Client.TermColors.MaprTable.HeaderDelimiterFg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterBg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterAttr)
-		} else {
-			sb.WriteString(protocol.FieldDelimiter)
-		}
-	}
-	sb.WriteString("\n")
-
-	for i := 0; i < len(query.Select); i++ {
-		str := fmt.Sprintf("-%s-", strings.Repeat("-", widths[i]))
-		if config.Client.TermColorsEnable {
-			color.PaintWithAttr(sb, str,
-				config.Client.TermColors.MaprTable.HeaderDelimiterFg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterBg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterAttr)
-		} else {
-			sb.WriteString(str)
-		}
-		if i == lastIndex {
-			continue
-		}
-		if config.Client.TermColorsEnable {
-			color.PaintWithAttr(sb, protocol.FieldDelimiter,
-				config.Client.TermColors.MaprTable.HeaderDelimiterFg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterBg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterAttr)
-		} else {
-			sb.WriteString(protocol.FieldDelimiter)
-		}
-	}
-	sb.WriteString("\n")
-
-	// And now write the data
-	for i, r := range rows {
-		if i == rowsLimit {
-			break
-		}
-		for j, value := range r.values {
-			format := fmt.Sprintf(" %%%ds ", widths[j])
-			str := fmt.Sprintf(format, value)
-			if config.Client.TermColorsEnable {
-				color.PaintWithAttr(sb, str,
-					config.Client.TermColors.MaprTable.DataFg,
-					config.Client.TermColors.MaprTable.DataBg,
-					config.Client.TermColors.MaprTable.DataAttr)
-			} else {
-				sb.WriteString(str)
-			}
-
-			if j == lastIndex {
-				continue
-			}
-			if config.Client.TermColorsEnable {
-				color.PaintWithAttr(sb, protocol.FieldDelimiter,
-					config.Client.TermColors.MaprTable.DelimiterFg,
-					config.Client.TermColors.MaprTable.DelimiterBg,
-					config.Client.TermColors.MaprTable.DelimiterAttr)
-			} else {
-				sb.WriteString(protocol.FieldDelimiter)
-			}
-		}
-		sb.WriteString("\n")
-	}
-
-	return sb.String(), len(rows), nil
-}
-
-func (*GroupSet) writeQueryFile(query *Query) error {
-	queryFile := fmt.Sprintf("%s.query", query.Outfile)
-	tmpQueryFile := fmt.Sprintf("%s.tmp", queryFile)
-	dlog.Common.Debug("Writing query file", queryFile)
-
-	fd, err := os.Create(tmpQueryFile)
-	if err != nil {
-		return err
-	}
-	defer fd.Close()
-
-	fd.WriteString(query.RawQuery)
-	os.Rename(tmpQueryFile, queryFile)
-	return nil
-}
-
-// WriteResult writes the result to an CSV outfile.
-func (g *GroupSet) WriteResult(query *Query) error {
-	if !query.HasOutfile() {
-		return errors.New("No outfile specified")
-	}
-	if err := g.writeQueryFile(query); err != nil {
-		return err
-	}
-
-	rows, _, err := g.result(query, false)
-	if err != nil {
-		return err
-	}
-
-	dlog.Common.Info("Writing outfile", query.Outfile)
-	tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile)
-
-	fd, err := os.Create(tmpOutfile)
-	if err != nil {
-		return err
-	}
-	defer fd.Close()
-
-	return g.writeResult(query, rows, tmpOutfile, fd)
-}
-
-func (g *GroupSet) writeResult(query *Query, rows []result, tmpOutfile string,
-	fd *os.File) error {
-
-	// Generate header now
-	lastIndex := len(query.Select) - 1
-	for i, sc := range query.Select {
-		fd.WriteString(sc.FieldStorage)
-		if i == lastIndex {
-			continue
-		}
-		fd.WriteString(protocol.CSVDelimiter)
-	}
-	fd.WriteString("\n")
-
-	// And now write the data
-	for i, r := range rows {
-		if i == query.Limit {
-			break
-		}
-		for j, value := range r.values {
-			fd.WriteString(value)
-			if j == lastIndex {
-				continue
-			}
-			fd.WriteString(protocol.CSVDelimiter)
-		}
-		fd.WriteString("\n")
-	}
-
-	if err := os.Rename(tmpOutfile, query.Outfile); err != nil {
-		os.Remove(tmpOutfile)
-		return err
-	}
-
-	return nil
-}
-
 // Return a sorted result slice of the query from the group set.
-func (g *GroupSet) result(query *Query, gatherWidths bool) ([]result, []int, error) {
+func (g *GroupSet) result(query *Query, gathercolumnWidths bool) ([]result, []int, error) {
 	var err error
 	var rows []result
 
 	// Helpers for calculating the ASCII table output (output is the terminal and
 	// not a CSV file).
-	widths := make([]int, len(query.Select))
+	columnWidths := make([]int, len(query.Select))
 	var valueStrLen int
 
 	for groupKey, set := range g.sets {
@@ -273,26 +73,26 @@ func (g *GroupSet) result(query *Query, gatherWidths bool) ([]result, []int, err
 
 		for i, sc := range query.Select {
 			if valueStrLen, err = g.resultSelect(query, &sc, set, &result); err != nil {
-				return rows, widths, err
+				return rows, columnWidths, err
 			}
 
 			// Do we want to gather the table withs? This is required to print out a decent
 			// ASCII formated table (table output is the terminal and not a CSV file).
-			if !gatherWidths {
+			if !gathercolumnWidths {
 				continue
 			}
-			if widths[i] < len(sc.FieldStorage) {
-				widths[i] = len(sc.FieldStorage)
+			if columnWidths[i] < len(sc.FieldStorage) {
+				columnWidths[i] = len(sc.FieldStorage)
 			}
-			if widths[i] < valueStrLen {
-				widths[i] = valueStrLen
+			if columnWidths[i] < valueStrLen {
+				columnWidths[i] = valueStrLen
 			}
 		}
 		rows = append(rows, result)
 	}
 
 	g.resultOrderBy(query, rows)
-	return rows, widths, nil
+	return rows, columnWidths, nil
 }
 
 func (*GroupSet) resultSelect(query *Query, sc *selectCondition, set *AggregateSet,
