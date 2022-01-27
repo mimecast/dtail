@@ -37,7 +37,7 @@ func tokenize(queryStr string) []token {
 			commasStripped := strings.Replace(part, ",", " ", -1)
 			for _, tokenStr := range strings.Fields(commasStripped) {
 				token := token{
-					str:        strings.ToLower(tokenStr),
+					str:        tokenStr,
 					isBareword: true,
 				}
 				tokens = append(tokens, token)
@@ -71,7 +71,7 @@ func tokensConsume(tokens []token) ([]token, []token) {
 			stripped := t.str[1 : length-1]
 			//dlog.Common.Trace("stripped", stripped)
 			t := token{
-				str:        strings.ToLower(stripped),
+				str:        stripped,
 				isBareword: t.isBareword,
 			}
 			consumed = append(consumed, t)

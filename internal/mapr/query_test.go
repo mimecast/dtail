@@ -57,9 +57,9 @@ func TestParseQueryDeep(t *testing.T) {
 			"\"free beer\" group by g1, g2 order by count(s3) interval 10 limit 23 " +
 			"set $foo = maskdigits(bar), $baz = 12, $bay = $foo logformat generic",
 
-		"SELECT s1, `from`, COUNT(s3) FROM table WHERE w1 == 2 AND w2 eq " +
+		"SELECT s1, `from`, count(s3) FROM table WHERE w1 == 2 AND w2 EQ " +
 			"\"free beer\" GROUP g1, g2 ORDER count(s3) INTERVAL 10 LIMIT 23 " +
-			"SET $foo = maskdigits(bar), $baz = 12, $bay = $foo logformat generic",
+			"SET $foo = maskdigits(bar), $baz = 12, $bay = $foo LOGFORMAT generic",
 	}
 
 	for _, queryStr := range dialects {

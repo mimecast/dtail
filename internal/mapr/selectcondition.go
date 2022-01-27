@@ -40,7 +40,7 @@ func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 	// Parse select aggregation, e.g. sum(foo)
 	parse := func(token token) (selectCondition, error) {
 		var sc selectCondition
-		tokenStr := strings.ToLower(token.str)
+		tokenStr := token.str
 
 		if !strings.Contains(tokenStr, "(") && !strings.Contains(tokenStr, ")") {
 			sc.Field = tokenStr

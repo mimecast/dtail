@@ -23,6 +23,10 @@ func TestDServer1(t *testing.T) {
 	queryFile := fmt.Sprintf("%s.query", csvFile)
 	expectedQueryFile := "dserver1.csv.query.expected"
 
+	// In case files still exists from previous test run.
+	os.Remove(csvFile)
+	os.Remove(queryFile)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -31,7 +35,7 @@ func TestDServer1(t *testing.T) {
 		"--cfg", "dserver1.cfg",
 		"--logger", "stdout",
 		"--logLevel", "info",
-		"--bindAddress", "localhost",
+		"--bindAddress", "127.0.0.1",
 		"--shutdownAfter", "5",
 		"--port", fmt.Sprintf("%d", getUniquePortNumber()),
 	)
@@ -98,7 +102,7 @@ func TestDServer2(t *testing.T) {
 		"--cfg", "dserver2.cfg",
 		"--logger", "stdout",
 		"--logLevel", "debug",
-		"--bindAddress", "localhost",
+		"--bindAddress", "127.0.0.1",
 		"--shutdownAfter", "7",
 		"--port", fmt.Sprintf("%d", getUniquePortNumber()),
 	)
