@@ -34,9 +34,9 @@ func TestDServer1(t *testing.T) {
 		"", "../dserver",
 		"--cfg", "dserver1.cfg",
 		"--logger", "stdout",
-		"--logLevel", "info",
+		"--logLevel", "debug",
 		"--bindAddress", "127.0.0.1",
-		"--shutdownAfter", "5",
+		"--shutdownAfter", "10",
 		"--port", fmt.Sprintf("%d", getUniquePortNumber()),
 	)
 	if err != nil {
@@ -103,7 +103,7 @@ func TestDServer2(t *testing.T) {
 		"--logger", "stdout",
 		"--logLevel", "debug",
 		"--bindAddress", "127.0.0.1",
-		"--shutdownAfter", "7",
+		"--shutdownAfter", "10",
 		"--port", fmt.Sprintf("%d", getUniquePortNumber()),
 	)
 	if err != nil {
