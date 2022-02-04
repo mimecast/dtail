@@ -12,12 +12,10 @@ import (
 
 // InterruptCh returns a channel for "please print stats" signalling.
 func InterruptCh(ctx context.Context) <-chan string {
-	sigIntCh := make(chan os.Signal)
+	sigIntCh := make(chan os.Signal, 10)
 	gosignal.Notify(sigIntCh, os.Interrupt)
-
-	sigOtherCh := make(chan os.Signal)
+	sigOtherCh := make(chan os.Signal, 10)
 	gosignal.Notify(sigOtherCh, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
-
 	statsCh := make(chan string)
 
 	go func() {
@@ -41,6 +39,10 @@ func InterruptCh(ctx context.Context) <-chan string {
 			}
 		}
 	}()
-
 	return statsCh
+}
+
+// NoCh doesn't listen on a signal.
+func NoCh(ctx context.Context) <-chan string {
+	return make(chan string)
 }

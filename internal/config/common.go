@@ -6,31 +6,27 @@ type CommonConfig struct {
 	SSHPort int
 	// Enable experimental features (mainly for dev purposes)
 	ExperimentalFeaturesEnable bool `json:",omitempty"`
-	// Enable debug logging. Don't enable in production.
-	DebugEnable bool `json:",omitempty"`
-	// Enable trace logging. Don't enable in production.
-	TraceEnable bool `json:",omitempty"`
-	// The log strategy to use, one of
-	//   stdout: only log to stdout (useful when used with systemd)
-	//   daily: create a log file for every day
-	LogStrategy string
-	// The log directory
+	// LogDir defines the log directory.
 	LogDir string
+	// Logger defines the name of the logger implementation.
+	Logger string
+	// LogLevel defines how much is logged.
+	LogLevel string `json:",omitempty"`
+	// LogRotation strategy to be used.
+	LogRotation string
 	// The cache directory
 	CacheDir string
-	// The temp directory
-	TmpDir string `json:",omitempty"`
 }
 
 // Create a new default configuration.
 func newDefaultCommonConfig() *CommonConfig {
 	return &CommonConfig{
-		SSHPort:                    2222,
-		DebugEnable:                false,
-		TraceEnable:                false,
+		SSHPort:                    DefaultSSHPort,
 		ExperimentalFeaturesEnable: false,
 		LogDir:                     "log",
+		Logger:                     "stdout",
+		LogLevel:                   DefaultLogLevel,
+		LogRotation:                "daily",
 		CacheDir:                   "cache",
-		TmpDir:                     "/tmp",
 	}
 }

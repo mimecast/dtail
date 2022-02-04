@@ -1,24 +1,411 @@
 {
   "$schema": "https://json-schema.org/2019-09/schema",
   "description": "Schema for dtail.json",
+  "definitions": {
+    "userPermission": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "userPermissions": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "$ref": "#/definitions/userPermission"
+        }
+      }
+    },
+    "loglevel": {
+      "type": "string",
+      "enum": [
+        "None",
+        "Fatal",
+        "Error",
+        "Warn",
+        "Info",
+        "Default",
+        "Verbose",
+        "Debug",
+        "Devel",
+        "Trace",
+        "All"
+      ]
+    },
+    "logger": {
+      "type": "string",
+      "enum": [
+        "None",
+        "Stdout",
+        "File",
+        "Fout"
+      ]
+    },
+    "logrotation": {
+      "type": "string",
+      "enum": [
+        "Daily",
+        "Signal"
+      ]
+    },
+    "color": {
+      "type": "string",
+      "enum": [
+        "Black",
+        "Red",
+        "Green",
+        "Yellow",
+        "Blue",
+        "Magenta",
+        "Cyan",
+        "White"
+      ]
+    },
+    "attribute": {
+      "type": "string",
+      "enum": [
+        "None",
+        "Bold",
+        "Dim",
+        "Italic",
+        "Underline",
+        "Blink",
+        "SlowBlink",
+        "RapidBlink",
+        "Reverse",
+        "Hidden"
+      ]
+    }
+  },
   "type": "object",
+  "additionalProperties": false,
   "properties": {
     "Client": {
-      "properties": {},
-      "additionalProperties": false
+      "additionalProperties": false,
+      "properties": {
+        "TermColorsEnable": {
+          "type": "boolean"
+        },
+        "TermColors": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "Remote": {
+              "additionalProperties": false,
+              "properties": {
+                "DelimiterAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "DelimiterBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "DelimiterFg": {
+                  "$ref": "#/definitions/color"
+                },
+                "RemoteAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "RemoteBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "RemoteFg": {
+                  "$ref": "#/definitions/color"
+                },
+                "CountAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "CountBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "CountFg": {
+                  "$ref": "#/definitions/color"
+                },
+                "HostnameAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "HostnameBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "HostnameFg": {
+                  "$ref": "#/definitions/color"
+                },
+                "IDAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "IDBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "IDFg": {
+                  "$ref": "#/definitions/color"
+                },
+                "StatsOkAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "StatsOkBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "StatsOkFg": {
+                  "$ref": "#/definitions/color"
+                },
+                "StatsWarnAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "StatsWarnBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "StatsWarnFg": {
+                  "$ref": "#/definitions/color"
+                },
+                "TextAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "TextBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "TextFg": {
+                  "$ref": "#/definitions/color"
+                }
+              }
+            },
+            "Client": {
+              "additionalProperties": false,
+              "properties": {
+                "DelimiterAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "DelimiterBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "DelimiterFg": {
+                  "$ref": "#/definitions/color"
+                },
+                "ClientAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "ClientBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "ClientFg": {
+                  "$ref": "#/definitions/color"
+                },
+                "HostnameAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "HostnameBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "HostnameFg": {
+                  "$ref": "#/definitions/color"
+                },
+                "TextAttr": {
+                  "$ref": "#/definitions/attribute"
+                },
+                "TextBg": {
+                  "$ref": "#/definitions/color"
+                },
+                "TextFg": {
+                  "$ref": "#/definitions/color"
+                }
+              }
+            },
+            "Server": {
+              "additionalProperties": false,
+              "properties": {
+                "DelimiterAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "DelimiterBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "DelimiterFg": {
+                  "#ref": "#/definitions/color"
+                },
+                "ServerAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "ServerBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "ServerFg": {
+                  "#ref": "#/definitions/color"
+                },
+                "HostnameAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "HostnameBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "HostnameFg": {
+                  "#ref": "#/definitions/color"
+                },
+                "TextAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "TextBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "TextFg": {
+                  "#ref": "#/definitions/color"
+                }
+              }
+            },
+            "Common": {
+              "additionalProperties": false,
+              "properties": {
+                "SeverityErrorAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "SeverityErrorBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "SeverityErrorFg": {
+                  "#ref": "#/definitions/color"
+                },
+                "SeverityFatalAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "SeverityFatalBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "SeverityFatalFg": {
+                  "#ref": "#/definitions/color"
+                },
+                "SeverityWarnAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "SeverityWarnBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "SeverityWarnFg": {
+                  "#ref": "#/definitions/color"
+                }
+              }
+            },
+            "MaprTable": {
+              "additionalProperties": false,
+              "properties": {
+                "DataAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "DataBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "DataFg": {
+                  "#ref": "#/definitions/color"
+                },
+                "DelimiterAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "DelimiterBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "DelimiterFg": {
+                  "#ref": "#/definitions/color"
+                },
+                "HeaderAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "HeaderBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "HeaderFg": {
+                  "#ref": "#/definitions/color"
+                },
+                "HeaderDelimiterAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "HeaderDelimiterBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "HeaderDelimiterFg": {
+                  "#ref": "#/definitions/color"
+                },
+                "HeaderSortKeyAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "HeaderGroupKeyAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "RawQueryAttr": {
+                  "#ref": "#/definitions/attribute"
+                },
+                "RawQueryBg": {
+                  "#ref": "#/definitions/color"
+                },
+                "RawQueryFg": {
+                  "#ref": "#/definitions/color"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Server": {
+      "additionalProperties": false,
       "properties": {
+        "SSHBindAddress": {
+          "type": "string"
+        },
+        "HostKeyFile": {
+          "type": "string"
+        },
+        "HostKeyBits": {
+          "type": "integer",
+          "minimum": 2048
+        },
+        "MapreduceLogFormat": {
+          "type": "string"
+        },
+        "MaxConcurrentCats": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "MaxConcurrentTails": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "MaxConnections": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "MaxLineLength": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 10240000
+        },
+        "Permissions": {
+          "type": "object",
+          "additionalProperties": true,
+          "patternProperties": {
+            "^Default$": {
+              "$ref": "#/definitions/userPermission"
+            },
+            "^Users$": {
+              "$ref": "#/definitions/userPermissions"
+            }
+          }
+        },
         "Schedule": {
           "type": "array",
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
               "Name": {
                 "type": "string"
               },
               "Enable": {
                 "type": "boolean"
+              },
+              "AllowFrom": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               },
               "TimeRange": {
                 "type": "array",
@@ -47,6 +434,7 @@
           "type": "array",
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
               "Name": {
                 "type": "string"
@@ -68,54 +456,25 @@
               }
             }
           }
-        },
-        "HostKeyFile": {
-          "type": "string"
-        },
-        "HostKeyBits": {
-          "type": "integer",
-          "minimum": 2048
-        },
-        "MapreduceLogFormat": {
-          "type": "string"
-        },
-        "SSHBindAddress": {
-          "type": "string"
-        },
-        "MaxConcurrentCats": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 20
-        },
-        "MaxConcurrentTails": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100
-        },
-        "MaxConnections": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100
-        },
-        "Permissions": {
-          "type": "object",
-          "properties": {}
         }
-      },
-      "additionalProperties": false
+      }
     },
     "Common": {
+      "additionalProperties": false,
       "properties": {
         "LogDir": {
           "type": "string"
         },
+        "Logger": {
+          "#ref": "#/definitions/logger"
+        },
+        "LogLevel": {
+          "#ref": "#/definitions/loglevel"
+        },
+        "LogRotation": {
+          "#ref": "#/definitions/logrotation"
+        },
         "CacheDir": {
-          "type": "string"
-        },
-        "TmpDir": {
-          "type": "string"
-        },
-        "LogStrategy": {
           "type": "string"
         },
         "SSHPort": {
@@ -123,20 +482,12 @@
           "minimum": 2,
           "maximum": 16000
         },
-        "DebugEnable": {
-          "type": "boolean"
-        },
         "ExperimentalFeaturesEnable": {
           "type": "boolean"
-        },
-        "TraceEnable": {
-          "type": "boolean"
         }
-      },
-      "additionalProperties": false
+      }
     }
   },
-  "additionalProperties": false,
   "required": [
     "Client",
     "Server",

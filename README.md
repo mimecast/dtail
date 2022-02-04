@@ -9,7 +9,7 @@ DTail (a distributed tail program) is a DevOps tool for engineers programmed in 
 
 For secure authorization and transport encryption, the SSH protocol is used. Furthermore, DTail respects the UNIX file system permission model (traditional on all Linux/UNIX variants and also ACLs on Linux based operating systems).
 
-The DTail binary operates in either client or server mode. The DTail server must be installed on all server boxes involved. The DTail client (possibly running on a regular Laptop) is used interactively to connect to the servers concurrently. That currently scales to multiple thousands of servers per client.
+The DTail binary operates in either client or server mode. The DTail server must be installed on all server boxes involved. The DTail client (possibly running on a regular Laptop) is used interactively to connect to the servers concurrently. That currently scales to multiple thousands of servers per client. Furthermore, DTail can be operated in a serverless mode too. Read more about it in the documentation.
 
 ![DTail](doc/dtail.gif "Example")
 
@@ -18,9 +18,7 @@ If you like what you see [look here for more examples](doc/examples.md)! You can
 Installation and Usage
 ======================
 
-* For the most straightforward setup, please follow the [Quick Starting Guide](doc/quickstart.md).
-* For a more sustainable setup, please follow the [Installation Guide](doc/installation.md).
-* Please also look at the [Usage Examples](doc/examples.md).
+* Check out the [DTail Documentation](doc/index.md)
 
 More
 ====
@@ -33,5 +31,7 @@ Credits
 =======
 
 * DTail was created by **Paul Buetow** *<pbuetow@mimecast.com>*
+* Thank you [Mimecast](https://www.mimecast.com) for supporting this Open-Source project.
 * Thank you to **Vlad-Marian Marian** for creating the DTail (dog) logo.
 * The Gopher was generated at https://gopherize.me
+* The animated Gifs were created using `asciinema` with  `asciicast2gif`. Check out [how this was done](./doc/asciinema/README.md) for more information.

@@ -4,8 +4,8 @@ import (
 	"errors"
 )
 
-// Permissions map. Each SSH user has a list of permissions which
-// log files it is allowed to follow and which ones not.
+// Permissions map. Each SSH user has a list of permissions which log files it
+// is allowed to follow and which ones not.
 type Permissions struct {
 	// The default user permissions.
 	Default []string
@@ -47,6 +47,8 @@ type ServerConfig struct {
 	MaxConcurrentCats int
 	// The max amount of concurrent tails per server.
 	MaxConcurrentTails int
+	// The max line length until it's split up into multiple smaller lines.
+	MaxLineLength int
 	// The user permissions.
 	Permissions Permissions `json:",omitempty"`
 	// The mapr log format
@@ -61,21 +63,19 @@ type ServerConfig struct {
 	Continuous []Continuous `json:",omitempty"`
 }
 
-// ServerRelaxedAuthEnable should be used for development and testing purposes only.
-var ServerRelaxedAuthEnable bool
-
 // Create a new default server configuration.
 func newDefaultServerConfig() *ServerConfig {
 	defaultPermissions := []string{"^/.*"}
 	defaultBindAddress := "0.0.0.0"
-
 	return &ServerConfig{
-		SSHBindAddress:     defaultBindAddress,
-		MaxConnections:     10,
+		HostKeyBits:        4096,
+		HostKeyFile:        "./cache/ssh_host_key",
+		MapreduceLogFormat: "default",
 		MaxConcurrentCats:  2,
 		MaxConcurrentTails: 50,
-		HostKeyFile:        "./cache/ssh_host_key",
-		HostKeyBits:        4096,
+		MaxConnections:     10,
+		MaxLineLength:      1024 * 1024,
+		SSHBindAddress:     defaultBindAddress,
 		Permissions: Permissions{
 			Default: defaultPermissions,
 		},
@@ -88,10 +88,8 @@ func ServerUserPermissions(userName string) (permissions []string, err error) {
 	if p, ok := Server.Permissions.Users[userName]; ok {
 		permissions = p
 	}
-
 	if len(permissions) == 0 {
 		err = errors.New("Empty set of permission, user won't be able to open any files")
 	}
-
 	return
 }

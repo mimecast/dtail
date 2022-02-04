@@ -8,33 +8,29 @@ import (
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/omode"
-
 	gossh "golang.org/x/crypto/ssh"
 )
 
-type continuous struct {
-}
+type continuous struct{}
 
 func newContinuous() *continuous {
 	return &continuous{}
 }
 
 func (c *continuous) start(ctx context.Context) {
-	logger.Info("Starting continuous job runner after 10s")
-	time.Sleep(time.Second * 10)
-
+	dlog.Server.Info("Starting continuous job runner after 2s")
+	time.Sleep(time.Second * 2)
 	c.runJobs(ctx)
 }
 
 func (c *continuous) runJobs(ctx context.Context) {
 	for _, job := range config.Server.Continuous {
 		if !job.Enable {
-			logger.Debug(job.Name, "Not running job as not enabled")
+			dlog.Server.Debug(job.Name, "Not running job as not enabled")
 			continue
 		}
-
 		go func(job config.Continuous) {
 			c.runJob(ctx, job)
 			for {
@@ -51,18 +47,17 @@ func (c *continuous) runJobs(ctx context.Context) {
 }
 
 func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
-	logger.Debug(job.Name, "Processing job")
+	dlog.Server.Debug(job.Name, "Processing job")
 
 	files := fillDates(job.Files)
 	outfile := fillDates(job.Outfile)
-
 	servers := strings.Join(job.Servers, ",")
 	if servers == "" {
 		servers = config.Server.SSHBindAddress
 	}
 
-	args := clients.Args{
-		ConnectionsPerCPU: 10,
+	args := config.Args{
+		ConnectionsPerCPU: config.DefaultConnectionsPerCPU,
 		Discovery:         job.Discovery,
 		ServersStr:        servers,
 		What:              files,
@@ -71,35 +66,32 @@ func (c *continuous) runJob(ctx context.Context, job config.Continuous) {
 	}
 
 	args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(job.Name))
-
-	query := fmt.Sprintf("%s outfile %s", job.Query, outfile)
-	client, err := clients.NewMaprClient(args, query, clients.NonCumulativeMode)
+	args.QueryStr = fmt.Sprintf("%s outfile %s", job.Query, outfile)
+	client, err := clients.NewMaprClient(args, clients.NonCumulativeMode)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Unable to create job %s", job.Name), err)
+		dlog.Server.Error(fmt.Sprintf("Unable to create job %s", job.Name), err)
 		return
 	}
 
 	jobCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-
 	if job.RestartOnDayChange {
 		go func() {
 			if c.waitForDayChange(ctx) {
-				logger.Info(fmt.Sprintf("Canceling job %s due to day change", job.Name))
+				dlog.Server.Info(fmt.Sprintf("Canceling job %s due to day change", job.Name))
 				cancel()
 			}
 		}()
 	}
 
-	logger.Info(fmt.Sprintf("Starting job %s", job.Name))
+	dlog.Server.Info(fmt.Sprintf("Starting job %s", job.Name))
 	status := client.Start(jobCtx, make(chan string))
 	logMessage := fmt.Sprintf("Job exited with status %d", status)
-
 	if status != 0 {
-		logger.Warn(logMessage)
+		dlog.Server.Warn(logMessage)
 		return
 	}
-	logger.Info(logMessage)
+	dlog.Server.Info(logMessage)
 }
 
 func (c *continuous) waitForDayChange(ctx context.Context) bool {

@@ -1,6 +1,6 @@
 package lcontext
 
-// LContext stands for line context and is here to help filtering out only specific lines.
+// LContext stands for line context (used by context aware grep queries e.g.)
 type LContext struct {
 	AfterContext  int
 	BeforeContext int

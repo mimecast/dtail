@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/io/logger"
+	"github.com/mimecast/dtail/internal/io/dlog"
 )
 
 // QueryOperation determines the mapreduce operation.
@@ -46,11 +46,15 @@ type whereCondition struct {
 }
 
 func (wc *whereCondition) String() string {
-	return fmt.Sprintf("whereCondition(Operation:%v,lString:%s,lFloat:%v,lType:%s,rString:%s,rFloat:%v,rType:%s)",
-		wc.Operation, wc.lString, wc.lFloat, wc.lType.String(), wc.rString, wc.rFloat, wc.rType.String())
+	return fmt.Sprintf("whereCondition(Operation:%v,lString:%s,lFloat:%v,"+
+		"lType:%s,rString:%s,rFloat:%v,rType:%s)",
+		wc.Operation, wc.lString, wc.lFloat, wc.lType.String(), wc.rString,
+		wc.rFloat, wc.rType.String())
 }
 
 func makeWhereConditions(tokens []token) (where []whereCondition, err error) {
+
+	// Helper to parse a where condition.
 	parse := func(tokens []token) (whereCondition, []token, error) {
 		var wc whereCondition
 		if len(tokens) < 3 {
@@ -94,63 +98,73 @@ func makeWhereConditions(tokens []token) (where []whereCondition, err error) {
 		case "nhassuffix":
 			wc.Operation = StringNotHasSuffix
 		default:
-			return wc, nil, errors.New(invalidQuery + "Unknown operation in 'where' clause: " + whereOp)
+			return wc, nil, errors.New(invalidQuery +
+				"Unknown operation in 'where' clause: " + whereOp)
 		}
 
-		wc.lString = tokens[0].str
-		wc.rString = tokens[2].str
-
-		if wc.Operation > FloatOperation {
-			if !tokens[0].isBareword {
-				return wc, nil, errors.New(invalidQuery + "Expected bareword at 'where' clause's lValue: " + tokens[0].str)
-			}
-			if f, err := strconv.ParseFloat(wc.lString, 64); err == nil {
-				wc.lFloat = f
-				wc.lType = Float
-			} else {
-				wc.lType = Field
-			}
-
-			if !tokens[2].isBareword {
-				return wc, nil, errors.New(invalidQuery + "Expected bareword at 'where' clause's rValue: " + tokens[2].str)
-			}
-			if f, err := strconv.ParseFloat(wc.rString, 64); err == nil {
-				wc.rFloat = f
-				wc.rType = Float
-			} else {
-				wc.rType = Field
-			}
-			return wc, tokens[3:], nil
-		}
-
-		if tokens[0].isBareword {
-			wc.lType = Field
-		} else {
-			wc.lType = String
-		}
-		if tokens[2].isBareword {
-			wc.rType = Field
-		} else {
-			wc.rType = String
-		}
-
-		return wc, tokens[3:], nil
+		var err error
+		tokens, err = wc.fill(tokens)
+		return wc, tokens, err
 	}
 
+	// Consume all where conditions.
 	for len(tokens) > 0 {
 		var wc whereCondition
 		var err error
-
 		wc, tokens, err = parse(tokens)
 		if err != nil {
 			return nil, err
 		}
-
 		where = append(where, wc)
 		tokens = tokensConsumeOptional(tokens, "and")
 	}
-
 	return
+}
+
+// Fill a where condition.
+func (wc *whereCondition) fill(tokens []token) ([]token, error) {
+	wc.lString = tokens[0].str
+	wc.rString = tokens[2].str
+
+	if wc.Operation > FloatOperation {
+		if !tokens[0].isBareword {
+			return nil, errors.New(invalidQuery +
+				"Expected bareword at 'where' clause's lValue: " + tokens[0].str)
+		}
+
+		if f, err := strconv.ParseFloat(wc.lString, 64); err == nil {
+			wc.lFloat = f
+			wc.lType = Float
+		} else {
+			wc.lType = Field
+		}
+
+		if !tokens[2].isBareword {
+			return nil, errors.New(invalidQuery +
+				"Expected bareword at 'where' clause's rValue: " + tokens[2].str)
+		}
+		if f, err := strconv.ParseFloat(wc.rString, 64); err == nil {
+			wc.rFloat = f
+			wc.rType = Float
+		} else {
+			wc.rType = Field
+		}
+		return tokens[3:], nil
+	}
+
+	if tokens[0].isBareword {
+		wc.lType = Field
+	} else {
+		wc.lType = String
+	}
+
+	if tokens[2].isBareword {
+		wc.rType = Field
+	} else {
+		wc.rType = String
+	}
+
+	return tokens[3:], nil
 }
 
 func (wc *whereCondition) floatClause(lValue float64, rValue float64) bool {
@@ -168,9 +182,8 @@ func (wc *whereCondition) floatClause(lValue float64, rValue float64) bool {
 	case FloatGe:
 		return lValue >= rValue
 	default:
-		logger.Error("Unknown float operation", lValue, wc.Operation, rValue)
+		dlog.Common.Error("Unknown float operation", lValue, wc.Operation, rValue)
 	}
-
 	return false
 }
 
@@ -193,8 +206,7 @@ func (wc *whereCondition) stringClause(lValue string, rValue string) bool {
 	case StringNotHasSuffix:
 		return !strings.HasSuffix(lValue, rValue)
 	default:
-		logger.Error("Unknown string operation", lValue, wc.Operation, rValue)
+		dlog.Common.Error("Unknown string operation", lValue, wc.Operation, rValue)
 	}
-
 	return false
 }

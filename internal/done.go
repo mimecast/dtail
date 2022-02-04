@@ -17,6 +17,15 @@ func NewDone() *Done {
 	}
 }
 
+func (d *Done) String() string {
+	select {
+	case <-d.Done():
+		return "Done(yes)"
+	default:
+		return "Done(no)"
+	}
+}
+
 // Done returns the done channel (closed when done)
 func (d *Done) Done() <-chan struct{} {
 	return d.ch
@@ -26,7 +35,6 @@ func (d *Done) Done() <-chan struct{} {
 func (d *Done) Shutdown() {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
-
 	select {
 	case <-d.ch:
 		return

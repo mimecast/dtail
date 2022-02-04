@@ -1,0 +1,1 @@
+from INTEGRATIONTEST select last($line),max(foo),min(bar) group by $hostname interval 1 outfile ./dserver2.csv

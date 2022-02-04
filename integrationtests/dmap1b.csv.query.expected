@@ -1,0 +1,1 @@
+from STATS select count($line),last($time),avg($goroutines),min(concurrentConnections),max(lifetimeConnections) group by $hostname where lifetimeConnections >= 3 outfile dmap1b.csv.tmp

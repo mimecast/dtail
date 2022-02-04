@@ -2,31 +2,28 @@ package server
 
 import (
 	"context"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/line"
-	"github.com/mimecast/dtail/internal/io/logger"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/mapr/logformat"
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 // Aggregate is for aggregating mapreduce data on the DTail server side.
 type Aggregate struct {
 	done *internal.Done
-	// Log lines to process (parsing MAPREDUCE lines).
-	Lines chan line.Line
+	// NextLinesCh can be used to use a new line ch.
+	NextLinesCh chan chan *line.Line
+	linesCh     chan *line.Line
 	// Hostname of the current server (used to populate $hostname field).
 	hostname string
 	// Signals to serialize data.
 	serialize chan struct{}
-	// Signals to flush data.
-	flush chan struct{}
-	// Signals that data has been flushed
-	flushed chan struct{}
 	// The mapr query
 	query *mapr.Query
 	// The mapr log format parser
@@ -40,9 +37,9 @@ func NewAggregate(queryStr string) (*Aggregate, error) {
 		return nil, err
 	}
 
-	fqdn, err := os.Hostname()
+	fqdn, err := config.Hostname()
 	if err != nil {
-		logger.Error(err)
+		dlog.Server.Error(err)
 	}
 	s := strings.Split(fqdn, ".")
 
@@ -57,38 +54,32 @@ func NewAggregate(queryStr string) (*Aggregate, error) {
 		parserName = query.LogFormat
 	}
 
-	logger.Info("Creating log format parser", parserName)
+	dlog.Server.Info("Creating log format parser", parserName)
 	logParser, err := logformat.NewParser(parserName, query)
 	if err != nil {
-		logger.Error("Could not create log format parser. Falling back to 'generic'", err)
+		dlog.Server.Error("Could not create log format parser. Falling back to 'generic'", err)
 		if logParser, err = logformat.NewParser("generic", query); err != nil {
-			logger.FatalExit("Could not create log format parser", err)
+			dlog.Server.FatalPanic("Could not create log format parser", err)
 		}
 	}
 
-	a := Aggregate{
-		done:      internal.NewDone(),
-		Lines:     make(chan line.Line, 100),
-		serialize: make(chan struct{}),
-		flush:     make(chan struct{}),
-		flushed:   make(chan struct{}),
-		hostname:  s[0],
-		query:     query,
-		parser:    logParser,
-	}
-
-	return &a, nil
+	return &Aggregate{
+		done:        internal.NewDone(),
+		NextLinesCh: make(chan chan *line.Line, 100),
+		serialize:   make(chan struct{}),
+		hostname:    s[0],
+		query:       query,
+		parser:      logParser,
+	}, nil
 }
 
 // Shutdown the aggregation engine.
 func (a *Aggregate) Shutdown() {
-	a.Flush()
 	a.done.Shutdown()
 }
 
 // Start an aggregation.
-func (a *Aggregate) Start(ctx context.Context, maprLines chan<- string) {
-
+func (a *Aggregate) Start(ctx context.Context, maprMessages chan<- string) {
 	myCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -101,15 +92,14 @@ func (a *Aggregate) Start(ctx context.Context, maprLines chan<- string) {
 		}
 	}()
 
-	fieldsCh := a.makeFields(myCtx)
-
+	fieldsCh := a.fieldsFromLines(myCtx)
 	// Add fields (e.g. via 'set' clause)
 	if len(a.query.Set) > 0 {
-		fieldsCh = a.addFields(myCtx, fieldsCh)
+		fieldsCh = a.setAdditionalFields(myCtx, fieldsCh)
 	}
-
+	// Periodically pre-aggregate data every a.query.Interval seconds.
 	go a.aggregateTimer(myCtx)
-	a.makeMaprLines(myCtx, fieldsCh, maprLines)
+	a.aggregateAndSerialize(myCtx, fieldsCh, maprMessages)
 }
 
 func (a *Aggregate) aggregateTimer(ctx context.Context) {
@@ -123,80 +113,134 @@ func (a *Aggregate) aggregateTimer(ctx context.Context) {
 	}
 }
 
-func (a *Aggregate) makeFields(ctx context.Context) <-chan map[string]string {
-	ch := make(chan map[string]string)
+func (a *Aggregate) nextLine() (line *line.Line, ok bool, noMoreChannels bool) {
+	dlog.Server.Trace("nextLine.enter", line, ok, noMoreChannels)
+
+	select {
+	case line, ok = <-a.linesCh:
+		if !ok {
+			// Channel is closed, go to next channel.
+			select {
+			case a.linesCh = <-a.NextLinesCh:
+			default:
+				noMoreChannels = true
+			}
+		}
+	default:
+		// No new line from current lines channel. Try next one.
+		select {
+		case newLinesCh := <-a.NextLinesCh:
+			oldLinesCh := a.linesCh
+			go func() { a.NextLinesCh <- oldLinesCh }()
+			a.linesCh = newLinesCh
+		default:
+			// No new lines channel found.
+		}
+	}
+	dlog.Server.Trace("nextLine.exit", line, ok, noMoreChannels)
+	return
+}
+
+func (a *Aggregate) fieldsFromLines(ctx context.Context) <-chan map[string]string {
+	fieldsCh := make(chan map[string]string)
 
 	go func() {
-		defer close(ch)
+		defer close(fieldsCh)
+
+		// Gather first lines channel (first input file)
+		select {
+		case a.linesCh = <-a.NextLinesCh:
+		case <-ctx.Done():
+			return
+		}
 
 		for {
 			select {
-			case line, ok := <-a.Lines:
-				if !ok {
-					return
-				}
-
-				maprLine := strings.TrimSpace(string(line.Content))
-				fields, err := a.parser.MakeFields(maprLine)
-				logger.Debug(fields, err)
-
-				if err != nil {
-					logger.Error(err)
-					continue
-				}
-				if !a.query.WhereClause(fields) {
-					continue
-				}
-
-				select {
-				case ch <- fields:
-				case <-ctx.Done():
-				}
 			case <-ctx.Done():
 				return
+			default:
+			}
+
+			// Gather first lines channel (first input file)
+			line, ok, noMoreChannels := a.nextLine()
+			if !ok {
+				if noMoreChannels {
+					return
+				}
+				time.Sleep(time.Millisecond * 100)
+				continue
+			}
+
+			if err := a.fieldFromLine(ctx, line, fieldsCh); err != nil {
+				dlog.Server.Error(err)
 			}
 		}
 	}()
 
-	return ch
+	return fieldsCh
 }
 
-func (a *Aggregate) addFields(ctx context.Context, fieldsCh <-chan map[string]string) <-chan map[string]string {
-	ch := make(chan map[string]string)
+func (a *Aggregate) fieldFromLine(ctx context.Context, line *line.Line,
+	fieldsCh chan<- map[string]string) error {
 
+	maprLine := strings.TrimSpace(line.Content.String())
+
+	// after recycling it, don't use line object anymore!!!
+	line.Recycle()
+	fields, err := a.parser.MakeFields(maprLine)
+
+	if err != nil {
+		// Should fields be ignored anyway?
+		if err != logformat.ErrIgnoreFields {
+			return err
+		}
+		return nil
+	}
+	if !a.query.WhereClause(fields) {
+		return nil
+	}
+
+	select {
+	case fieldsCh <- fields:
+	case <-ctx.Done():
+	}
+
+	return nil
+}
+
+func (a *Aggregate) setAdditionalFields(ctx context.Context,
+	fieldsCh <-chan map[string]string) <-chan map[string]string {
+
+	newFieldsCh := make(chan map[string]string)
 	go func() {
-		defer close(ch)
-
+		defer close(newFieldsCh)
 		for {
-			// fieldsCh will be closed via 'makeFields' if ctx is done
 			fields, ok := <-fieldsCh
 			if !ok {
 				return
 			}
 			if err := a.query.SetClause(fields); err != nil {
-				logger.Error(err)
+				dlog.Server.Error(err)
 			}
 
 			select {
-			case ch <- fields:
+			case newFieldsCh <- fields:
 			case <-ctx.Done():
 			}
 		}
 	}()
-
-	return ch
+	return newFieldsCh
 }
 
-func (a *Aggregate) makeMaprLines(ctx context.Context, fieldsCh <-chan map[string]string, maprLines chan<- string) {
+func (a *Aggregate) aggregateAndSerialize(ctx context.Context,
+	fieldsCh <-chan map[string]string, maprMessages chan<- string) {
+
 	group := mapr.NewGroupSet()
-
 	serialize := func() {
-		logger.Info("Serializing mapreduce result")
-		group.Serialize(ctx, maprLines)
+		dlog.Server.Info("Serializing mapreduce result")
+		group.Serialize(ctx, maprMessages)
 		group = mapr.NewGroupSet()
-		logger.Info("Done serializing mapreduce result")
 	}
-
 	for {
 		select {
 		case fields, ok := <-fieldsCh:
@@ -207,9 +251,6 @@ func (a *Aggregate) makeMaprLines(ctx context.Context, fieldsCh <-chan map[strin
 			a.aggregate(group, fields)
 		case <-a.serialize:
 			serialize()
-		case <-a.flush:
-			serialize()
-			a.flushed <- struct{}{}
 		case <-ctx.Done():
 			return
 		}
@@ -217,12 +258,10 @@ func (a *Aggregate) makeMaprLines(ctx context.Context, fieldsCh <-chan map[strin
 }
 
 func (a *Aggregate) aggregate(group *mapr.GroupSet, fields map[string]string) {
-	//logger.Trace("Aggregating", group, fields)
 	var sb strings.Builder
-
 	for i, field := range a.query.GroupBy {
 		if i > 0 {
-			sb.WriteString(" ")
+			sb.WriteString(protocol.AggregateGroupKeyCombinator)
 		}
 		if val, ok := fields[field]; ok {
 			sb.WriteString(val)
@@ -235,7 +274,7 @@ func (a *Aggregate) aggregate(group *mapr.GroupSet, fields map[string]string) {
 	for _, sc := range a.query.Select {
 		if val, ok := fields[sc.Field]; ok {
 			if err := set.Aggregate(sc.FieldStorage, sc.Operation, val, false); err != nil {
-				logger.Error(err)
+				dlog.Server.Error(err)
 				continue
 			}
 			addedSample = true
@@ -246,8 +285,7 @@ func (a *Aggregate) aggregate(group *mapr.GroupSet, fields map[string]string) {
 		set.Samples++
 		return
 	}
-
-	logger.Trace("Aggregated data locally without adding new samples")
+	dlog.Server.Trace("Aggregated data locally without adding new samples")
 }
 
 // Serialize all the aggregated data.
@@ -255,28 +293,7 @@ func (a *Aggregate) Serialize(ctx context.Context) {
 	select {
 	case a.serialize <- struct{}{}:
 	case <-time.After(time.Minute):
-		logger.Warn("Starting to serialize mapredice data takes over a minute")
+		dlog.Server.Warn("Starting to serialize mapredice data takes over a minute")
 	case <-ctx.Done():
-	}
-}
-
-// Flush all data.
-func (a *Aggregate) Flush() {
-	select {
-	case a.flush <- struct{}{}:
-		logger.Info("Flushing mapreduce data")
-	case <-time.After(time.Minute):
-		logger.Warn("Starting to flush mapreduce data takes over a minute")
-		return
-	case <-a.done.Done():
-		return
-	}
-
-	select {
-	case <-a.flushed:
-		logger.Info("Done flushing")
-	case <-time.After(time.Minute):
-		logger.Warn("Waiting for data to be flushed takes over a minute")
-	case <-a.done.Done():
 	}
 }

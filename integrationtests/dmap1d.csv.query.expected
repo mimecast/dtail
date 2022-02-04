@@ -1,0 +1,1 @@
+from STATS select $mask,$md5,$foo,$bar,$baz,last($time), set $mask = maskdigits($time), $md5 = md5sum($time), $foo = 42, $bar = "baz", $baz = $time group by $hostname outfile dmap1d.csv.tmp

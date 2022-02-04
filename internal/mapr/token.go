@@ -4,7 +4,8 @@ import (
 	"strings"
 )
 
-var keywords = [...]string{"select", "from", "where", "set", "group", "rorder", "order", "interval", "limit", "outfile", "logformat"}
+var keywords = [...]string{"select", "from", "where", "set", "group", "rorder",
+	"order", "interval", "limit", "outfile", "logformat"}
 
 // Represents a parsed token, used to parse the mapr query.
 type token struct {
@@ -16,13 +17,11 @@ func (t token) isKeyword() bool {
 	if !t.isBareword {
 		return false
 	}
-
 	for _, keyword := range keywords {
 		if strings.ToLower(t.str) == keyword {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -32,14 +31,13 @@ func (t token) String() string {
 
 func tokenize(queryStr string) []token {
 	var tokens []token
-
 	for i, part := range strings.Split(queryStr, "\"") {
 		// Even i, means that it is not a quoted string
 		if i%2 == 0 {
 			commasStripped := strings.Replace(part, ",", " ", -1)
 			for _, tokenStr := range strings.Fields(commasStripped) {
 				token := token{
-					str:        tokenStr,
+					str:        strings.ToLower(tokenStr),
 					isBareword: true,
 				}
 				tokens = append(tokens, token)
@@ -53,17 +51,15 @@ func tokenize(queryStr string) []token {
 		}
 		tokens = append(tokens, token)
 	}
-
 	return tokens
 }
 
 func tokensConsume(tokens []token) ([]token, []token) {
-	//logger.Trace("=====================")
+	//dlog.Common.Trace("=====================")
 	var consumed []token
-
 	for i, t := range tokens {
 		if t.isKeyword() {
-			//logger.Trace("keyword", t)
+			//dlog.Common.Trace("keyword", t)
 			return tokens[i:], consumed
 		}
 		// strip escapes, such as ` from `foo`, this allows to use keywords as field names
@@ -73,19 +69,18 @@ func tokensConsume(tokens []token) ([]token, []token) {
 		}
 		if t.str[0] == '`' && t.str[length-1] == '`' {
 			stripped := t.str[1 : length-1]
-			//logger.Trace("stripped", stripped)
+			//dlog.Common.Trace("stripped", stripped)
 			t := token{
-				str:        stripped,
+				str:        strings.ToLower(stripped),
 				isBareword: t.isBareword,
 			}
 			consumed = append(consumed, t)
 			continue
 		}
-		//logger.Trace("bare", token)
+		//dlog.Common.Trace("bare", token)
 		consumed = append(consumed, t)
 	}
-
-	//logger.Trace("result", consumed)
+	//dlog.Common.Trace("result", consumed)
 	return nil, consumed
 }
 
@@ -95,7 +90,6 @@ func tokensConsumeStr(tokens []token) ([]token, []string) {
 	for _, token := range found {
 		strings = append(strings, token.str)
 	}
-
 	return tokens, strings
 }
 
@@ -106,6 +100,5 @@ func tokensConsumeOptional(tokens []token, optional string) []token {
 	if strings.ToLower(tokens[0].str) == strings.ToLower(optional) {
 		return tokens[1:]
 	}
-
 	return tokens
 }

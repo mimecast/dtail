@@ -6,6 +6,7 @@ func (p *Parser) MakeFieldsGENERIC(maprLine string) (map[string]string, error) {
 
 	fields["*"] = "*"
 	fields["$hostname"] = p.hostname
+	fields["$server"] = p.hostname
 	fields["$line"] = maprLine
 	fields["$empty"] = ""
 	fields["$timezone"] = p.timeZoneName

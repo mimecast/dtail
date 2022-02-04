@@ -5,9 +5,8 @@ func (q *Query) SetClause(fields map[string]string) error {
 	for _, sc := range q.Set {
 		value, ok := fields[sc.rString]
 		if !ok {
-			continue
+			value = sc.rString
 		}
-
 		switch sc.rType {
 		case FunctionStack:
 			fields[sc.lString] = sc.functionStack.Call(value)
@@ -15,6 +14,5 @@ func (q *Query) SetClause(fields map[string]string) error {
 			fields[sc.lString] = value
 		}
 	}
-
 	return nil
 }
