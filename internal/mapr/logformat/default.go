@@ -52,7 +52,7 @@ func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
 		if len(keyAndValue) != 2 {
 			return fields, fmt.Errorf("Unable to parse key-value token '%s'", kv)
 		}
-		fields[strings.ToLower(keyAndValue[0])] = keyAndValue[1]
+		fields[keyAndValue[0]] = keyAndValue[1]
 	}
 
 	return fields, nil

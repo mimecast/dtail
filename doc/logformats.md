@@ -47,7 +47,7 @@ func (p *Parser) MakeFieldsGENERIGKV(maprLine string) (map[string]string, error)
 			// dlog.Common.Debug("Unable to parse key-value token, ignoring it", kv)
 			continue
 		}
-		fields[strings.ToLower(keyAndValue[0])] = keyAndValue[1]
+		fields[keyAndValue[0]] = keyAndValue[1]
 	}
 
 	return fields, nil
