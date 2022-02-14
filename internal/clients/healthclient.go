@@ -21,6 +21,8 @@ type HealthClient struct {
 func NewHealthClient(args config.Args) (*HealthClient, error) {
 	args.Mode = omode.HealthClient
 	args.UserName = config.HealthUser
+	args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(config.HealthUser))
+
 	c := HealthClient{
 		baseClient: baseClient{
 			Args:       args,
@@ -30,7 +32,6 @@ func NewHealthClient(args config.Args) (*HealthClient, error) {
 	}
 
 	c.init()
-	c.sshAuthMethods = append(c.sshAuthMethods, gossh.Password(config.HealthUser))
 	c.makeConnections(c)
 	return &c, nil
 }
