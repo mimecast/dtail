@@ -321,7 +321,7 @@ func (f *readFile) handleReadByte(ctx context.Context, b byte,
 		if message.Len() >= config.Server.MaxLineLength {
 			if !f.warnedAboutLongLine {
 				f.serverMessages <- dlog.Common.Warn(f.filePath,
-					"Long log line, splitting into multiple lines")
+					"Long log line, splitting into multiple lines") + "\n"
 				f.warnedAboutLongLine = true
 			}
 			message.WriteByte('\n')

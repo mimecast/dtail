@@ -81,7 +81,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, ltx lcontext.LCon
 	case "map":
 		command, aggregate, err := newMapCommand(h, argc, args)
 		if err != nil {
-			h.send(h.serverMessages, err.Error())
+			h.sendln(h.serverMessages, err.Error())
 			dlog.Server.Error(h.user, err)
 			commandFinished()
 			return
@@ -95,7 +95,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, ltx lcontext.LCon
 		h.handleAckCommand(argc, args)
 		commandFinished()
 	default:
-		h.send(h.serverMessages, dlog.Server.Error(h.user,
+		h.sendln(h.serverMessages, dlog.Server.Error(h.user,
 			"Received unknown user command", commandName, argc, args))
 		commandFinished()
 	}

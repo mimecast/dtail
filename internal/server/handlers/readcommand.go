@@ -35,14 +35,14 @@ func (r *readCommand) Start(ctx context.Context, ltx lcontext.LContext,
 	if argc >= 4 {
 		deserializedRegex, err := regex.Deserialize(strings.Join(args[2:], " "))
 		if err != nil {
-			r.server.send(r.server.serverMessages, dlog.Server.Error(r.server.user,
+			r.server.sendln(r.server.serverMessages, dlog.Server.Error(r.server.user,
 				"Unable to parse command", err))
 			return
 		}
 		re = deserializedRegex
 	}
 	if argc < 3 {
-		r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user,
+		r.server.sendln(r.server.serverMessages, dlog.Server.Warn(r.server.user,
 			"Unable to parse command", args, argc))
 		return
 	}
@@ -76,7 +76,7 @@ func (r *readCommand) readGlob(ctx context.Context, ltx lcontext.LContext,
 
 		if numPaths := len(paths); numPaths == 0 {
 			dlog.Server.Error(r.server.user, "No such file(s) to read", glob)
-			r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user,
+			r.server.sendln(r.server.serverMessages, dlog.Server.Warn(r.server.user,
 				"Unable to read file(s), check server logs"))
 			select {
 			case <-ctx.Done():
@@ -91,7 +91,7 @@ func (r *readCommand) readGlob(ctx context.Context, ltx lcontext.LContext,
 		return
 	}
 
-	r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user,
+	r.server.sendln(r.server.serverMessages, dlog.Server.Warn(r.server.user,
 		"Giving up to read file(s)"))
 	return
 }
@@ -114,7 +114,7 @@ func (r *readCommand) readFileIfPermissions(ctx context.Context, ltx lcontext.LC
 	globID := r.makeGlobID(path, glob)
 	if !r.server.user.HasFilePermission(path, "readfiles") {
 		dlog.Server.Error(r.server.user, "No permission to read file", path, globID)
-		r.server.send(r.server.serverMessages, dlog.Server.Warn(r.server.user,
+		r.server.sendln(r.server.serverMessages, dlog.Server.Warn(r.server.user,
 			"Unable to read file(s), check server logs"))
 		return
 	}
@@ -206,7 +206,7 @@ func (r *readCommand) makeGlobID(path, glob string) string {
 		return pathParts[len(pathParts)-1]
 	}
 
-	r.server.send(r.server.serverMessages,
+	r.server.sendln(r.server.serverMessages,
 		dlog.Server.Warn("Empty file path given?", path, glob))
 	return ""
 }

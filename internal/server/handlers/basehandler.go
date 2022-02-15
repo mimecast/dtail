@@ -150,7 +150,7 @@ func (h *baseHandler) handleCommand(commandStr string) {
 	}
 	args, argc, err = h.handleBase64(args, argc)
 	if err != nil {
-		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
+		h.sendln(h.serverMessages, dlog.Server.Error(h.user, err))
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -170,7 +170,7 @@ func (h *baseHandler) handleCommand(commandStr string) {
 
 	options, ltx, err := config.DeserializeOptions(parts[1:])
 	if err != nil {
-		h.send(h.serverMessages, dlog.Server.Error(h.user, err))
+		h.sendln(h.serverMessages, dlog.Server.Error(h.user, err))
 		return
 	}
 	h.handleOptions(options)
@@ -231,7 +231,7 @@ func (h *baseHandler) handleBase64(args []string, argc int) ([]string, int, erro
 func (h *baseHandler) handleAckCommand(argc int, args []string) {
 	if argc < 3 {
 		if !h.quiet {
-			h.send(h.serverMessages, dlog.Server.Warn(h.user,
+			h.sendln(h.serverMessages, dlog.Server.Warn(h.user,
 				"Unable to parse command", args, argc))
 		}
 		return
@@ -272,6 +272,10 @@ func (h *baseHandler) send(ch chan<- string, message string) {
 	case ch <- message:
 	case <-h.done.Done():
 	}
+}
+
+func (h *baseHandler) sendln(ch chan<- string, message string) {
+	h.send(ch, message+"\n")
 }
 
 func (h *baseHandler) flush() {
