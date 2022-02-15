@@ -407,6 +407,12 @@
                   "type": "string"
                 }
               },
+              "Servers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "TimeRange": {
                 "type": "array",
                 "items": [
@@ -441,6 +447,18 @@
               },
               "Enable": {
                 "type": "boolean"
+              },
+              "AllowFrom": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "Servers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               },
               "RestartOnDayChange": {
                 "type": "boolean"
