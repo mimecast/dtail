@@ -213,7 +213,7 @@ func TestDMap4Append(t *testing.T) {
 	defer cancel()
 
 	// Run dmap command twice, it should append in the 2nd iteration the new results to the already existing
-	// fille as we specified "outfile append". That works transparently for any mapreduce query
+	// file as we specified "outfile append". That works transparently for any mapreduce query
 	// (e.g. also for the dtail command in streaming mode). But it is easier to test with the dmap
 	// command.
 	for i := 0; i < 2; i++ {
