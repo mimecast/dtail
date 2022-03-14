@@ -163,7 +163,7 @@ func (*GroupSet) writeQueryFile(query *Query) error {
 	tmpQueryFile := fmt.Sprintf("%s.tmp", queryFile)
 	dlog.Common.Debug("Writing query file", queryFile)
 
-	fd, err := os.Create(tmpQueryFile)
+	fd, err := os.OpenFile(tmpQueryFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}
@@ -187,21 +187,28 @@ func (g *GroupSet) WriteResult(query *Query) error {
 		return err
 	}
 
-	dlog.Common.Info("Writing outfile", query.Outfile.FilePath)
-	tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
-
-	fd, err := os.Create(tmpOutfile)
+	fd, err := g.getOutfileFD(query)
 	if err != nil {
 		return err
 	}
 	defer fd.Close()
 
-	return g.resultWriteUnformatted(query, rows, tmpOutfile, fd)
+	return g.resultWriteUnformatted(query, rows, fd)
 }
 
-func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, tmpOutfile string,
-	fd *os.File) error {
+func (g *GroupSet) getOutfileFD(query *Query) (*os.File, error) {
+	if !query.Outfile.AppendMode {
+		dlog.Common.Info("Writing to outfile", query.Outfile.FilePath)
+		tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
+		return os.OpenFile(tmpOutfile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	}
 
+	dlog.Common.Info("Appending to outfile", query.Outfile.FilePath)
+	// TODO: Make umask configurable.
+	return os.OpenFile(query.Outfile.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+}
+
+func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.File) error {
 	// Generate header now
 	lastColumn := len(query.Select) - 1
 	for i, sc := range query.Select {
@@ -228,9 +235,12 @@ func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, tmpOutfil
 		fd.WriteString("\n")
 	}
 
-	if err := os.Rename(tmpOutfile, query.Outfile.FilePath); err != nil {
-		os.Remove(tmpOutfile)
-		return err
+	if !query.Outfile.AppendMode {
+		tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
+		if err := os.Rename(tmpOutfile, query.Outfile.FilePath); err != nil {
+			os.Remove(tmpOutfile)
+			return err
+		}
 	}
 
 	return nil

@@ -65,7 +65,7 @@ func testDmap1(t *testing.T, query, subtestName string, usePipe bool) error {
 			"--cfg", "none",
 			"--query", query,
 			"--logger", "stdout",
-			"--logLevel", "error",
+			"--logLevel", "info",
 			"--noColor")
 	} else {
 		stdoutCh, stderrCh, cmdErrCh, err = startCommand(ctx, t,
@@ -73,7 +73,7 @@ func testDmap1(t *testing.T, query, subtestName string, usePipe bool) error {
 			"--cfg", "none",
 			"--query", query,
 			"--logger", "stdout",
-			"--logLevel", "error",
+			"--logLevel", "info",
 			"--noColor",
 			inFile)
 	}
