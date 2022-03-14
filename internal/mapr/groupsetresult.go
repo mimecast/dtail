@@ -159,7 +159,7 @@ func (g *GroupSet) resultWriteFormattedDataEntry(query *Query, sb *strings.Build
 }
 
 func (*GroupSet) writeQueryFile(query *Query) error {
-	queryFile := fmt.Sprintf("%s.query", query.Outfile)
+	queryFile := fmt.Sprintf("%s.query", query.Outfile.FilePath)
 	tmpQueryFile := fmt.Sprintf("%s.tmp", queryFile)
 	dlog.Common.Debug("Writing query file", queryFile)
 
@@ -187,8 +187,8 @@ func (g *GroupSet) WriteResult(query *Query) error {
 		return err
 	}
 
-	dlog.Common.Info("Writing outfile", query.Outfile)
-	tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile)
+	dlog.Common.Info("Writing outfile", query.Outfile.FilePath)
+	tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
 
 	fd, err := os.Create(tmpOutfile)
 	if err != nil {
@@ -228,7 +228,7 @@ func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, tmpOutfil
 		fd.WriteString("\n")
 	}
 
-	if err := os.Rename(tmpOutfile, query.Outfile); err != nil {
+	if err := os.Rename(tmpOutfile, query.Outfile.FilePath); err != nil {
 		os.Remove(tmpOutfile)
 		return err
 	}

@@ -13,6 +13,15 @@ const (
 	unexpectedEnd string = "Unexpected end of query"
 )
 
+type Outfile struct {
+	FilePath   string
+	AppendMode bool
+}
+
+func (o Outfile) String() string {
+	return fmt.Sprintf("Outfile(FilePath:%v,AppendMode:%v)", o.FilePath, o.AppendMode)
+}
+
 // Query represents a parsed mapr query.
 type Query struct {
 	Select       []selectCondition
@@ -25,7 +34,7 @@ type Query struct {
 	GroupKey     string
 	Interval     time.Duration
 	Limit        int
-	Outfile      string
+	Outfile      *Outfile
 	RawQuery     string
 	tokens       []token
 	LogFormat    string
@@ -68,7 +77,7 @@ func NewQuery(queryStr string) (*Query, error) {
 
 // HasOutfile returns true if query result will be written to a CVS output file.
 func (q *Query) HasOutfile() bool {
-	return q.Outfile != ""
+	return q.Outfile != nil
 }
 
 // Has is a helper to determine whether a query contains a substring
@@ -193,10 +202,18 @@ func (q *Query) parseTokens(tokens []token) ([]token, error) {
 			q.Limit = i
 		case "outfile":
 			tokens, found = tokensConsume(tokens[1:])
-			if len(found) == 0 {
-				return tokens, errors.New(invalidQuery + unexpectedEnd)
+			switch len(found) {
+			case 1:
+				q.Outfile = &Outfile{FilePath: found[0].str, AppendMode: false}
+			case 2:
+				if found[0].str == "append" {
+					q.Outfile = &Outfile{FilePath: found[1].str, AppendMode: true}
+				} else {
+					return tokens, errors.New(invalidQuery + invalidQuery)
+				}
+			default:
+				return tokens, errors.New(invalidQuery + invalidQuery)
 			}
-			q.Outfile = found[0].str
 		case "logformat":
 			tokens, found = tokensConsume(tokens[1:])
 			if len(found) == 0 {

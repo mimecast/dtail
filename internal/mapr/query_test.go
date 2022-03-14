@@ -5,6 +5,48 @@ import (
 	"time"
 )
 
+func TestParseQueryOutfile(t *testing.T) {
+	queryStr := "select foo from bar outfile \"baz.csv\""
+
+	q, err := NewQuery(queryStr)
+	if err != nil {
+		t.Errorf("Query parse error: %s\n%v: %v", queryStr, q, err)
+	}
+
+	if q.Outfile == nil {
+		t.Errorf("Expected non-nil outfile: %s\n%v", queryStr, q)
+	}
+
+	if q.Outfile.FilePath != "baz.csv" {
+		t.Errorf("Expected \"baz.csv\" as outfile file path: %s\n%v", queryStr, q)
+	}
+
+	if q.Outfile.AppendMode {
+		t.Errorf("Expected append mode of outfile to be false: %s\n%v", queryStr, q)
+	}
+}
+
+func TestParseQueryOutfileAppend(t *testing.T) {
+	queryStr := "select foo from bar outfile append \"baz.csv\""
+
+	q, err := NewQuery(queryStr)
+	if err != nil {
+		t.Errorf("Query parse error: %s\n%v: %v", queryStr, q, err)
+	}
+
+	if q.Outfile == nil {
+		t.Errorf("Expected non-nil outfile: %s\n%v", queryStr, q)
+	}
+
+	if q.Outfile.FilePath != "baz.csv" {
+		t.Errorf("Expected \"baz.csv\" as outfile file path: %s\n%v", queryStr, q)
+	}
+
+	if !q.Outfile.AppendMode {
+		t.Errorf("Expected append mode of outfile to be true: %s\n%v", queryStr, q)
+	}
+}
+
 func TestParseQuerySimple(t *testing.T) {
 	errorQueries := []string{
 		"select",
@@ -30,7 +72,9 @@ func TestParseQuerySimple(t *testing.T) {
 		"select foo from bar where baz < 100 bay eq 12 group by foo, bar, baz " +
 			"order by foo limit 23 outfile \"result.csv\"",
 		"select foo from bar where baz < 100 bay eq 12 group by foo, bar, baz " +
-			"order by foo limit 23 outfile \"result.csv\" " +
+			"order by foo limit 23 outfile append \"result.csv\"",
+		"select foo from bar where baz < 100 bay eq 12 group by foo, bar, baz " +
+			"order by foo limit 23 outfile append \"result.csv\" " +
 			"set $foo = maskdigits(bar), $baz = 12, $bay = $foo;",
 	}
 
