@@ -163,7 +163,7 @@ func (*GroupSet) writeQueryFile(query *Query) error {
 	tmpQueryFile := fmt.Sprintf("%s.tmp", queryFile)
 	dlog.Common.Debug("Writing query file", queryFile)
 
-	fd, err := os.OpenFile(tmpQueryFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	fd, err := os.OpenFile(tmpQueryFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
@@ -210,12 +210,11 @@ func (g *GroupSet) getOutfileFD(query *Query) (*os.File, error) {
 	if !query.Outfile.AppendMode {
 		dlog.Common.Info("Writing to outfile", query.Outfile.FilePath)
 		tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
-		return os.OpenFile(tmpOutfile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		return os.OpenFile(tmpOutfile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	}
 
 	dlog.Common.Info("Appending to outfile", query.Outfile.FilePath)
-	// TODO: Make umask configurable.
-	return os.OpenFile(query.Outfile.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	return os.OpenFile(query.Outfile.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 }
 
 func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.File, writeHeader bool) error {
