@@ -159,11 +159,11 @@ func (g *GroupSet) resultWriteFormattedDataEntry(query *Query, sb *strings.Build
 }
 
 func (*GroupSet) writeQueryFile(query *Query) error {
-	queryFile := fmt.Sprintf("%s.query", query.Outfile)
+	queryFile := fmt.Sprintf("%s.query", query.Outfile.FilePath)
 	tmpQueryFile := fmt.Sprintf("%s.tmp", queryFile)
 	dlog.Common.Debug("Writing query file", queryFile)
 
-	fd, err := os.Create(tmpQueryFile)
+	fd, err := os.OpenFile(tmpQueryFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
@@ -187,31 +187,49 @@ func (g *GroupSet) WriteResult(query *Query) error {
 		return err
 	}
 
-	dlog.Common.Info("Writing outfile", query.Outfile)
-	tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile)
+	// By default, also write the CSV header.
+	writeHeader := true
 
-	fd, err := os.Create(tmpOutfile)
+	// In append mode, only write CSV header when file doesn't exist yet or is empty.
+	if query.Outfile.AppendMode {
+		if info, err := os.Stat(query.Outfile.FilePath); err == nil && info.Size() > 0 {
+			writeHeader = false
+		}
+	}
+
+	fd, err := g.getOutfileFD(query)
 	if err != nil {
 		return err
 	}
 	defer fd.Close()
 
-	return g.resultWriteUnformatted(query, rows, tmpOutfile, fd)
+	return g.resultWriteUnformatted(query, rows, fd, writeHeader)
 }
 
-func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, tmpOutfile string,
-	fd *os.File) error {
-
-	// Generate header now
-	lastColumn := len(query.Select) - 1
-	for i, sc := range query.Select {
-		fd.WriteString(sc.FieldStorage)
-		if i == lastColumn {
-			continue
-		}
-		fd.WriteString(protocol.CSVDelimiter)
+func (g *GroupSet) getOutfileFD(query *Query) (*os.File, error) {
+	if !query.Outfile.AppendMode {
+		dlog.Common.Info("Writing to outfile", query.Outfile.FilePath)
+		tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
+		return os.OpenFile(tmpOutfile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	}
-	fd.WriteString("\n")
+
+	dlog.Common.Info("Appending to outfile", query.Outfile.FilePath)
+	return os.OpenFile(query.Outfile.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+}
+
+func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.File, writeHeader bool) error {
+	lastColumn := len(query.Select) - 1
+
+	if writeHeader {
+		for i, sc := range query.Select {
+			fd.WriteString(sc.FieldStorage)
+			if i == lastColumn {
+				continue
+			}
+			fd.WriteString(protocol.CSVDelimiter)
+		}
+		fd.WriteString("\n")
+	}
 
 	// And now write the data
 	for i, r := range rows {
@@ -228,9 +246,12 @@ func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, tmpOutfil
 		fd.WriteString("\n")
 	}
 
-	if err := os.Rename(tmpOutfile, query.Outfile); err != nil {
-		os.Remove(tmpOutfile)
-		return err
+	if !query.Outfile.AppendMode {
+		tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
+		if err := os.Rename(tmpOutfile, query.Outfile.FilePath); err != nil {
+			os.Remove(tmpOutfile)
+			return err
+		}
 	}
 
 	return nil

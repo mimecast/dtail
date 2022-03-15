@@ -141,7 +141,7 @@ func (f *file) getWriter(name string) *bufio.Writer {
 	}
 
 	logFile := fmt.Sprintf("%s/%s.log", config.Common.LogDir, name)
-	newFd, err := os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	newFd, err := os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
 	if err != nil {
 		panic(err)
 	}
