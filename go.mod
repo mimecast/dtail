@@ -3,7 +3,7 @@ module github.com/mimecast/dtail
 go 1.17
 
 require (
-	github.com/DataDog/zstd v1.5.0
+	github.com/DataDog/zstd v1.5.2
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292
 )
 
