@@ -78,7 +78,7 @@ func (c *baseClient) Start(ctx context.Context, statsCh <-chan string) (status i
 		// Periodically check for unknown hosts, and ask the user whether to trust them or not.
 		go c.hostKeyCallback.PromptAddHosts(ctx)
 	}
-	// Print client stats every time something on statsCh is recieved.
+	// Print client stats every time something on statsCh is received.
 	go c.stats.Start(ctx, c.throttleCh, statsCh, c.Args.Quiet)
 
 	var wg sync.WaitGroup
