@@ -35,7 +35,7 @@ QUERY := select SELECT1[,SELECT2...]
          [set SET1,[,SET2...]]
          [interval NUMBER]
          [limit NUMBER]
-         [outfile STRING]
+         [outfile [append] STRING]
          [logformat LOGFORMAT]
 ```
 

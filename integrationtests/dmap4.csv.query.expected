@@ -1,0 +1,1 @@
+from STATS select count($time),$time,max($goroutines),avg($goroutines),min($goroutines) group by $time order by count($time) outfile append dmap4.csv.tmp
