@@ -42,7 +42,7 @@ func (u *User) String() string {
 	return fmt.Sprintf("%s@%s", u.Name, u.remoteAddress)
 }
 
-// HasFilePermission is used to determine whether user is alowed to read a file.
+// HasFilePermission is used to determine whether user is allowed to read a file.
 func (u *User) HasFilePermission(filePath, permissionType string) (hasPermission bool) {
 	dlog.Server.Debug(u, filePath, permissionType, "Checking config permissions")
 	if u.Name == config.ScheduleUser || u.Name == config.ContinuousUser {
@@ -121,7 +121,7 @@ func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 			continue
 		}
 
-		regexStr = permission
+		regexStr := permission
 		if strings.HasPrefix(permission, "!") {
 			regexStr = permission[1:]
 			negate = true

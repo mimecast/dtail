@@ -24,7 +24,7 @@ const (
 type Discovery struct {
 	// To plug in a custom server discovery module.
 	module string
-	// To specifiy optional server discovery module options.
+	// To specify optional server discovery module options.
 	options string
 	// To either filter a server list or to secify an exact list.
 	server string
