@@ -221,14 +221,7 @@ func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.Fi
 	lastColumn := len(query.Select) - 1
 
 	if writeHeader {
-		for i, sc := range query.Select {
-			fd.WriteString(sc.FieldStorage)
-			if i == lastColumn {
-				continue
-			}
-			fd.WriteString(protocol.CSVDelimiter)
-		}
-		fd.WriteString("\n")
+		g.resultWriteUnformattedHeader(query, fd, lastColumn)
 	}
 
 	// And now write the data
@@ -255,4 +248,15 @@ func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.Fi
 	}
 
 	return nil
+}
+
+func (g *GroupSet) resultWriteUnformattedHeader(query *Query, fd *os.File, lastColumn int) {
+	for i, sc := range query.Select {
+		fd.WriteString(sc.FieldStorage)
+		if i == lastColumn {
+			continue
+		}
+		fd.WriteString(protocol.CSVDelimiter)
+	}
+	fd.WriteString("\n")
 }
