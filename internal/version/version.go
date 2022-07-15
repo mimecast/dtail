@@ -15,7 +15,7 @@ const (
 	// Version of DTail.
 	Version string = "4.2.0"
 	// Additional information for DTail
-	Additional string = "SNAPSHOT release"
+	Additional string = "Have a lot of fun!"
 )
 
 // String representation of the DTail version.
