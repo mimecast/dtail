@@ -1,3 +1,4 @@
+//go:build linuxacl
 // +build linuxacl
 
 package permissions
