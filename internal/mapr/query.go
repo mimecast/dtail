@@ -13,6 +13,7 @@ const (
 	unexpectedEnd string = "Unexpected end of query"
 )
 
+// Outfile represents the output file of a mapreduce query.
 type Outfile struct {
 	FilePath   string
 	AppendMode bool
