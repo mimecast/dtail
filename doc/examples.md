@@ -65,6 +65,14 @@ Here is another example:
 
 ![dtail-map](dtail-map2.gif "Tail mapreduce example 2")
 
+You can also continuously append the results to a CSV file by adding `outfile append filename.csv` to the query:
+
+```shell
+% dtail --servers serverlist.txt \
+    --files '/var/log/dserver/*.log' \
+    --query 'from STATS select ... outfile append result.csv'
+```
+
 ## How to use `dcat`
 
 The following example demonstrates how to cat files (display the full content of the files) of multiple servers at once.
