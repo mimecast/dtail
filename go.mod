@@ -1,13 +1,13 @@
 module github.com/mimecast/dtail
 
-go 1.18
+go 1.20
 
 require (
-	github.com/DataDog/zstd v1.5.2
-	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d
+	github.com/DataDog/zstd v1.5.5
+	golang.org/x/crypto v0.8.0
 )
 
 require (
-	golang.org/x/sys v0.0.0-20220712014510-0a85c31ab51e // indirect
-	golang.org/x/term v0.0.0-20220526004731-065cf7ba2467 // indirect
+	golang.org/x/sys v0.7.0 // indirect
+	golang.org/x/term v0.7.0 // indirect
 )
