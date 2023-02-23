@@ -1,5 +1,7 @@
-component_name: dtail
-owning team: Paul Buetow
-component_usage: OPENSOURCE
-application_purpose: tool
-development_strategy: opensource
+component: dtail
+project_name: dtail
+full_path: 'https://github.com/mimecast/dtail.git'
+component_usage: Open Source
+dev_language:
+  - Go
+application_type: Tooling
