@@ -61,6 +61,12 @@ type ServerConfig struct {
 	Schedule []Scheduled `json:",omitempty"`
 	// Continuous mapreduce jobs
 	Continuous []Continuous `json:",omitempty"`
+	// The allowed key exchanges algorithms.
+	KeyExchanges []string `json:",omitempty"`
+	// The allowed cipher algorithms.
+	Ciphers []string `json:",omitempty"`
+	// The allowed MAC algorithms.
+	MACs []string `json:",omitempty"`
 }
 
 // Create a new default server configuration.

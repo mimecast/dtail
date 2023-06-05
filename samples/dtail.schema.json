@@ -246,6 +246,24 @@
                 },
                 "TextFg": {
                   "#ref": "#/definitions/color"
+                },
+                "KeyExchanges": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "Ciphers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "MACs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               }
             },

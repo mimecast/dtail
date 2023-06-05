@@ -39,11 +39,17 @@ func New() *Server {
 	dlog.Server.Info("Starting server", version.String())
 
 	s := Server{
-		sshServerConfig: &gossh.ServerConfig{},
-		catLimiter:      make(chan struct{}, config.Server.MaxConcurrentCats),
-		tailLimiter:     make(chan struct{}, config.Server.MaxConcurrentTails),
-		sched:           newScheduler(),
-		cont:            newContinuous(),
+		sshServerConfig: &gossh.ServerConfig{
+			Config: gossh.Config{
+				KeyExchanges: config.Server.KeyExchanges,
+				Ciphers:      config.Server.Ciphers,
+				MACs:         config.Server.MACs,
+			},
+		},
+		catLimiter:  make(chan struct{}, config.Server.MaxConcurrentCats),
+		tailLimiter: make(chan struct{}, config.Server.MaxConcurrentTails),
+		sched:       newScheduler(),
+		cont:        newContinuous(),
 	}
 
 	s.sshServerConfig.PasswordCallback = s.Callback

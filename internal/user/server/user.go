@@ -121,7 +121,7 @@ func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 			continue
 		}
 
-		regexStr := permission
+		regexStr = permission
 		if strings.HasPrefix(permission, "!") {
 			regexStr = permission[1:]
 			negate = true
