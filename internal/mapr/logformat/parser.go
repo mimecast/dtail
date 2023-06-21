@@ -17,7 +17,6 @@ var ErrIgnoreFields error = errors.New("Ignore this field set")
 // Parser is used to parse the mapreduce information from the server log files.
 type Parser struct {
 	hostname           string
-	logFormatName      string
 	makeFieldsFunc     reflect.Value
 	makeFieldsReceiver reflect.Value
 	timeZoneName       string
