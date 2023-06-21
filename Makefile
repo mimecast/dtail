@@ -33,7 +33,7 @@ clean:
 	  test -f $$cmd && rm $$cmd; \
 	done
 vet:
-	find . -type d | egrep -v '(./samples|./log|./doc)' | while read dir; do \
+	find . -type d | egrep -v '(./examples|./log|./doc)' | while read dir; do \
 	  echo ${GO} vet $$dir; \
 	  ${GO} vet $$dir; \
 	done
