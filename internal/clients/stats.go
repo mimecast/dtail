@@ -34,7 +34,7 @@ func newTailStats(servers int) *stats {
 	}
 }
 
-// Start starts printing client connection stats every time a signal is recieved or
+// Start starts printing client connection stats every time a signal is received or
 // connection count has changed.
 func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{},
 	statsCh <-chan string, quiet bool) {
