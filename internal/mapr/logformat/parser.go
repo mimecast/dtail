@@ -33,6 +33,8 @@ func NewParser(logFormatName string, query *mapr.Query) (Parser, error) {
 		return newGenericParser(hostname, timeZoneName, timeZoneOffset)
 	case "generickv":
 		return newGenericKVParser(hostname, timeZoneName, timeZoneOffset)
+	case "csv":
+		return newCSVParser(hostname, timeZoneName, timeZoneOffset)
 	case "mimecast":
 		return newMimecastParser(hostname, timeZoneName, timeZoneOffset)
 	case "default":
