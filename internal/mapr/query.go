@@ -73,6 +73,13 @@ func NewQuery(queryStr string) (*Query, error) {
 		Interval: time.Second * 5,
 		Limit:    -1,
 	}
+
+	// If log format is CSV, then use "." as the table. It means, that
+	// we don't do any file filtering, we process all lines of the CSV.
+	if q.LogFormat == "csv" {
+		q.Table = "."
+	}
+
 	return &q, q.parse(tokens)
 }
 
@@ -87,8 +94,7 @@ func (q *Query) Has(what string) bool {
 }
 
 func (q *Query) parse(tokens []token) error {
-	tokens, err := q.parseTokens(tokens)
-	if err != nil {
+	if _, err := q.parseTokens(tokens); err != nil {
 		return err
 	}
 

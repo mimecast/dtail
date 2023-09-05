@@ -40,16 +40,18 @@ func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 	// Parse select aggregation, e.g. sum(foo)
 	parse := func(token token) (selectCondition, error) {
 		var sc selectCondition
-		tokenStr := token.str
 
-		if !strings.Contains(tokenStr, "(") && !strings.Contains(tokenStr, ")") {
-			sc.Field = tokenStr
-			sc.FieldStorage = tokenStr
+		// With quotes stripped: We got a quoted select expression, e.g.
+		// "select `count($foo)` ...", which will literaly look for field
+		// "count($foo)" without performing the count aggregation.
+		if token.quotesStripped || (!strings.Contains(token.str, "(") && !strings.Contains(token.str, ")")) {
+			sc.Field = token.str
+			sc.FieldStorage = token.str
 			sc.Operation = Last
 			return sc, nil
 		}
 
-		a := strings.Split(tokenStr, "(")
+		a := strings.Split(token.str, "(")
 		if len(a) != 2 {
 			return sc, errors.New(invalidQuery + "Can't parse 'select' aggregation: " +
 				token.str)
@@ -61,8 +63,8 @@ func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 			return sc, errors.New(invalidQuery + "Can't parse 'select' field name " +
 				"from aggregation: " + token.str)
 		}
-		sc.Field = b[0]            // Field name, e.g. 'foo'
-		sc.FieldStorage = tokenStr // e.g. 'sum(foo)'
+		sc.Field = b[0]             // Field name, e.g. 'foo'
+		sc.FieldStorage = token.str // e.g. 'sum(foo)'
 
 		switch agg {
 		case "count":
@@ -80,8 +82,7 @@ func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 		case "len":
 			sc.Operation = Len
 		default:
-			return sc, errors.New(invalidQuery +
-				"Unknown aggregation in 'select' clause: " + agg)
+			return sc, errors.New(invalidQuery + "Unknown aggregation in 'select' clause: " + agg)
 		}
 		return sc, nil
 	}
