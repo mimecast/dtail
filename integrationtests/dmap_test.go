@@ -245,3 +245,60 @@ func TestDMap4Append(t *testing.T) {
 	os.Remove(csvFile)
 	os.Remove(queryFile)
 }
+
+func TestDMap5CSV(t *testing.T) {
+	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
+		t.Log("Skipping")
+		return
+	}
+	inFile := "dmap5.csv.in"
+	outFile := "dmap5.stdout.tmp"
+	csvFile := "dmap5.csv.tmp"
+	expectedCsvFile := "dmap5.csv.expected"
+	queryFile := fmt.Sprintf("%s.query", csvFile)
+	expectedQueryFile := "dmap5.csv.query.expected"
+
+	// Delete in case it exists already. Otherwise, test will fail.
+	os.Remove(csvFile)
+
+	query := fmt.Sprintf("select sum($timecount),last($time),min($min_goroutines),"+
+		" group by $hostname"+
+		" set $timecount = `count($time)`, $time = `$time`, $min_goroutines = `min($goroutines)`"+
+		" logformat csv outfile %s", csvFile)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run dmap command twice, it should append in the 2nd iteration the new results to the already existing
+	// file as we specified "outfile append". That works transparently for any mapreduce query
+	// (e.g. also for the dtail command in streaming mode). But it is easier to test with the dmap
+	// command.
+	for i := 0; i < 2; i++ {
+		stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t,
+			"", "../dmap",
+			"--query", query,
+			"--cfg", "none",
+			"--logger", "stdout",
+			"--logLevel", "info",
+			"--noColor", inFile)
+
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		waitForCommand(ctx, t, stdoutCh, stderrCh, cmdErrCh)
+	}
+
+	if err := compareFilesContents(t, csvFile, expectedCsvFile); err != nil {
+		t.Error(err)
+		return
+	}
+	if err := compareFiles(t, queryFile, expectedQueryFile); err != nil {
+		t.Error(err)
+		return
+	}
+
+	os.Remove(outFile)
+	os.Remove(csvFile)
+	os.Remove(queryFile)
+}
