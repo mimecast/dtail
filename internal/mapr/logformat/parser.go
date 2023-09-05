@@ -2,6 +2,7 @@ package logformat
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/mimecast/dtail/internal/config"
@@ -26,6 +27,7 @@ func NewParser(logFormatName string, query *mapr.Query) (Parser, error) {
 	now := time.Now()
 	timeZoneName, timeZoneOffset := now.Zone()
 
+	// Extend this for adding more log formats!
 	switch logFormatName {
 	case "generic":
 		return newGenericParser(hostname, timeZoneName, timeZoneOffset)
@@ -33,8 +35,18 @@ func NewParser(logFormatName string, query *mapr.Query) (Parser, error) {
 		return newGenericKVParser(hostname, timeZoneName, timeZoneOffset)
 	case "mimecast":
 		return newMimecastParser(hostname, timeZoneName, timeZoneOffset)
-	default:
+	case "default":
 		return newDefaultParser(hostname, timeZoneName, timeZoneOffset)
-
+	case "custom1":
+		return newCustom1Parser(hostname, timeZoneName, timeZoneOffset)
+	case "custom2":
+		return newCustom2Parser(hostname, timeZoneName, timeZoneOffset)
+	default:
+		p, err := newDefaultParser(hostname, timeZoneName, timeZoneOffset)
+		if err != nil {
+			return p, fmt.Errorf("No '%s' mapr log format and problem creating default one: %v",
+				logFormatName, err)
+		}
+		return p, fmt.Errorf("No '%s' mapr log format", logFormatName)
 	}
 }

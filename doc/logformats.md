@@ -148,4 +148,6 @@ func (p *fooParser) MakeFields(maprLine string) (map[string]string, error) {
 }
 ```
 
+Next, `NewParser(...)` in `internal/mapr/logformat/parser.go` needs to be extended, so that the new log format is part of the switch statement. If you don't want to edit `parser.go` then you could instead use `custom1` or `custom2` log formats, there are ready templates available in the `logformat` package.
+
 Once done, recompile DTail. DTail now understands `... logformat foo` (see "Seleting a log format" above).
