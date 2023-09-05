@@ -10,8 +10,10 @@ You could either make your application follow the DTail default log format, or y
 The following log formats are currently available out of the box:
 
 * `default` - The default DTail log format
-* `generic` - A generic log format with a very simple set of fields
+* `generic` - A generic log format with a simple set of fields
 * `generickv` - A simple log format expecting all log lines in form of `field1=value1|field2=value2|...`
+* `csv` - A simple CSV format expecting all files a comma separated CSV file. The first line of the file must be the CSV header.
+* `custom1` and `custom2` - Customizable log formats.
 
 ### Selecting a log format
 
