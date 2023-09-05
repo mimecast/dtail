@@ -87,6 +87,10 @@ func TestDefaultLogFormat(t *testing.T) {
 	}
 
 	fields, err := parser.MakeFields("foozoo=bar|bazbay")
+	if err != nil && err != ErrIgnoreFields {
+		t.Errorf(err.Error())
+	}
+
 	if _, ok := fields["foo"]; ok {
 		t.Errorf("Expected fiending field 'foo', but found it\n")
 	}

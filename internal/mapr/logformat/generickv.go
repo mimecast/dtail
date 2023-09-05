@@ -6,8 +6,19 @@ import (
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
-// MakeFieldsGENERIGKV is the generic key-value logfile parser.
-func (p *Parser) MakeFieldsGENERIGKV(maprLine string) (map[string]string, error) {
+type genericKVParser struct {
+	defaultParser
+}
+
+func newGenericKVParser(hostname, timeZoneName string, timeZoneOffset int) (*genericKVParser, error) {
+	defaultParser, err := newDefaultParser(hostname, timeZoneName, timeZoneOffset)
+	if err != nil {
+		return &genericKVParser{}, err
+	}
+	return &genericKVParser{defaultParser: *defaultParser}, nil
+}
+
+func (p *genericKVParser) MakeFields(maprLine string) (map[string]string, error) {
 	splitted := strings.Split(maprLine, protocol.FieldDelimiter)
 	fields := make(map[string]string, len(splitted))
 

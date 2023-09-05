@@ -1,7 +1,18 @@
 package logformat
 
-// MakeFieldsGENERIC is the generic log line parser.
-func (p *Parser) MakeFieldsGENERIC(maprLine string) (map[string]string, error) {
+type genericParser struct {
+	defaultParser
+}
+
+func newGenericParser(hostname, timeZoneName string, timeZoneOffset int) (*genericParser, error) {
+	defaultParser, err := newDefaultParser(hostname, timeZoneName, timeZoneOffset)
+	if err != nil {
+		return &genericParser{}, err
+	}
+	return &genericParser{defaultParser: *defaultParser}, nil
+}
+
+func (p *genericParser) MakeFields(maprLine string) (map[string]string, error) {
 	fields := make(map[string]string, 3)
 
 	fields["*"] = "*"
