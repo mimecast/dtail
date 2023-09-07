@@ -1,33 +1,31 @@
 GO ?= go
+ifdef DTAIL_USE_ACL
+GO_TAGS=linuxacl
+endif
+ifdef DTAIL_USE_PROPRIETARY
+GO_TAGS+=proprietary
+endif
 all: build
 build: dserver dcat dgrep dmap dtail dtailhealth
 dserver:
-ifndef DTAIL_USE_ACL
-	${GO} build ${GO_FLAGS} -o dserver ./cmd/dserver/main.go
-else
-	${GO} build ${GO_FLAGS} -tags linuxacl -o dserver ./cmd/dserver/main.go
-endif
+	${GO} build ${GO_FLAGS} -tags '${GO_TAGS}' -o dserver ./cmd/dserver/main.go
 dcat:
-	${GO} build ${GO_FLAGS} -o dcat ./cmd/dcat/main.go
+	${GO} build ${GO_FLAGS} -tags '${GO_TAGS}' -o dcat ./cmd/dcat/main.go
 dgrep:
-	${GO} build ${GO_FLAGS} -o dgrep ./cmd/dgrep/main.go
+	${GO} build ${GO_FLAGS} -tags '${GO_TAGS}' -o dgrep ./cmd/dgrep/main.go
 dmap:
-	${GO} build ${GO_FLAGS} -o dmap ./cmd/dmap/main.go
+	${GO} build ${GO_FLAGS} -tags '${GO_TAGS}' -o dmap ./cmd/dmap/main.go
 dtail:
-	${GO} build ${GO_FLAGS} -o dtail ./cmd/dtail/main.go
+	${GO} build ${GO_FLAGS} -tags '${GO_TAGS}' -o dtail ./cmd/dtail/main.go
 dtailhealth:
-	${GO} build ${GO_FLAGS} -o dtailhealth ./cmd/dtailhealth/main.go
+	${GO} build ${GO_FLAGS} -tags '${GO_TAGS}' -o dtailhealth ./cmd/dtailhealth/main.go
 install:
-ifndef DTAIL_USE_ACL
-	${GO} install ./cmd/dserver/main.go
-else
-	${GO} install -tags linuxacl ./cmd/dserver/main.go
-endif
-	${GO} install ./cmd/dcat/main.go
-	${GO} install ./cmd/dgrep/main.go
-	${GO} install ./cmd/dmap/main.go
-	${GO} install ./cmd/dtail/main.go
-	${GO} install ./cmd/dtailhealth/main.go
+	${GO} install -tags '${GO_TAGS}' ./cmd/dserver/main.go
+	${GO} install -tags '${GO_TAGS}' ./cmd/dcat/main.go
+	${GO} install -tags '${GO_TAGS}' ./cmd/dgrep/main.go
+	${GO} install -tags '${GO_TAGS}' ./cmd/dmap/main.go
+	${GO} install -tags '${GO_TAGS}' ./cmd/dtail/main.go
+	${GO} install -tags '${GO_TAGS}' ./cmd/dtailhealth/main.go
 clean:
 	ls ./cmd/ | while read cmd; do \
 	  test -f $$cmd && rm $$cmd; \
@@ -47,10 +45,5 @@ lint:
 	done | grep -F .go:
 test:
 	${GO} clean -testcache
-ifndef DTAIL_USE_ACL
 	set -e; find . -name '*_test.go' | while read file; do dirname $$file; done | \
-		sort -u | while read dir; do ${GO} test --race -v $$dir || exit 2; done
-else
-	set -e;find . -name '*_test.go' | while read file; do dirname $$file; done | \
-		sort -u | while read dir; do ${GO} test --tags linuxacl --race -v $$dir || exit 2; done
-endif
+		sort -u | while read dir; do ${GO} test -tags '${GO_TAGS}' --race -v $$dir || exit 2; done
