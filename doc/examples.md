@@ -151,6 +151,25 @@ You can also use a file input pipe as follows:
     dmap 'from STATS select $hostname,max($goroutines),max($cgocalls),$loadavg,lifetimeConnections group by $hostname order by max($cgocalls)'
 ```
 
+### Aggregating CSV files
+
+In essence, this works exactly like aggregating logs. All files operated on must be valid CSV files and the first line of the CSV must be the header. E.g.:
+
+```shell
+% cat example.csv
+name,lastname,age,profession
+Michael,Jordan,40,Basketball player
+Michael,Jackson,100,Singer
+Albert,Einstein,200,Physician
+% dmap --query 'select lastname,name where age > 40 logformat csv outfile result.csv' example.csv
+% cat result.csv
+lastname,name
+Jackson,Michael
+Einstein,Albert
+```
+
+DMap can also be used to query and aggregate CSV files from remote servers.
+
 ### Other serverless commands
 
 The serverless mode works transparently with all other DTail commands. Here are some examples:

@@ -37,6 +37,13 @@ func makeSetConditions(tokens []token) (set []setCondition, err error) {
 			return sc, nil, err
 		}
 
+		// Seems like a quoted string? E.g.: "set $foo = `count(bar)`"
+		// So don't interpret `count` as a function!
+		if tokens[2].quotesStripped {
+			sc.rType = Field
+			return sc, tokens[3:], nil
+		}
+
 		// Seems like a function call?
 		if strings.HasSuffix(sc.rString, ")") {
 			functionStack, functionArg, err := funcs.NewFunctionStack(tokens[2].str)

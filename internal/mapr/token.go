@@ -9,8 +9,9 @@ var keywords = [...]string{"select", "from", "where", "set", "group", "rorder",
 
 // Represents a parsed token, used to parse the mapr query.
 type token struct {
-	str        string
-	isBareword bool
+	str            string
+	isBareword     bool
+	quotesStripped bool
 }
 
 func (t token) isKeyword() bool {
@@ -71,8 +72,9 @@ func tokensConsume(tokens []token) ([]token, []token) {
 			stripped := t.str[1 : length-1]
 			//dlog.Common.Trace("stripped", stripped)
 			t := token{
-				str:        stripped,
-				isBareword: t.isBareword,
+				str:            stripped,
+				isBareword:     t.isBareword,
+				quotesStripped: true,
 			}
 			consumed = append(consumed, t)
 			continue

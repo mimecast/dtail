@@ -1,0 +1,1 @@
+select sum($timecount),last($time),min($min_goroutines), group by $hostname set $timecount = `count($time)`, $time = `$time`, $min_goroutines = `min($goroutines)` logformat csv outfile dmap5.csv.tmp

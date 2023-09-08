@@ -27,7 +27,7 @@ type Aggregate struct {
 	// The mapr query
 	query *mapr.Query
 	// The mapr log format parser
-	parser *logformat.Parser
+	parser logformat.Parser
 }
 
 // NewAggregate return a new server side aggregator.

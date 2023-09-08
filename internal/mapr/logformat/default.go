@@ -7,8 +7,21 @@ import (
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
-// MakeFieldsDEFAULT is the default DTail log file key-value parser.
-func (p *Parser) MakeFieldsDEFAULT(maprLine string) (map[string]string, error) {
+type defaultParser struct {
+	hostname       string
+	timeZoneName   string
+	timeZoneOffset string
+}
+
+func newDefaultParser(hostname, timeZoneName string, timeZoneOffset int) (*defaultParser, error) {
+	return &defaultParser{
+		hostname:       hostname,
+		timeZoneName:   timeZoneName,
+		timeZoneOffset: fmt.Sprintf("%d", timeZoneOffset),
+	}, nil
+}
+
+func (p *defaultParser) MakeFields(maprLine string) (map[string]string, error) {
 	splitted := strings.Split(maprLine, protocol.FieldDelimiter)
 
 	if len(splitted) < 11 || !strings.HasPrefix(splitted[9], "MAPREDUCE:") ||

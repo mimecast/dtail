@@ -10,8 +10,10 @@ You could either make your application follow the DTail default log format, or y
 The following log formats are currently available out of the box:
 
 * `default` - The default DTail log format
-* `generic` - A generic log format with a very simple set of fields
+* `generic` - A generic log format with a simple set of fields
 * `generickv` - A simple log format expecting all log lines in form of `field1=value1|field2=value2|...`
+* `csv` - A simple CSV format expecting all files a comma separated CSV file. The first line of the file must be the CSV header.
+* `custom1` and `custom2` - Customizable log formats.
 
 ### Selecting a log format
 
@@ -21,15 +23,26 @@ By default, DTail will use the `default` log format. You can override the log fo
 % dmap --files /var/log/example.log --query 'from EXAMPLE select ....queryhere.... logformat generickv'
 ```
 
-Alternatively, you can override the default log format with `MapreduceLogFormat` in the Server section of `dtail.json`.
+You can override the default log format with `MapreduceLogFormat` in the Server section of `dtail.json`.
 
 ## Under the hood: generickv
 
 As an example, let's have a look at the `generickv` log format's implementation. It's located at `internal/mapr/logformat/generickv.go`:
 
-```shell
-// MakeFieldsGENERIGKV is the generic key-value logfile parser.
-func (p *Parser) MakeFieldsGENERIGKV(maprLine string) (map[string]string, error) {
+```go
+type genericKVParser struct {
+	defaultParser
+}
+
+func newGenericKVParser(hostname, timeZoneName string, timeZoneOffset int) (*genericKVParser, error) {
+	defaultParser, err := newDefaultParser(hostname, timeZoneName, timeZoneOffset)
+	if err != nil {
+		return &genericKVParser{}, err
+	}
+	return &genericKVParser{defaultParser: *defaultParser}, nil
+}
+
+func (p *genericKVParser) MakeFields(maprLine string) (map[string]string, error) {
 	splitted := strings.Split(maprLine, protocol.FieldDelimiter)
 	fields := make(map[string]string, len(splitted))
 
@@ -44,7 +57,7 @@ func (p *Parser) MakeFieldsGENERIGKV(maprLine string) (map[string]string, error)
 	for _, kv := range splitted[0:] {
 		keyAndValue := strings.SplitN(kv, "=", 2)
 		if len(keyAndValue) != 2 {
-			// dlog.Common.Debug("Unable to parse key-value token, ignoring it", kv)
+			//dlog.Common.Debug("Unable to parse key-value token, ignoring it", kv)
 			continue
 		}
 		fields[keyAndValue[0]] = keyAndValue[1]
@@ -101,26 +114,42 @@ These variables may only exist in the DTail default log format (see `internal/ma
 * `$pid` - DTail server process ID
 * `$uptime` - DTail server uptime
 
-## Implementing your own log format
+## Implementing your own log format `Foo`
 
-All what needs to be done is to place your own implementation into the `logformat` source directory. As a template, you can copy an existing format ...
+What needs to be done is to place your own implementation into the `logformat` source directory. As a template, you can copy an existing format ...
 
 ```shell
-% cp internal/mapr/logformat/generic.go internal/mapr/logformat/yourcustomformat.go
+% cp internal/mapr/logformat/generic.go internal/mapr/logformat/foo.go
 ```
 
-... and replace `GENERIGKV` with your format's name in capital letters (the method name string is used by DTail to reflect the log format parser method, so it is important to name it correctly):
+... and replace `generic` ` with your format's name `foo`:
 
-```shell
-// MakeFieldsCUSTOMLOGFORMAT is your own custom log format.
-func (p *Parser) MakeFieldsCUSTOMLOGFORMAT(maprLine string) (map[string]string, error) {
-	// .. Your own format implementation goes here
-	// .. you can parse maprLine and store values into the fields map. 
-..
-.
-.
+```go
+package logformat
+
+type fooParser struct {
+	defaultParser
+}
+
+func newFooParser(hostname, timeZoneName string, timeZoneOffset int) (*fooParser, error) {
+	defaultParser, err := newDefaultParser(hostname, timeZoneName, timeZoneOffset)
+	if err != nil {
+		return &fooParser{}, err
+	}
+	return &fooParser{defaultParser: *defaultParser}, nil
+}
+
+func (p *fooParser) MakeFields(maprLine string) (map[string]string, error) {
+	fields := make(map[string]string, 3)
+
+	..
+	<YOUR CUSTOM CODE HERE>
+	..
+
 	return fields, nil
 }
 ```
 
-Once done, recompile DTail. DTail now understands `... logformat customlogformat` (see "Seleting a log format" above).
+Next, `NewParser(...)` in `internal/mapr/logformat/parser.go` needs to be extended, so that the new log format is part of the switch statement. If you don't want to edit `parser.go` then you could instead use `custom1` or `custom2` log formats, there are ready templates available in the `logformat` package.
+
+Once done, recompile DTail. DTail now understands `... logformat foo` (see "Seleting a log format" above).

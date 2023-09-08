@@ -252,3 +252,43 @@ func TestParseQueryDeep(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotedSelectCondition(t *testing.T) {
+	queryStr := "select `count($foo)`, foo, $foo, count($foo) logformat csv"
+
+	q, err := NewQuery(queryStr)
+	if err != nil {
+		t.Errorf("Query parse error: %s\n%v: %v", queryStr, q, err)
+	}
+	if len(q.Select) != 4 {
+		t.Errorf("Expected three elements in 'select' clause but got '%v': %s\n%v",
+			q.Select, queryStr, q)
+	}
+
+	if q.Select[0].Field != "count($foo)" {
+		t.Errorf("Expected 'num($foo)' as first element in 'select' clause but got '%v': %s\n%v",
+			q.Select[0].Field, queryStr, q)
+	}
+	if q.Select[0].Operation != Last {
+		t.Errorf("Expected 'Last' as aggregation function of first element in "+
+			"'select' clause but got '%v': %s\n%v", q.Select[0].Operation, queryStr, q)
+	}
+
+	if q.Select[1].Field != "foo" {
+		t.Errorf("Expected 'foo' as first element in 'select' clause but got '%v': %s\n%v",
+			q.Select[1].Field, queryStr, q)
+	}
+	if q.Select[2].Field != "$foo" {
+		t.Errorf("Expected '$foo' as first element in 'select' clause but got '%v': %s\n%v",
+			q.Select[2].Field, queryStr, q)
+	}
+
+	if q.Select[3].Field != "$foo" {
+		t.Errorf("Expected '$foo' as first element in 'select' clause but got '%v': %s\n%v",
+			q.Select[3].Field, queryStr, q)
+	}
+	if q.Select[3].Operation != Count {
+		t.Errorf("Expected 'count' as aggregation function of thourth element in "+
+			"'select' clause but got '%v': %s\n%v", q.Select[3].Operation, queryStr, q)
+	}
+}
