@@ -20,7 +20,7 @@ func TestDTailHealth1(t *testing.T) {
 	t.Log("Serverless check, is supposed to exit with warning state.")
 	exitCode, err := runCommand(context.TODO(), t, outFile, "../dtailhealth")
 	if exitCode != 1 {
-		t.Error(fmt.Sprintf("Expected exit code '1' but got '%d': %v", exitCode, err))
+		t.Errorf("Expected exit code '1' but got '%d': %v", exitCode, err)
 		return
 	}
 

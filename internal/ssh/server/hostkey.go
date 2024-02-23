@@ -1,7 +1,6 @@
 package server
 
 import (
-	"io/ioutil"
 	"os"
 
 	"github.com/mimecast/dtail/internal/config"
@@ -26,7 +25,7 @@ func PrivateHostKey() []byte {
 		}
 
 		pem := ssh.EncodePrivateKeyToPEM(privateKey)
-		if err := ioutil.WriteFile(hostKeyFile, pem, 0600); err != nil {
+		if err := os.WriteFile(hostKeyFile, pem, 0600); err != nil {
 			dlog.Server.Error("Unable to write private server RSA host key to file",
 				hostKeyFile, err)
 		}
@@ -34,7 +33,7 @@ func PrivateHostKey() []byte {
 	}
 
 	dlog.Server.Info("Reading private server RSA host key from file", hostKeyFile)
-	pem, err := ioutil.ReadFile(hostKeyFile)
+	pem, err := os.ReadFile(hostKeyFile)
 	if err != nil {
 		dlog.Server.FatalPanic("Failed to load private server RSA host key", err)
 	}

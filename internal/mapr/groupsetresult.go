@@ -169,9 +169,10 @@ func (*GroupSet) writeQueryFile(query *Query) error {
 	}
 	defer fd.Close()
 
-	fd.WriteString(query.RawQuery)
-	os.Rename(tmpQueryFile, queryFile)
-	return nil
+	if _, err := fd.WriteString(query.RawQuery); err != nil {
+		return err
+	}
+	return os.Rename(tmpQueryFile, queryFile)
 }
 
 // WriteResult writes the result to an CSV outfile.
@@ -221,7 +222,9 @@ func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.Fi
 	lastColumn := len(query.Select) - 1
 
 	if writeHeader {
-		g.resultWriteUnformattedHeader(query, fd, lastColumn)
+		if err := g.resultWriteUnformattedHeader(query, fd, lastColumn); err != nil {
+			return err
+		}
 	}
 
 	// And now write the data
@@ -230,13 +233,19 @@ func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.Fi
 			break
 		}
 		for j, value := range r.values {
-			fd.WriteString(value)
+			if _, err := fd.WriteString(value); err != nil {
+				return err
+			}
 			if j == lastColumn {
 				continue
 			}
-			fd.WriteString(protocol.CSVDelimiter)
+			if _, err := fd.WriteString(protocol.CSVDelimiter); err != nil {
+				return err
+			}
 		}
-		fd.WriteString("\n")
+		if _, err := fd.WriteString("\n"); err != nil {
+			return err
+		}
 	}
 
 	if !query.Outfile.AppendMode {
@@ -250,13 +259,18 @@ func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.Fi
 	return nil
 }
 
-func (g *GroupSet) resultWriteUnformattedHeader(query *Query, fd *os.File, lastColumn int) {
+func (g *GroupSet) resultWriteUnformattedHeader(query *Query, fd *os.File, lastColumn int) (err error) {
 	for i, sc := range query.Select {
-		fd.WriteString(sc.FieldStorage)
+		if _, err = fd.WriteString(sc.FieldStorage); err != nil {
+			return
+		}
 		if i == lastColumn {
 			continue
 		}
-		fd.WriteString(protocol.CSVDelimiter)
+		if _, err = fd.WriteString(protocol.CSVDelimiter); err != nil {
+			return
+		}
 	}
-	fd.WriteString("\n")
+	_, err = fd.WriteString("\n")
+	return
 }

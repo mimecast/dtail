@@ -130,7 +130,9 @@ func (s *Server) handleChannel(ctx context.Context, sshConn gossh.Conn,
 	user, err := user.New(sshConn.User(), sshConn.RemoteAddr().String())
 	if err != nil {
 		dlog.Server.Error(user, err)
-		newChannel.Reject(gossh.Prohibited, err.Error())
+		if err := newChannel.Reject(gossh.Prohibited, err.Error()); err != nil {
+			dlog.Server.Debug(err)
+		}
 		return
 	}
 
@@ -138,7 +140,9 @@ func (s *Server) handleChannel(ctx context.Context, sshConn gossh.Conn,
 	if newChannel.ChannelType() != "session" {
 		err := errors.New("Don'w allow other channel types than session")
 		dlog.Server.Error(user, err)
-		newChannel.Reject(gossh.Prohibited, err.Error())
+		if err := newChannel.Reject(gossh.Prohibited, err.Error()); err != nil {
+			dlog.Server.Debug(err)
+		}
 		return
 	}
 
@@ -160,7 +164,9 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn,
 	dlog.Server.Info(user, "Invoking request handler")
 	for req := range in {
 		var payload = struct{ Value string }{}
-		gossh.Unmarshal(req.Payload, &payload)
+		if err := gossh.Unmarshal(req.Payload, &payload); err != nil {
+			dlog.Server.Error(user, err)
+		}
 
 		switch req.Type {
 		case "shell":
@@ -177,14 +183,18 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn,
 			}
 
 			go func() {
+				defer terminate()
 				// Broken pipe, cancel
-				io.Copy(channel, handler)
-				terminate()
+				if _, err := io.Copy(channel, handler); err != nil {
+					dlog.Server.Trace(user, fmt.Errorf("channel->handler: %w", err))
+				}
 			}()
 			go func() {
+				defer terminate()
 				// Broken pipe, cancel
-				io.Copy(handler, channel)
-				terminate()
+				if _, err := io.Copy(handler, channel); err != nil {
+					dlog.Server.Trace(user, fmt.Errorf("handler->channel: %w", err))
+				}
 			}()
 			go func() {
 				select {
@@ -203,9 +213,13 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn,
 			}()
 
 			// Only serving shell type
-			req.Reply(true, nil)
+			if err := req.Reply(true, nil); err != nil {
+				dlog.Server.Trace(user, fmt.Errorf("reply(true): %w", err))
+			}
 		default:
-			req.Reply(false, nil)
+			if err := req.Reply(false, nil); err != nil {
+				dlog.Server.Trace(user, fmt.Errorf("reply(false): %w", err))
+			}
 			return fmt.Errorf("Closing SSH connection as unknown request received|%s|%v",
 				req.Type, payload.Value)
 		}

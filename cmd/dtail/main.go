@@ -102,8 +102,10 @@ func main() {
 	}
 
 	if pprof != "" {
-		go http.ListenAndServe(pprof, nil)
-		dlog.Client.Info("Started PProf", pprof)
+		dlog.Client.Info("Starting PProf", pprof)
+		go func() {
+			panic(http.ListenAndServe(pprof, nil))
+		}()
 	}
 
 	var client clients.Client

@@ -75,8 +75,8 @@ func TestDTailWithServer(t *testing.T) {
 		for {
 			select {
 			case <-time.After(time.Second):
-				fd.WriteString(time.Now().String())
-				fd.WriteString(fmt.Sprintf(" - Hello %s\n", greetings[circular]))
+				_, _ = fd.WriteString(time.Now().String())
+				_, _ = fd.WriteString(fmt.Sprintf(" - Hello %s\n", greetings[circular]))
 				circular = (circular + 1) % len(greetings)
 			case <-ctx.Done():
 				return
@@ -120,8 +120,8 @@ func TestDTailWithServer(t *testing.T) {
 	for i, g := range greetingsRecv {
 		index := (i + offset) % len(greetings)
 		if greetings[index] != g {
-			t.Error(fmt.Sprintf("Expected '%s' but got '%s' at '%v' vs '%v'\n",
-				g, greetings[index], greetings, greetingsRecv))
+			t.Errorf("Expected '%s' but got '%s' at '%v' vs '%v'\n",
+				g, greetings[index], greetings, greetingsRecv)
 			return
 		}
 	}

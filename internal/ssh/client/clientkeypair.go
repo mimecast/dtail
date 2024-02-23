@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"github.com/mimecast/dtail/internal/io/dlog"
@@ -83,7 +82,7 @@ func generatePublicKey(privatekey *rsa.PublicKey) ([]byte, error) {
 }
 
 func writeKey(keyBytes []byte, saveFileTo string) error {
-	err := ioutil.WriteFile(saveFileTo, keyBytes, 0600)
+	err := os.WriteFile(saveFileTo, keyBytes, 0600)
 	if err != nil {
 		return err
 	}

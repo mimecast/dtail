@@ -82,7 +82,7 @@ func NewMaprClient(args config.Args, maprClientMode MaprClientMode) (*MaprClient
 	case "", ".":
 		c.RegexStr = "."
 	case "*":
-		c.RegexStr = fmt.Sprintf("\\|MAPREDUCE:\\|")
+		c.RegexStr = "\\|MAPREDUCE:\\|"
 	default:
 		c.RegexStr = fmt.Sprintf("\\|MAPREDUCE:%s\\|", c.query.Table)
 	}

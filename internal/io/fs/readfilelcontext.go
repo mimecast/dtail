@@ -31,22 +31,17 @@ type ltxState struct {
 func (f *readFile) filterWithoutLContext(ctx context.Context, rawLines <-chan *bytes.Buffer,
 	lines chan<- *line.Line, re regex.Regex) {
 
-	for {
-		select {
-		case rawLine, ok := <-rawLines:
-			f.updatePosition()
-			if !ok {
+	for rawLine := range rawLines {
+		f.updatePosition()
+		if newLine, ok := f.transmittable(rawLine, len(lines), cap(lines), re); ok {
+			select {
+			case lines <- newLine:
+			case <-ctx.Done():
 				return
-			}
-			if newLine, ok := f.transmittable(rawLine, len(lines), cap(lines), re); ok {
-				select {
-				case lines <- newLine:
-				case <-ctx.Done():
-					return
-				}
 			}
 		}
 	}
+	f.updatePosition()
 }
 
 // Filter log lines matching a given regular expression, however with local grep context.

@@ -12,8 +12,6 @@ import (
 	"github.com/mimecast/dtail/internal/config"
 )
 
-type fileWriter struct{}
-
 type fileMessageBuf struct {
 	now     time.Time
 	message string
@@ -124,9 +122,10 @@ func (f *file) write(m *fileMessageBuf) {
 		writer = f.getWriter(f.strategy.FileBase)
 	}
 
-	writer.WriteString(m.message)
+	// Don't report any error, we won't be able to log it anyway!
+	_, _ = writer.WriteString(m.message)
 	if m.nl {
-		writer.WriteByte('\n')
+		_ = writer.WriteByte('\n')
 	}
 }
 

@@ -3,7 +3,6 @@ package dlog
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -225,14 +224,14 @@ func (d *DLog) Mapreduce(table string, data map[string]interface{}) string {
 		// level|date-time|process|caller|cpus|goroutines|cgocalls|loadavg|uptime|MAPREDUCE:TABLE|key=value|...
 
 		var loadAvg string
-		if loadAvgBytes, err := ioutil.ReadFile("/proc/loadavg"); err == nil {
+		if loadAvgBytes, err := os.ReadFile("/proc/loadavg"); err == nil {
 			tmp := string(loadAvgBytes)
 			s := strings.SplitN(tmp, " ", 2)
 			loadAvg = s[0]
 		}
 
 		var uptime string
-		if uptimeBytes, err := ioutil.ReadFile("/proc/uptime"); err == nil {
+		if uptimeBytes, err := os.ReadFile("/proc/uptime"); err == nil {
 			tmp := string(uptimeBytes)
 			s := strings.SplitN(tmp, ".", 2)
 			i, _ := strconv.ParseInt(s[0], 10, 64)

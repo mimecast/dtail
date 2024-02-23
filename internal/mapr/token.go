@@ -99,7 +99,8 @@ func tokensConsumeOptional(tokens []token, optional string) []token {
 	if len(tokens) < 1 {
 		return tokens
 	}
-	if strings.ToLower(tokens[0].str) == strings.ToLower(optional) {
+	//if strings.ToLower(tokens[0].str) == strings.ToLower(optional) {
+	if strings.EqualFold(tokens[0].str, optional) {
 		return tokens[1:]
 	}
 	return tokens

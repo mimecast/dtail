@@ -44,8 +44,10 @@ func main() {
 	dlog.Start(ctx, &wg, source.HealthCheck)
 
 	if pprof != "" {
-		go http.ListenAndServe(pprof, nil)
-		dlog.Client.Info("Started PProf", pprof)
+		dlog.Client.Info("Starting PProf", pprof)
+		go func() {
+			panic(http.ListenAndServe(pprof, nil))
+		}()
 	}
 
 	healthClient, _ := clients.NewHealthClient(args)

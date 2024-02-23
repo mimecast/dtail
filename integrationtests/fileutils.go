@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,7 +24,7 @@ func mapFile(t *testing.T, file string) (map[string]int, error) {
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
 		line := scanner.Text()
-		count, _ := contents[line]
+		count := contents[line]
 		contents[line] = count + 1
 	}
 
@@ -59,13 +58,11 @@ func compareFilesContents(t *testing.T, fileA, fileB string) error {
 	}
 
 	// The mapreduce result can be in a different order each time (Golang maps are not sorted).
-	t.Log(fmt.Sprintf("Checking whether %s has same lines as file %s (ignoring line order)",
-		fileA, fileB))
+	t.Logf("Checking whether %s has same lines as file %s (ignoring line order)", fileA, fileB)
 	if err := compareMaps(a, b); err != nil {
 		return err
 	}
-	t.Log(fmt.Sprintf("Checking whether %s has same lines as file %s (ignoring line order)",
-		fileB, fileA))
+	t.Logf("Checking whether %s has same lines as file %s (ignoring line order)", fileB, fileA)
 	if err := compareMaps(b, a); err != nil {
 		return err
 	}
@@ -108,7 +105,7 @@ func fileContainsStr(t *testing.T, file, str string) error {
 }
 
 func shaOfFile(t *testing.T, file string) string {
-	bytes, err := ioutil.ReadFile(file)
+	bytes, err := os.ReadFile(file)
 	if err != nil {
 		t.Error(err)
 	}

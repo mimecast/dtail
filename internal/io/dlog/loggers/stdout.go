@@ -69,4 +69,4 @@ func (s *stdout) Rotate() {
 	// This is empty because it isn't doing anything but has to satisfy the interface.
 }
 
-func (stdout) SupportsColors() bool { return true }
+func (*stdout) SupportsColors() bool { return true }
