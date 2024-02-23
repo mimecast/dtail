@@ -83,29 +83,35 @@ func (s *Serverless) handle(ctx context.Context, cancel context.CancelFunc) erro
 	}
 
 	go func() {
-		io.Copy(serverHandler, s.handler)
+		defer terminate()
+		if _, err := io.Copy(serverHandler, s.handler); err != nil {
+			dlog.Client.Trace(err)
+		}
 		dlog.Client.Trace("io.Copy(serverHandler, s.handler) => done")
-		terminate()
 	}()
 	go func() {
-		io.Copy(s.handler, serverHandler)
+		defer terminate()
+		if _, err := io.Copy(s.handler, serverHandler); err != nil {
+			dlog.Client.Trace(err)
+		}
 		dlog.Client.Trace("io.Copy(s.handler, serverHandler) => done")
-		terminate()
 	}()
 	go func() {
+		defer terminate()
 		select {
 		case <-s.handler.Done():
 			dlog.Client.Trace("<-s.handler.Done()")
 		case <-ctx.Done():
 			dlog.Client.Trace("<-ctx.Done()")
 		}
-		terminate()
 	}()
 
 	// Send all commands to client.
 	for _, command := range s.commands {
 		dlog.Client.Debug("Sending command to serverless server", command)
-		s.handler.SendMessage(command)
+		if err := s.handler.SendMessage(command); err != nil {
+			dlog.Client.Debug(err)
+		}
 	}
 
 	<-ctx.Done()

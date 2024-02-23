@@ -81,7 +81,7 @@ func (u *User) HasFilePermission(filePath, permissionType string) (hasPermission
 func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error) {
 	// First check file system Linux/UNIX permission.
 	if _, err := permissions.ToRead(u.Name, cleanPath); err != nil {
-		return false, fmt.Errorf("User without OS file system permissions to read path: '%v'", err)
+		return false, fmt.Errorf("User without OS file system permissions to read path: %w", err)
 	}
 	dlog.Server.Info(u, cleanPath, permissionType,
 		"User with OS file system permissions to path")
@@ -89,7 +89,7 @@ func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error)
 	// Only allow to follow regular files or symlinks.
 	info, err := os.Lstat(cleanPath)
 	if err != nil {
-		return false, fmt.Errorf("Unable to determine file type: '%v'", err)
+		return false, fmt.Errorf("Unable to determine file type: %w", err)
 	}
 	if !info.Mode().IsRegular() {
 		return false, fmt.Errorf("Can only open regular files or follow symlinks")
@@ -130,7 +130,7 @@ func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 		re, err := regexp.Compile(regexStr)
 		if err != nil {
 			return false, fmt.Errorf("Permission test failed, can't compile regex "+
-				"'%s': '%v'", regexStr, err)
+				"'%s': %w", regexStr, err)
 		}
 		if negate && re.MatchString(cleanPath) {
 			dlog.Server.Info(u, cleanPath, "Permission test failed partially, "+

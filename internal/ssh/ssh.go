@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"syscall"
@@ -15,7 +14,7 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 // GeneratePrivateRSAKey is used by the server to generate its key.
@@ -63,7 +62,7 @@ func Agent() (gossh.AuthMethod, error) {
 // EnterKeyPhrase is required to read phrase protected private keys.
 func EnterKeyPhrase(keyFile string) []byte {
 	fmt.Printf("Enter phrase for key %s: ", keyFile)
-	phrase, err := terminal.ReadPassword(int(syscall.Stdin))
+	phrase, err := term.ReadPassword(int(syscall.Stdin))
 	if err != nil {
 		panic(err)
 	}
@@ -73,7 +72,7 @@ func EnterKeyPhrase(keyFile string) []byte {
 
 // KeyFile returns the key as a SSH auth method.
 func KeyFile(keyFile string) (gossh.AuthMethod, error) {
-	buffer, err := ioutil.ReadFile(keyFile)
+	buffer, err := os.ReadFile(keyFile)
 	if err != nil {
 		return nil, err
 	}

@@ -133,7 +133,7 @@ func (q *Query) parseTokens(tokens []token) ([]token, error) {
 	var err error
 	var found []token
 
-	for tokens != nil && len(tokens) > 0 {
+	for len(tokens) > 0 {
 		switch strings.ToLower(tokens[0].str) {
 		case "select":
 			tokens, found = tokensConsume(tokens[1:])

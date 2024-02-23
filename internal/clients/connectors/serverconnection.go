@@ -172,25 +172,31 @@ func (c *ServerConnection) handle(ctx context.Context, cancel context.CancelFunc
 	}
 
 	go func() {
-		io.Copy(stdinPipe, c.handler)
-		cancel()
+		defer cancel()
+		if _, err := io.Copy(stdinPipe, c.handler); err != nil {
+			dlog.Client.Trace(err)
+		}
 	}()
 	go func() {
-		io.Copy(c.handler, stdoutPipe)
-		cancel()
+		defer cancel()
+		if _, err := io.Copy(c.handler, stdoutPipe); err != nil {
+			dlog.Client.Trace(err)
+		}
 	}()
 	go func() {
+		defer cancel()
 		select {
 		case <-c.handler.Done():
 		case <-ctx.Done():
 		}
-		cancel()
 	}()
 
 	// Send all commands to client.
 	for _, command := range c.commands {
 		dlog.Client.Debug(command)
-		c.handler.SendMessage(command)
+		if err := c.handler.SendMessage(command); err != nil {
+			dlog.Client.Debug(err)
+		}
 	}
 
 	if !c.throttlingDone {

@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	goUser "os/user"
 
@@ -30,7 +29,7 @@ func PublicKeyCallback(c gossh.ConnMetadata,
 	}
 
 	dlog.Server.Info(user, "Reading", authorizedKeysFile)
-	authorizedKeysBytes, err := ioutil.ReadFile(authorizedKeysFile)
+	authorizedKeysBytes, err := os.ReadFile(authorizedKeysFile)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to read authorized keys file|%s|%s|%s",
 			authorizedKeysFile, user, err.Error())

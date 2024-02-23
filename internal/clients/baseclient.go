@@ -20,8 +20,6 @@ type baseClient struct {
 	config.Args
 	// To display client side stats
 	stats *stats
-	// List of remote servers to connect to.
-	servers []string
 	// We have one connection per remote server.
 	connections []connectors.Connector
 	// SSH auth methods to use to connect to the remote servers.

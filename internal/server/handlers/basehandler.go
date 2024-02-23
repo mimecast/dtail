@@ -130,7 +130,7 @@ func (h *baseHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
 		switch b {
 		case ';':
-			h.handleCommand(string(h.writeBuf.Bytes()))
+			h.handleCommand(h.writeBuf.String())
 			h.writeBuf.Reset()
 		default:
 			h.writeBuf.WriteByte(b)
@@ -252,15 +252,15 @@ func (h *baseHandler) handleOptions(options map[string]string) {
 	// We can read the options only once, will cause a data race otherwise if
 	// changed multiple times for multiple incoming commands.
 	h.once.Do(func() {
-		if quiet, _ := options["quiet"]; quiet == "true" {
+		if quiet := options["quiet"]; quiet == "true" {
 			dlog.Server.Debug(h.user, "Enabling quiet mode")
 			h.quiet = true
 		}
-		if plain, _ := options["plain"]; plain == "true" {
+		if plain := options["plain"]; plain == "true" {
 			dlog.Server.Debug(h.user, "Enabling plain mode")
 			h.plain = true
 		}
-		if serverless, _ := options["serverless"]; serverless == "true" {
+		if serverless := options["serverless"]; serverless == "true" {
 			dlog.Server.Debug(h.user, "Enabling serverless mode")
 			h.serverless = true
 		}

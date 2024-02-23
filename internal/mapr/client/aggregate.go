@@ -44,7 +44,7 @@ func (a *Aggregate) Aggregate(message string) error {
 	groupKey := parts[0]
 	samples, err := strconv.Atoi(parts[1])
 	if err != nil {
-		return fmt.Errorf("unable to parse sample count '%s': %v", parts[1], err)
+		return fmt.Errorf("unable to parse sample count '%s': %w", parts[1], err)
 	}
 
 	fields := a.makeFields(parts[2:])

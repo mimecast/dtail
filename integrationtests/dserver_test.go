@@ -89,8 +89,8 @@ func TestDServer2(t *testing.T) {
 				parts := []string{"INFO", "19801011-424242", "1", "dserver_test.go",
 					"1", "1", "1", "1.0", "1m", "MAPREDUCE:INTEGRATIONTEST",
 					"foo=1", "bar=42"}
-				fd.WriteString(strings.Join(parts, "|"))
-				fd.WriteString("\n")
+				_, _ = fd.WriteString(strings.Join(parts, "|"))
+				_, _ = fd.WriteString("\n")
 			case <-ctx.Done():
 				return
 			}

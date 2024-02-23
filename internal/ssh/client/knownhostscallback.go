@@ -232,8 +232,12 @@ func (c KnownHostsCallback) trustHosts(hosts []unknownHost) {
 		// And once as [IP]:PORT
 		addresses[knownhosts.Normalize(unknown.remote.String())] = struct{}{}
 
-		newFd.WriteString(fmt.Sprintf("%s\n", unknown.hostLine))
-		newFd.WriteString(fmt.Sprintf("%s\n", unknown.ipLine))
+		if _, err := newFd.WriteString(fmt.Sprintf("%s\n", unknown.hostLine)); err != nil {
+			panic(err)
+		}
+		if _, err := newFd.WriteString(fmt.Sprintf("%s\n", unknown.ipLine)); err != nil {
+			panic(err)
+		}
 	}
 
 	// Read old known hosts file, to see which are old and new entries

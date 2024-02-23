@@ -89,7 +89,7 @@ func (s *stats) printStatsDueInterrupt(messages []string) {
 			))
 			continue
 		}
-		fmt.Println(fmt.Sprintf(" %s", message))
+		fmt.Printf(" %s\n", message)
 	}
 	time.Sleep(time.Second * time.Duration(config.InterruptTimeoutS))
 	dlog.Client.Resume()
@@ -126,12 +126,6 @@ func (s *stats) statsLine(connected, newConnections int, throttle int) string {
 		i++
 	}
 	return sb.String()
-}
-
-func (s *stats) numConnected() int {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	return s.connected
 }
 
 func percentOf(total float64, value float64) float64 {

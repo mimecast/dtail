@@ -71,8 +71,10 @@ func main() {
 	dlog.Start(ctx, &wg, source.Server)
 
 	if pprof != "" {
-		dlog.Server.Info("Starting PProf", pprof)
-		go http.ListenAndServe(pprof, nil)
+		dlog.Client.Info("Starting PProf", pprof)
+		go func() {
+			panic(http.ListenAndServe(pprof, nil))
+		}()
 	}
 
 	serv := server.New()

@@ -116,23 +116,19 @@ func (f *readFile) makeReader() (*bufio.Reader, *os.File, error) {
 	return f.makeFileReader()
 }
 
-func (f *readFile) makeFileReader() (*bufio.Reader, *os.File, error) {
-	var reader *bufio.Reader
-	fd, err := os.Open(f.filePath)
-	if err != nil {
-		return reader, fd, err
+func (f *readFile) makeFileReader() (reader *bufio.Reader, fd *os.File, err error) {
+	if fd, err = os.Open(f.filePath); err != nil {
+		return
 	}
 
 	if f.seekEOF {
-		fd.Seek(0, io.SeekEnd)
+		if _, err = fd.Seek(0, io.SeekEnd); err != nil {
+			return
+		}
 	}
 
 	reader, err = f.makeCompressedFileReader(fd)
-	if err != nil {
-		return reader, fd, err
-	}
-
-	return reader, fd, nil
+	return
 }
 
 func (f *readFile) makePipeReader() (*bufio.Reader, *os.File, error) {
@@ -249,7 +245,7 @@ func (f *readFile) truncated(fd *os.File) (bool, error) {
 	dlog.Common.Debug(f.filePath, "File truncation check")
 
 	// Can not seek currently open FD.
-	currentPosition, err := fd.Seek(0, os.SEEK_CUR)
+	currentPosition, err := fd.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return true, err
 	}

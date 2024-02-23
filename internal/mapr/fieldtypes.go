@@ -1,7 +1,5 @@
 package mapr
 
-import "fmt"
-
 type fieldType int
 
 // The possible field types.
@@ -16,14 +14,14 @@ const (
 func (w fieldType) String() string {
 	switch w {
 	case Field:
-		return fmt.Sprintf("Field")
+		return "Field"
 	case String:
-		return fmt.Sprintf("String")
+		return "String"
 	case Float:
-		return fmt.Sprintf("Float")
+		return "Float"
 	case FunctionStack:
-		return fmt.Sprintf("FunctionStack")
+		return "FunctionStack"
 	default:
-		return fmt.Sprintf("UndefFieldType")
+		return "UndefFieldType"
 	}
 }
