@@ -176,7 +176,7 @@ func (*GroupSet) writeQueryFile(query *Query) error {
 }
 
 // WriteResult writes the result to an CSV outfile.
-func (g *GroupSet) WriteResult(query *Query) error {
+func (g *GroupSet) WriteResult(query *Query, finalResult bool) error {
 	if !query.HasOutfile() {
 		return errors.New("No outfile specified")
 	}
@@ -204,7 +204,7 @@ func (g *GroupSet) WriteResult(query *Query) error {
 	}
 	defer fd.Close()
 
-	return g.resultWriteUnformatted(query, rows, fd, writeHeader)
+	return g.resultWriteUnformatted(query, rows, fd, writeHeader, finalResult)
 }
 
 func (g *GroupSet) getOutfileFD(query *Query) (*os.File, error) {
@@ -218,7 +218,7 @@ func (g *GroupSet) getOutfileFD(query *Query) (*os.File, error) {
 	return os.OpenFile(query.Outfile.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 }
 
-func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.File, writeHeader bool) error {
+func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.File, writeHeader, finalResult bool) error {
 	lastColumn := len(query.Select) - 1
 
 	if writeHeader {
@@ -248,7 +248,7 @@ func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.Fi
 		}
 	}
 
-	if !query.Outfile.AppendMode {
+	if !query.Outfile.AppendMode && finalResult {
 		tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
 		if err := os.Rename(tmpOutfile, query.Outfile.FilePath); err != nil {
 			os.Remove(tmpOutfile)
