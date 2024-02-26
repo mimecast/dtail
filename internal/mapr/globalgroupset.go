@@ -79,10 +79,10 @@ func (g *GlobalGroupSet) SwapOut() *GroupSet {
 }
 
 // WriteResult writes the result of a mapreduce aggregation to an outfile.
-func (g *GlobalGroupSet) WriteResult(query *Query) error {
+func (g *GlobalGroupSet) WriteResult(query *Query, finalResult bool) error {
 	g.semaphore <- struct{}{}
 	defer func() { <-g.semaphore }()
-	return g.GroupSet.WriteResult(query)
+	return g.GroupSet.WriteResult(query, finalResult)
 }
 
 // Result returns the result of the mapreduce aggregation as a string.
