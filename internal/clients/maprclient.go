@@ -101,7 +101,7 @@ func (c *MaprClient) Start(ctx context.Context, statsCh <-chan string) (status i
 	status = c.baseClient.Start(ctx, statsCh)
 	if c.cumulative {
 		dlog.Client.Debug("Received final mapreduce result")
-		c.reportResults()
+		c.reportResults(true)
 	}
 
 	return
@@ -145,16 +145,16 @@ func (c *MaprClient) periodicReportResults(ctx context.Context) {
 		select {
 		case <-time.After(c.query.Interval):
 			dlog.Client.Debug("Gathering interim mapreduce result")
-			c.reportResults()
+			c.reportResults(false)
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (c *MaprClient) reportResults() {
+func (c *MaprClient) reportResults(finalResult bool) {
 	if c.query.HasOutfile() {
-		c.writeResultsToOutfile()
+		c.writeResultsToOutfile(finalResult)
 		return
 	}
 	c.printResults()
@@ -208,14 +208,14 @@ func (c *MaprClient) printResults() {
 	dlog.Client.Raw(fmt.Sprintf("%s\n", result))
 }
 
-func (c *MaprClient) writeResultsToOutfile() {
+func (c *MaprClient) writeResultsToOutfile(finalResult bool) {
 	if c.cumulative {
-		if err := c.globalGroup.WriteResult(c.query); err != nil {
+		if err := c.globalGroup.WriteResult(c.query, finalResult); err != nil {
 			dlog.Client.FatalPanic(err)
 		}
 		return
 	}
-	if err := c.globalGroup.SwapOut().WriteResult(c.query); err != nil {
+	if err := c.globalGroup.SwapOut().WriteResult(c.query, true); err != nil {
 		dlog.Client.FatalPanic(err)
 	}
 }
