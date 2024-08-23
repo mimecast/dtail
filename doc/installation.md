@@ -5,7 +5,7 @@ The following installation guide has been tested successfully on CentOS 7. You m
 
 # Compile it
 
-Please check the [Quick Starting Guide](quickstart.md) for instructions on compiling DTail. It is recommended to automate the build process via your build pipeline (e.g. produce a deployable (.rpm, .deb, ...) via Jenkins). You don't have to use ``go get...`` to compile and install the binaries. You can also clone the repository and use ``make`` instead.
+Please check the [Quick Starting Guide](quickstart.md) for instructions on compiling DTail. It is recommended to automate the build process via your build pipeline (e.g. produce a deployable (.rpm, .deb, ...) via Jenkins). You don't have to use ``go install...`` to compile and install the binaries. You can also clone the repository and use ``make`` instead.
 
 ## Linux ACL support
 
