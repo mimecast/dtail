@@ -11,7 +11,7 @@ To compile and install all DTail binaries directly from GitHub run:
 
 ```console
 % for cmd in dcat dgrep dmap dtail dserver dtailhealth; do
-    go get github.com/mimecast/dtail/cmd/$cmd;
+    go get github.com/mimecast/dtail/cmd/$cmd@latest;
   done
 ```
 
