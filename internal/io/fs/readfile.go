@@ -103,7 +103,7 @@ func (f readFile) Start(ctx context.Context, ltx lcontext.LContext,
 
 	err = f.read(readCtx, fd, reader, rawLines, truncate)
 	close(rawLines)
-	// Filter may sends some data still. So wait until it is done here.
+	// Filter may send some data still. So wait until it is done here.
 	filterWg.Wait()
 
 	return err
@@ -236,7 +236,7 @@ func (f *readFile) transmittable(rawLine *bytes.Buffer, length, capacity int,
 	return line.New(rawLine, f.totalLineCount(), f.transmittedPerc(), f.globID), true
 }
 
-// Check wether log file is truncated. Returns nil if not.
+// Check whether log file is truncated. Returns nil if not.
 func (f *readFile) truncated(fd *os.File) (bool, error) {
 	if fd == nil {
 		return false, nil

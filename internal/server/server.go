@@ -30,7 +30,7 @@ type Server struct {
 	tailLimiter chan struct{}
 	// To run scheduled tasks (if configured)
 	sched *scheduler
-	// Mointor log files for pattern (if configured)
+	// Monitor log files for pattern (if configured)
 	cont *continuous
 }
 
@@ -138,7 +138,7 @@ func (s *Server) handleChannel(ctx context.Context, sshConn gossh.Conn,
 
 	dlog.Server.Info(user, "Invoking channel handler")
 	if newChannel.ChannelType() != "session" {
-		err := errors.New("Don'w allow other channel types than session")
+		err := errors.New("Don't allow other channel types than session")
 		dlog.Server.Error(user, err)
 		if err := newChannel.Reject(gossh.Prohibited, err.Error()); err != nil {
 			dlog.Server.Debug(err)
