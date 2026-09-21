@@ -293,7 +293,7 @@ func (a *Aggregate) Serialize(ctx context.Context) {
 	select {
 	case a.serialize <- struct{}{}:
 	case <-time.After(time.Minute):
-		dlog.Server.Warn("Starting to serialize mapredice data takes over a minute")
+		dlog.Server.Warn("Starting to serialize mapreduce data takes over a minute")
 	case <-ctx.Done():
 	}
 }
