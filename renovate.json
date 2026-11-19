@@ -1,0 +1,71 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "local>build/aws-applications/renovate-bot"
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": [
+        "/^com\\.mimecast:/"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "addLabels": [
+        "internal"
+      ],
+      "automerge": false,
+      "platformAutomerge": false,
+      "gitLabIgnoreApprovals": false
+    },
+    {
+      "matchPackageNames": [
+        "/^com\\.mimecast:/"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "addLabels": [
+        "internal"
+      ],
+      "automerge": true,
+      "platformAutomerge": true,
+      "gitLabIgnoreApprovals": true
+    },
+    {
+      "matchPackageNames": [
+        "/^,*/",
+        "!/^com\\.mimecast:/"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "automerge": true,
+      "platformAutomerge": true,
+      "gitLabIgnoreApprovals": true
+    },
+    {
+      "matchPackageNames": [
+        "/^,*/",
+        "!/^com\\.mimecast:/"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false,
+      "platformAutomerge": false,
+      "gitLabIgnoreApprovals": false
+    },
+    {
+      "allowedVersions": "/^(\\d{1,3})\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(\\.Final|-jre)?$/",
+      "matchPackageNames": [
+        "*"
+      ]
+    }
+  ],
+  "gitLabIgnoreApprovals": true,
+  "rebaseWhen": "behind-base-branch"
+}

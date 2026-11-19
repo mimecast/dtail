@@ -1,7 +1,38 @@
 component: dtail
 project_name: dtail
-full_path: 'https://github.com/mimecast/dtail.git'
-component_usage: Open Source
+full_path: 'https://gitlab.devuk.mimecast.lan/Storage/dtail'
+service_id: ''
+risk_category: Medium
+component_usage: OPENSOURCE
+application_purpose: Production
+tier: '4'
 dev_language:
   - Go
-application_type: Tooling
+development_strategy: Internally Developed
+application_type: Service
+code_repository_type: GitHub
+description: Open Source Repo
+jira_project: XXX
+jira_url: https://example.com/jira
+on_call: https://example.com/on-call
+ci_cd: Not Applicable
+usage: Used
+logging: 'false'
+exporting_logs: None
+dependencies: []
+owner:
+  name: none
+  id: none
+risk_factors:
+  authenticated_access: 'false'
+  credential_storage: 'false'
+  social_engineering: 'false'
+  access_control: 'false'
+  sensitive_data: 'false'
+  readonly_data: 'false'
+  externally_deployed: 'false'
+  remote_access: 'false'
+environment:
+  - none
+layer:
+  - none
