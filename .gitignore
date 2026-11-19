@@ -1,4 +1,5 @@
 *_proprietary.go
+*_proprietary_test.go
 *.csv
 *.tmp
 *.out
