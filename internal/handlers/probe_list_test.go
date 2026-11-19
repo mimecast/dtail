@@ -167,6 +167,37 @@ func TestProbeListOffersOnlyPermittedPaths(t *testing.T) {
 	}
 }
 
+// TestProbeListKeepsDirectoryOfDeniedFiles checks that a deny rule of the
+// files right in a directory ("!^<dir>/[^/]*$", which matches the directory
+// path only through its "$") does not hide the directory: its
+// subdirectories hold readable files, which a listing must lead to. The
+// files the rule denies stay hidden, and so does a directory a rule of that
+// shape denies as a whole.
+func TestProbeListKeepsDirectoryOfDeniedFiles(t *testing.T) {
+	tree := newProbeListTree(t)
+	logs := regexp.QuoteMeta(tree.logs)
+	handler := newProbeTestHandler(t, []string{
+		"readfiles:^" + logs + "/",
+		"readfiles:!^" + logs + "/[^/]*$",
+		"readfiles:!^" + logs + "/archive/.*$",
+	}, nil)
+	tests := []struct {
+		prefix string
+		want   []string
+	}{
+		{prefix: tree.root + "/", want: []string{"logs/"}},
+		{prefix: tree.logs + "/", want: []string{"empty/", "link-to-sub/", "private/", "sub/"}},
+		{prefix: tree.logs + "/sub/", want: []string{"nested.log"}},
+		{prefix: tree.logs + "/archive/", want: []string{}},
+	}
+	for _, tt := range tests {
+		answer := probeList(t, handler, tt.prefix)
+		if got := entryNames(answer); !slices.Equal(got, tt.want) {
+			t.Errorf("entries of %q = %q, want %q", tt.prefix, got, tt.want)
+		}
+	}
+}
+
 // TestProbeListIsNoExistenceOracle checks that a directory outside the
 // permissions, one that does not exist, an unreadable one and a forbidden
 // one inside a permitted tree all get the same answer, so a listing tells
@@ -425,7 +456,7 @@ func TestProbeListLimits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := newProbeTestHandler(t, permissions, nil)
-			handler.probeListLimits = tt.limits
+			handler.probeOverrides.listLimits = tt.limits
 			answer := probeList(t, handler, dir+"/")
 			if len(answer.Entries) == 0 || len(answer.Entries) > tt.max || !answer.Truncated {
 				t.Fatalf("%d entries, truncated %v, want 1 to %d and truncated", len(answer.Entries),
@@ -455,7 +486,7 @@ func TestProbeListTruncatedWithoutEntries(t *testing.T) {
 	quoted := regexp.QuoteMeta(dir)
 	permissions := []string{"readfiles:^" + quoted + "/", "readfiles:!^" + quoted + "/denied"}
 	handler := newProbeTestHandler(t, permissions, nil)
-	handler.probeListLimits = probeListLimits{maxChecks: 10}
+	handler.probeOverrides.listLimits = probeListLimits{maxChecks: 10}
 	for _, prefix := range []string{dir + "/", dir + "/d", dir + "/denied"} {
 		if answer := probeList(t, handler, prefix); len(answer.Entries) != 0 || !answer.Truncated ||
 			len(answer.Errors) != 0 {
@@ -473,7 +504,7 @@ func TestProbeListTruncatedWithoutEntries(t *testing.T) {
 		}
 	}
 	// The scan bound, too, leaves an empty listing truncated.
-	handler.probeListLimits = probeListLimits{maxScan: 5}
+	handler.probeOverrides.listLimits = probeListLimits{maxScan: 5}
 	if answer := probeList(t, handler, dir+"/denied"); len(answer.Entries) != 0 || !answer.Truncated {
 		t.Fatalf("scan bound: listing = %+v, want no entries and truncated", answer)
 	}

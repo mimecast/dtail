@@ -226,10 +226,11 @@ func TestNewHealthClientRejectsNoServer(t *testing.T) {
 }
 
 // TestNewHealthClientDisablesAuthKey checks that dtailhealth never registers
-// an auth key (task 7c4), also when it was not started with --no-auth-key
+// an auth key, also when it was not started with --no-auth-key
 // and the auth key's .pub file exists: the NoAuthKey its connections get
 // (ServerConnection.registerAuthKey) is set. The health handler of a
-// protocol 5 dserver from before 7c4 ends the session on AUTHKEY, so a
+// protocol 5 dserver that predates HealthHandler.ignoreAuthKey ends the
+// session on AUTHKEY, so a
 // healthy server was reported CRITICAL. The negative counterpart: a data
 // client keeps the registration enabled.
 func TestNewHealthClientDisablesAuthKey(t *testing.T) {

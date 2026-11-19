@@ -14,7 +14,7 @@ import (
 // serverless handler does (colored line format, the runtime's colorizer) and
 // checks that the line has no terminal colors unless the client config
 // enables them: --noColor and --plain clear Client.TermColorsEnable. The
-// serverless payload used to stay colored with --noColor (task v94).
+// serverless payload used to stay colored with --noColor.
 func TestServerlessColorizerHonorsTermColors(t *testing.T) {
 	const uncolored = "REMOTE|testhost|100|1|in.log|ERROR payload\n"
 	theme := brush.New(config.DefaultTermColors())

@@ -22,11 +22,14 @@ import (
 //     file name is offered that the user could not read.
 //   - A directory is offered unless the rules show that nothing beneath its
 //     resolved path is readable: no allow rule can match a path beneath it,
-//     or one deny rule already matches the directory path itself
-//     (sessionuser.PathRules.MayReadBeneath). This is an approximation:
-//     a directory denied only by what a deny rule requires after its "/"
-//     (e.g. "!^/var/log/private/.*\.log$"), or only by several deny rules
-//     together, is offered although nothing beneath it is readable. Such
+//     or one deny rule already matches the directory path itself (a
+//     match only at its end, e.g. by "$", must also match sample paths
+//     beneath it, so "!^/var/log/[^/]*$" does not hide /var/log;
+//     sessionuser.PathRules.MayReadBeneath). This is an approximation:
+//     a directory denied by a rule that does not match "<dir>/" itself
+//     ("!^/var/log/secret/.+$", "!^/var/log/private/.*\.log$"), or only
+//     by several deny rules together, is offered although nothing beneath
+//     it is readable (the cases: sessionuser.PathRules). Such
 //     directory names are revealed, but only names an allow rule covers;
 //     a glob read's "no permission" versus "no file" answers reveal as
 //     much.
@@ -61,7 +64,7 @@ import (
 //     permission" versus "no file" answers reveal single names. A timeout
 //     during the scan is reported as such (Truncated and probe: timed out).
 //     The scan keeps only the names the checks can reach (boundedNames), so
-//     its memory is bounded by probeListMaxChecks names, not
+//     it holds at most 2*probeListMaxChecks names at a time, not
 //     probeListMaxScan.
 const (
 	// probeListMaxScan is the number of directory entries a listing reads
@@ -99,7 +102,8 @@ type probeListLimits struct {
 type listRun struct {
 	*prober
 	answer *protocol.ProbeAnswer
-	// rules are the session user's rules, compiled once for the listing.
+	// rules are the session user's rules for this listing (compiled once
+	// per user).
 	rules listPathRules
 }
 
@@ -211,11 +215,14 @@ func (r *listRun) listableDir(dirPart string) (string, bool) {
 // valid UTF-8, at most the first listLimits.maxChecks of them in sorted
 // order (the only ones permittedEntries would check). It reads at most
 // listLimits.maxScan names and reports whether it stopped before the end of
-// the directory or dropped names past the first listLimits.maxChecks.
+// the directory or dropped names past the first listLimits.maxChecks. A
+// directory that can not be opened or read is logged at debug level only:
+// any user reaches these lines with Tab, e.g. for a directory the rules
+// offer but the OS does not let dserver read.
 func (r *listRun) scanDir(ctx context.Context, dir, base string) ([]string, bool) {
 	f, err := os.Open(dir)
 	if err != nil {
-		r.logger.Warn(r.logContext, "Probe: unable to list directory", dir, err)
+		r.logger.Debug(r.logContext, "Probe: unable to list directory", dir, err)
 		return nil, false
 	}
 	defer func() { _ = f.Close() }()
@@ -236,7 +243,7 @@ func (r *listRun) scanDir(ctx context.Context, dir, base string) ([]string, bool
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				r.logger.Warn(r.logContext, "Probe: unable to list directory", dir, err)
+				r.logger.Debug(r.logContext, "Probe: unable to list directory", dir, err)
 			}
 			return names.sorted()
 		}

@@ -32,9 +32,10 @@ const probeMaxErrorFileBytes = 256
 // (ServerHandler.probeReadTarget: a probe checks many paths every round of
 // every interactive session and logs one summary line instead), and sample
 // reads a validated
-// target (probe.Sample). The path listing (probe_list.go) also compiles
+// target (probe.Sample). The path listing (probe_list.go) also takes
 // the session user's rules once per listing (pathRules,
-// sessionuser.User.PathRules) to ask about directories, and lists the
+// sessionuser.User.PathRules, compiled once per user) to ask about
+// directories, and lists the
 // journal units with listUnits (the dserver's journal.UnitCache, or
 // journal.ListUnits without one), within listLimits;
 // listDisabled is Server.PathCompletionDisable.

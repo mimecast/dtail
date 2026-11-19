@@ -25,7 +25,7 @@ type mapCommand struct {
 // The Aggregate is the one and only aggregate path for BOTH server mode and
 // serverless: an Aggregate is always built, and the read commands feed it
 // directly via Processor (no aggregate line-channel). The former
-// regular aggregate implementation has been deleted (task hv0), so there is no
+// regular aggregate implementation has been deleted, so there is no
 // fallback branch.
 func newMapCommand(serverHandler *ServerHandler, args []string) (mapCommand, *mapaggregate.Aggregate, error) {
 

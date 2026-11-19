@@ -17,7 +17,7 @@ func (nopLineWriter) WriteLineData(lineContent []byte, lineNum uint64, sourceID 
 func (nopLineWriter) WriteServerMessage(message string) error { return nil }
 func (nopLineWriter) Flush() error                            { return nil }
 
-// TestDirectLineProcessorProcessLineNoAllocWhenTraceOff locks in task 1t0: the
+// TestDirectLineProcessorProcessLineNoAllocWhenTraceOff checks that the
 // per-line hot path must not allocate when trace logging is off (the default
 // production/output level). Before the fix, ProcessLine unconditionally built a
 // []any and boxed lineCount/lineNum (runtime.convT64) and sourceID

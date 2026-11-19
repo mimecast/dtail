@@ -45,11 +45,12 @@ func TestInteractiveStyleOffIsPlain(t *testing.T) {
 	var s *interactiveStyle
 	help := interactiveHelpText(config.Args{Mode: omode.GrepClient})
 	fields := fieldsText(queryCatalog, "", time.Unix(100, 0))
+	catalogLines := fieldsLines(queryCatalog, "", time.Unix(100, 0))
 	for name, pair := range map[string][2]string{
 		"banner":  {s.banner(interactiveBanner), interactiveBanner},
 		"failure": {s.failure("reload failed: x"), "reload failed: x"},
 		"help":    {s.help(help), help},
-		"fields":  {s.fields(fields), fields},
+		"fields":  {s.fields(catalogLines), fields},
 		"prompt":  {s.prompt(), interactivePrompt},
 		"show": {s.keyValues([]keyValue{{key: "mode", value: "grep"}, {key: "regex", value: `"a b"`}}),
 			`mode=grep regex="a b"`},
@@ -69,15 +70,16 @@ func TestInteractiveStylePaints(t *testing.T) {
 	theme := config.DefaultTermColors().Interactive
 	help := interactiveHelpText(config.Args{Mode: omode.GrepClient})
 	fields := fieldsText(queryCatalog, "", time.Unix(100, 0))
+	catalogLines := fieldsLines(queryCatalog, "", time.Unix(100, 0))
 	painted := map[string][2]string{
 		"failure": {s.failure("reload failed"), "reload failed"},
 		"help":    {s.help(help), help},
-		"fields":  {s.fields(fields), fields},
+		"fields":  {s.fields(catalogLines), fields},
 		"prompt":  {s.prompt(), interactivePrompt},
 	}
 	// A catalog with probe errors, notes and a truncated answer.
 	full := fieldsText(fieldsCatalog, "", fieldsCatalog.Updated)
-	painted["fields with errors"] = [2]string{s.fields(full), full}
+	painted["fields with errors"] = [2]string{s.fields(fieldsLines(fieldsCatalog, "", fieldsCatalog.Updated)), full}
 	for name, pair := range painted {
 		if pair[0] == pair[1] {
 			t.Errorf("%s is not painted: %q", name, pair[0])
@@ -207,7 +209,7 @@ func TestInteractiveStylePaintsEachLine(t *testing.T) {
 func TestInteractiveStyleFieldsEmptyIsHint(t *testing.T) {
 	s := testInteractiveStyle()
 	theme := config.DefaultTermColors().Interactive
-	empty := fieldsText(catalogSnapshot{}, "", time.Unix(100, 0))
+	empty := fieldsLines(catalogSnapshot{}, "", time.Unix(100, 0))
 	if got, want := s.fields(empty), s.paint(theme.Hint, fieldsEmptyMessage); got != want {
 		t.Fatalf("empty :fields = %q, want the hint %q", got, want)
 	}
@@ -242,5 +244,98 @@ func TestEditorPromptOnNarrowTerminal(t *testing.T) {
 				t.Fatalf("editorPrompt(paused %v, width %d) = %q, want %q", tt.paused, tt.width, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestInteractiveStyleFieldsPaintsByStructure: the :fields answer is painted
+// from what each line is, not from what its text looks like. Names and
+// notes come from the servers: a field whose name holds the separator of
+// the sample values is one key, a note ending in a colon is no heading, and
+// a field named like a heading or an error line is a field.
+func TestInteractiveStyleFieldsPaintsByStructure(t *testing.T) {
+	s := testInteractiveStyle()
+	theme := config.DefaultTermColors().Interactive
+	odd := "a" + fieldsSamplesSeparator + "b"
+	snap := catalogSnapshot{
+		DefaultLogFormat: "default",
+		Servers:          []string{"srv1"},
+		Updated:          time.Unix(100, 0),
+		Formats: map[string]catalogFormat{"default": {
+			Tables: map[string]map[string][]string{
+				"WEB": {odd: {"1"}, "probe error on x:": {"2"}, "plain": {}},
+			},
+			Notes: []string{"grouped by table:"},
+		}},
+		Errors: []catalogError{{Server: "srv1", Error: "read: no file to read"}},
+	}
+	lines := fieldsLines(snap, "", time.Unix(100, 0))
+	got := s.fields(lines)
+	if plain := fieldsText(snap, "", time.Unix(100, 0)); stripANSI(got) != plain {
+		t.Fatalf("painted :fields without its colors = %q, want %q", stripANSI(got), plain)
+	}
+	want := []string{
+		s.paint(theme.Heading, "fields found by the probe of srv1, updated 0s ago; default log format default"),
+		s.paint(theme.Heading, "log format default:"),
+		s.paint(theme.Heading, "  table WEB:"),
+		fieldsSampleIndent + s.paint(theme.Key, odd) + strings.Repeat(" ", len("probe error on x:")-len(odd)) +
+			fieldsSamplesSeparator + s.paint(theme.Value, `"1"`),
+		fieldsSampleIndent + s.paint(theme.Key, "plain"),
+		fieldsSampleIndent + s.paint(theme.Key, "probe error on x:") + fieldsSamplesSeparator +
+			s.paint(theme.Value, `"2"`),
+		"  note: grouped by table:",
+		s.paint(theme.Error, "probe error on srv1: read: no file to read"),
+	}
+	if painted := strings.Split(got, "\n"); !slices.Equal(painted, want) {
+		t.Fatalf("painted :fields =\n%q\nwant\n%q", painted, want)
+	}
+}
+
+// TestInteractiveHelpIsPaintedByKind: the :help text is painted by reading
+// its lines (interactiveStyle.help), which is safe as every line is a
+// constant of dtail. This holds the help of every mode to what that
+// reading relies on: exactly the commands line and the line introducing
+// the examples are headings, and every example line is its command, in the
+// command style, and, after a run of blanks, its explanation in the
+// example style, with no run of blanks inside the command.
+func TestInteractiveHelpIsPaintedByKind(t *testing.T) {
+	s := testInteractiveStyle()
+	theme := config.DefaultTermColors().Interactive
+	query := "from STATS select count($line) group by $hostname"
+	for _, args := range []config.Args{
+		{Mode: omode.GrepClient, What: "/var/log/app.log", RegexStr: "x"},
+		{Mode: omode.TailClient, What: "/var/log/app.log", RegexStr: "x"},
+		{Mode: omode.TailClient, What: "/var/log/app.log", QueryStr: query},
+		{Mode: omode.MapClient, What: "/var/log/app.log", QueryStr: query},
+		{Mode: omode.CatClient, What: "/var/log/app.log"},
+	} {
+		plain := strings.Split(interactiveHelpText(args), "\n")
+		painted := strings.Split(s.help(strings.Join(plain, "\n")), "\n")
+		headings, examples := 0, 0
+		for i, line := range plain {
+			switch {
+			case painted[i] == s.paint(theme.Heading, line):
+				headings++
+				if i != 0 && !strings.HasSuffix(line, "e.g.:") {
+					t.Errorf("mode %s: line %q is painted as a heading", args.Mode, line)
+				}
+			case strings.HasPrefix(line, "  :"):
+				examples++
+				command, explanation, _ := strings.Cut(line[2:], "  ")
+				want := "  " + s.paint(theme.Command, command)
+				if explanation != "" {
+					want += strings.Repeat(" ", len(line)-2-len(command)-len(strings.TrimLeft(explanation, " "))) +
+						s.paint(theme.Example, strings.TrimLeft(explanation, " "))
+				}
+				if painted[i] != want {
+					t.Errorf("mode %s: example %q painted %q, want %q", args.Mode, line, painted[i], want)
+				}
+			case painted[i] != line:
+				t.Errorf("mode %s: line %q is painted: %q", args.Mode, line, painted[i])
+			}
+		}
+		if headings != 2 || examples == 0 {
+			t.Errorf("mode %s: %d headings and %d examples painted, want 2 headings and examples",
+				args.Mode, headings, examples)
+		}
 	}
 }

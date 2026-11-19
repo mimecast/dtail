@@ -203,7 +203,7 @@ func TestNewControlLinesFallsBackWithoutTerminal(t *testing.T) {
 	}
 	defer func() { _ = tty.Close() }()
 	client := newPauseTestClient(newPausingTestLogger())
-	lines := client.newControlLines(tty, client.newInteractivePause(), nil)
+	lines := client.newControlLines(tty, client.newInteractivePause(), nil, testEditorDeps())
 	defer lines.close()
 	if _, ok := lines.(*scannerLines); !ok {
 		t.Fatalf("control lines = %T, want *scannerLines", lines)
@@ -215,5 +215,70 @@ func TestNewControlLinesFallsBackWithoutTerminal(t *testing.T) {
 	}
 	if _, err := lines.ReadLine(); !errors.Is(err, io.EOF) {
 		t.Fatalf("ReadLine at end: %v, want io.EOF", err)
+	}
+}
+
+// testEditorDeps are editor dependencies for tests: no forced-exit hook is
+// registered with the process (parallel tests would overwrite each other's),
+// no environment is read, so the external editor is the fallback, and no
+// signal is watched: SIGCONT and SIGWINCH go to the whole test process, so
+// the test of one editor's signals would have every other editor write to
+// its terminal (bracketed paste on again, a redraw). A test of the signals
+// sets watchSignals to watchTTYSignals.
+func testEditorDeps() editorDeps {
+	return editorDeps{
+		setForceExitHook: func(func()) {},
+		getenv:           func(string) string { return "" },
+		watchSignals:     func(func(), func()) func() { return func() {} },
+	}
+}
+
+// TestEditorDepsDefaults: dependencies left nil are the process's, so the
+// zero value is safe to pass, and set ones are kept.
+func TestEditorDepsDefaults(t *testing.T) {
+	deps := editorDeps{}.withDefaults()
+	if deps.setForceExitHook == nil || deps.getenv == nil || deps.watchSignals == nil {
+		t.Fatalf("zero dependencies left nil: %+v", deps)
+	}
+	process := processEditorDeps()
+	if process.setForceExitHook == nil || process.getenv == nil || process.watchSignals == nil {
+		t.Fatalf("process dependencies left nil: %+v", process)
+	}
+	kept := editorDeps{getenv: func(string) string { return "kept" }}.withDefaults()
+	if kept.getenv("EDITOR") != "kept" {
+		t.Fatal("a set dependency was replaced")
+	}
+}
+
+// TestCompleteCurrentValueWithControlCharacter: Tab after a value flag
+// inserts the current value, but not one holding a control or format
+// character (a tab or line break given on the command line, U+202E): the
+// Terminal would write it raw and miscount the columns. The line stays as
+// it is and a hint says why; a printable value is still inserted.
+func TestCompleteCurrentValueWithControlCharacter(t *testing.T) {
+	for flagName, set := range map[string]func(*config.Args, string){
+		"--regex": func(a *config.Args, v string) { a.RegexStr = v },
+		"--grep":  func(a *config.Args, v string) { a.RegexStr = v },
+		"--files": func(a *config.Args, v string) { a.What = v },
+	} {
+		line := ":reload " + flagName + " "
+		for _, value := range []string{"a\tb", "a\nb", "a\x1b[2Jb", "a" + string(rune(0x202e)) + "b",
+			"a" + string(rune(0x2028)) + "b"} {
+			args := completeGrepArgs
+			set(&args, value)
+			got := completeInteractive(line, len(line), args, nil)
+			if got.line != line || got.pos != len(line) || got.changed || len(got.candidates) != 0 {
+				t.Errorf("%s with value %q: completion %+v, want the line unchanged", flagName, value, got)
+			}
+			if !strings.Contains(got.hint, flagName) || hasHiddenRune(got.hint) {
+				t.Errorf("%s with value %q: hint %q, want one naming the flag", flagName, value, got.hint)
+			}
+		}
+		args := completeGrepArgs
+		set(&args, "it's ok")
+		got := completeInteractive(line, len(line), args, nil)
+		if want := line + `'it'\''s ok'`; got.line != want || got.hint != "" {
+			t.Errorf("%s with a printable value: %+v, want line %q and no hint", flagName, got, want)
+		}
 	}
 }

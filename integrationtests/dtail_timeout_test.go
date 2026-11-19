@@ -11,7 +11,7 @@ import (
 )
 
 // TestDTailTimeoutExits guards the client-side --timeout deadline for the dtail
-// follow client (task xu0). Historically the server-side read deadline fired at
+// follow client. Historically the server-side read deadline fired at
 // N seconds, but in tail+query streaming mode the session stayed alive via the
 // map/aggregate command, so the client treated the closed read as a transient
 // drop and auto-reconnected for another N-second cycle indefinitely - the

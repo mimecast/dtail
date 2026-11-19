@@ -452,6 +452,9 @@ func TestAnalyzePartialMarksRejectedTokens(t *testing.T) {
 		"select foo where a == \"1\"",
 		`select foo outfile ""`,
 		`select foo outfile "a" "b"`,
+		"select foo outfile append:x.csv",
+		"select foo outfile append append:x.csv",
+		`select foo outfile "append:x.csv"`,
 		"foo select x",
 		`"select" x`,
 		`"SeleCt"0`,
@@ -773,4 +776,33 @@ var fixedCandidates = map[Expect]string{
 	ExpectAnd: "and", ExpectBy: "by", ExpectAppend: "append", ExpectAssign: "=",
 	ExpectTable: "stats", ExpectLogFormat: "generickv", ExpectNumber: "7",
 	ExpectOutfilePath: `"out.csv"`,
+}
+
+// TestAnalyzePartialOutfileAppendColon: an outfile path starting with
+// "append:" is unknown, as parseOutfileClause rejects it, with and without
+// the append word and in quotes; the documented "./append:" spelling of a
+// file really named so, and a path merely holding "append:", are strings.
+func TestAnalyzePartialOutfileAppendColon(t *testing.T) {
+	tests := []struct {
+		query string
+		want  TokenKind
+	}{
+		{"select foo outfile append:x.csv", TokenUnknown},
+		{"select foo outfile append append:x.csv", TokenUnknown},
+		{`select foo outfile "append:x.csv"`, TokenUnknown},
+		{"select foo outfile append:", TokenUnknown},
+		{"select foo outfile ./append:x.csv", TokenString},
+		{"select foo outfile append ./append:x.csv", TokenString},
+		{"select foo outfile xappend:x.csv", TokenString},
+	}
+	for _, tt := range tests {
+		_, err := NewQuery(tt.query, logging.NopLogger{})
+		if rejected := tt.want == TokenUnknown; (err != nil) != rejected {
+			t.Errorf("NewQuery(%q) error = %v, want rejected %v", tt.query, err, rejected)
+		}
+		tokens := AnalyzePartial(tt.query + " ").Tokens
+		if got := tokens[len(tokens)-1].Kind; got != tt.want {
+			t.Errorf("AnalyzePartial(%q): path kind = %v, want %v", tt.query, got, tt.want)
+		}
+	}
 }

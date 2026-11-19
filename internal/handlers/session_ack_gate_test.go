@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -93,6 +94,76 @@ func TestSessionAckGateDefersHeldGenerationMessages(t *testing.T) {
 	default:
 		t.Fatal("flush not acknowledged once the held output went out")
 	}
+}
+
+// TestSessionAckGateDefersHeldGenerationFlushErrors: the flush error of a
+// read batch of a held generation waits for that generation's
+// acknowledgement on each of the three ways the output goroutine takes a
+// flush error (tryReadQueued, ahead of a server message, waitForOutput),
+// while a flush error of no generation or of another one is not held.
+func TestSessionAckGateDefersHeldGenerationFlushErrors(t *testing.T) {
+	flushError := func(generation uint64) string {
+		return encodeGeneratedMessage(generation, "Unable to flush session output: stalled\n")
+	}
+	ack := sessionAck{message: sessionAckUpdateOKPrefix + " 2", generation: 3}
+
+	t.Run("queued", func(t *testing.T) {
+		handler := newSessionTestHandler("ack-gate-flush-user")
+		c := handler.outputCoordinator
+		drainQueuedMessages(c)
+		c.holdSessionOutput(3)
+		c.reportFlushError(0, errors.New("stalled"))
+		c.reportFlushError(2, errors.New("stalled"))
+		requireMessages(t, drainQueuedMessages(c), flushError(0), flushError(2))
+		c.reportFlushError(3, errors.New("stalled"))
+		requireMessages(t, drainQueuedMessages(c))
+		if !c.ackGate.pending() {
+			t.Fatal("no output pending although a flush error is deferred")
+		}
+		c.sendSessionAck(ack)
+		requireMessages(t, drainQueuedMessages(c), ack.message, flushError(3))
+	})
+
+	t.Run("ahead of a server message", func(t *testing.T) {
+		handler := newSessionTestHandler("ack-gate-flush-prio-user")
+		c := handler.outputCoordinator
+		drainQueuedMessages(c)
+		c.holdSessionOutput(3)
+		c.reportFlushError(3, errors.New("stalled"))
+		result := c.takeServerMessage("running workload's warning")
+		if result.kind != outputReadServerMessage || result.message != "running workload's warning" {
+			t.Fatalf("server message = %+v, want it delivered, the held flush error overtakes nothing", result)
+		}
+		if c.hasDeferredServer {
+			t.Fatal("server message kept back for a flush error that was deferred")
+		}
+		c.sendSessionAck(ack)
+		requireMessages(t, drainQueuedMessages(c), ack.message, flushError(3))
+	})
+
+	t.Run("while waiting", func(t *testing.T) {
+		handler := newSessionTestHandler("ack-gate-flush-wait-user")
+		c := handler.outputCoordinator
+		drainQueuedMessages(c)
+		c.holdSessionOutput(3)
+		c.reportFlushError(3, errors.New("stalled"))
+		if result := c.waitForOutput(nil, nil, 0); result.kind != outputReadRetry {
+			t.Fatalf("waitForOutput = %+v, want a retry with the flush error deferred", result)
+		}
+		c.sendSessionAck(ack)
+		requireMessages(t, drainQueuedMessages(c), ack.message, flushError(3))
+	})
+
+	t.Run("not held: a flush error still goes before a server message", func(t *testing.T) {
+		handler := newSessionTestHandler("ack-gate-flush-free-user")
+		c := handler.outputCoordinator
+		drainQueuedMessages(c)
+		c.reportFlushError(3, errors.New("stalled"))
+		if result := c.takeServerMessage("warning"); result.message != flushError(3) {
+			t.Fatalf("takeServerMessage = %+v, want the flush error first", result)
+		}
+		requireMessages(t, drainQueuedMessages(c), "warning")
+	})
 }
 
 // TestSessionAckGateKeepsHoldForOtherAcks: an acknowledgement of no or of

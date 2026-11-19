@@ -1,7 +1,9 @@
 package connectors
 
 import (
+	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -75,6 +77,53 @@ func (h *gatedAckHandler) sentCommands() []string {
 	return append([]string(nil), h.commands...)
 }
 
+// abandonCalls records the abandon callbacks of restoreStartSpec.
+type abandonCalls []bool
+
+func (c *abandonCalls) record(abandoned bool) { *c = append(*c, abandoned) }
+
+// abandoningHandler is a gatedAckHandler that aggregates, as a
+// handlers.MaprHandler: it is told when its start's workload is abandoned.
+type abandoningHandler struct {
+	*gatedAckHandler
+	abandoned abandonCalls
+}
+
+func (h *abandoningHandler) AbandonStartWorkload(abandoned bool) { h.abandoned.record(abandoned) }
+
+// TestRestoreStartSessionSpecTellsAggregatingHandler: the connection's
+// deferred rollback reaches a handler that aggregates, and a handler that
+// does not is left alone.
+func TestRestoreStartSessionSpecTellsAggregatingHandler(t *testing.T) {
+	handler := &abandoningHandler{gatedAckHandler: newGatedAckHandler(
+		handlers.SessionAck{Action: "start", Generation: 1}, handlers.SessionAck{Action: "update", Generation: 2})}
+	conn := &ServerConnection{server: "srv1", handler: handler}
+	conn.sessionState.updateAckMaxWait = 50 * time.Millisecond
+	if replaced, err := conn.ReplaceStartSessionSpec(startSpecReloaded); !replaced || err != nil {
+		t.Fatalf("ReplaceStartSessionSpec() = %v, %v, want true", replaced, err)
+	}
+	startErr := make(chan error, 1)
+	go func() {
+		startErr <- startInitialSession(context.Background(), "srv1", handler, &conn.sessionState,
+			startSpecInitial, logging.NopLogger{})
+	}()
+	<-handler.waiting
+
+	if _, err := conn.RestoreStartSessionSpec(startSpecInitial); !errors.Is(err, ErrSessionRollbackDeferred) {
+		t.Fatalf("RestoreStartSessionSpec() error = %v, want ErrSessionRollbackDeferred", err)
+	}
+	if !slices.Equal(handler.abandoned, abandonCalls{true}) {
+		t.Fatalf("abandon calls = %v, want one true", handler.abandoned)
+	}
+	close(handler.gate)
+	if err := <-startErr; err != nil {
+		t.Fatalf("startInitialSession() error = %v", err)
+	}
+
+	// A handler without AbandonStartWorkload gets a callback doing nothing.
+	abandonStartWorkload(newGatedAckHandler())(true)
+}
+
 // startWithReloadedSpec replaces the start spec of state with
 // startSpecReloaded, as a :reload does while the connection is still
 // connecting, and starts the session on handler in the background; it
@@ -86,7 +135,7 @@ func startWithReloadedSpec(t *testing.T, handler *gatedAckHandler, state *commit
 	}
 	startErr := make(chan error, 1)
 	go func() {
-		startErr <- startInitialSession("srv1", handler, state, startSpecInitial, logging.NopLogger{})
+		startErr <- startInitialSession(context.Background(), "srv1", handler, state, startSpecInitial, logging.NopLogger{})
 	}()
 	<-handler.waiting
 	return startErr
@@ -101,15 +150,19 @@ func startWithReloadedSpec(t *testing.T, handler *gatedAckHandler, state *commit
 // instead of leaving the server on the reloaded spec while the client and
 // the other servers are on the previous one.
 func TestRestoreStartSpecDeferredUntilStartCommits(t *testing.T) {
-	shortenUpdateAckMaxWait(t, 50*time.Millisecond)
 	handler := newGatedAckHandler(handlers.SessionAck{Action: "start", Generation: 1},
 		handlers.SessionAck{Action: "update", Generation: 2})
-	var state committedSessionState
+	state := committedSessionState{updateAckMaxWait: 50 * time.Millisecond}
 	startErr := startWithReloadedSpec(t, handler, &state)
 
-	restored, err := state.restoreStartSpec(startSpecInitial)
+	var abandoned abandonCalls
+	restored, err := state.restoreStartSpec(startSpecInitial, abandoned.record)
 	if restored || !errors.Is(err, ErrSessionRollbackDeferred) {
 		t.Fatalf("restoreStartSpec() = %v, %v during the start, want ErrSessionRollbackDeferred", restored, err)
+	}
+	// The handler is told that the start's workload is abandoned.
+	if !slices.Equal(abandoned, abandonCalls{true}) {
+		t.Fatalf("abandon calls = %v, want one true", abandoned)
 	}
 	close(handler.gate)
 	if err := <-startErr; err != nil {
@@ -129,12 +182,11 @@ func TestRestoreStartSpecDeferredUntilStartCommits(t *testing.T) {
 // rollback is not acknowledged fails, so its connection ends instead of
 // running the reloaded spec the client rolled back.
 func TestDeferredStartRollbackFailureFailsStart(t *testing.T) {
-	shortenUpdateAckMaxWait(t, 50*time.Millisecond)
 	handler := newGatedAckHandler(handlers.SessionAck{Action: "start", Generation: 1})
-	var state committedSessionState
+	state := committedSessionState{updateAckMaxWait: 50 * time.Millisecond}
 	startErr := startWithReloadedSpec(t, handler, &state)
 
-	if _, err := state.restoreStartSpec(startSpecInitial); !errors.Is(err, ErrSessionRollbackDeferred) {
+	if _, err := state.restoreStartSpec(startSpecInitial, func(bool) {}); !errors.Is(err, ErrSessionRollbackDeferred) {
 		t.Fatalf("restoreStartSpec() error = %v, want ErrSessionRollbackDeferred", err)
 	}
 	close(handler.gate)
@@ -155,8 +207,12 @@ func TestRestoreStartSpecAfterStartFinished(t *testing.T) {
 		t.Fatalf("startInitialSession() error = %v", err)
 	}
 
-	if restored, err := state.restoreStartSpec(startSpecInitial); restored || err != nil {
+	var abandoned abandonCalls
+	if restored, err := state.restoreStartSpec(startSpecInitial, abandoned.record); restored || err != nil {
 		t.Fatalf("restoreStartSpec() = %v, %v after the start, want false, nil", restored, err)
+	}
+	if len(abandoned) != 0 {
+		t.Fatalf("abandon calls = %v for a start that had finished, want none", abandoned)
 	}
 	if spec, generation, _ := state.snapshot(); generation != 1 || spec.Regex != "WARN" {
 		t.Fatalf("generation %d spec %+v, want the started spec at 1 for the caller to update", generation, spec)
@@ -173,8 +229,12 @@ func TestRestoreStartSpecBeforeStart(t *testing.T) {
 	if replaced, err := state.replaceStartSpec(startSpecReloaded); !replaced || err != nil {
 		t.Fatalf("replaceStartSpec() = %v, %v, want true", replaced, err)
 	}
-	if restored, err := state.restoreStartSpec(startSpecInitial); !restored || err != nil {
+	var abandoned abandonCalls
+	if restored, err := state.restoreStartSpec(startSpecInitial, abandoned.record); !restored || err != nil {
 		t.Fatalf("restoreStartSpec() = %v, %v, want true", restored, err)
+	}
+	if len(abandoned) != 0 {
+		t.Fatalf("abandon calls = %v for a start that had not begun, want none", abandoned)
 	}
 	if state.startSpec.Regex != "ERROR" {
 		t.Fatalf("start spec %+v, want the previous spec", state.startSpec)
@@ -193,13 +253,12 @@ func TestRestoreStartSpecBeforeStart(t *testing.T) {
 // follow-up and then finds the start begun and the previous spec
 // committed, to update on top of.
 func TestDeferredStartRollbackNotCommittedUntilAcknowledged(t *testing.T) {
-	shortenUpdateAckMaxWait(t, 50*time.Millisecond)
 	handler := newGatedAckHandler(handlers.SessionAck{Action: "start", Generation: 1},
 		handlers.SessionAck{Action: "update", Generation: 2})
 	handler.followUpGate = make(chan struct{})
-	var state committedSessionState
+	state := committedSessionState{updateAckMaxWait: 50 * time.Millisecond}
 	startErr := startWithReloadedSpec(t, handler, &state)
-	if _, err := state.restoreStartSpec(startSpecInitial); !errors.Is(err, ErrSessionRollbackDeferred) {
+	if _, err := state.restoreStartSpec(startSpecInitial, func(bool) {}); !errors.Is(err, ErrSessionRollbackDeferred) {
 		t.Fatalf("restoreStartSpec() error = %v, want ErrSessionRollbackDeferred", err)
 	}
 	close(handler.gate)
@@ -230,8 +289,7 @@ func TestDeferredStartRollbackNotCommittedUntilAcknowledged(t *testing.T) {
 // false, so the caller updates the committed session, and defers nothing.
 func TestRestoreStartSpecStartFinishedWhileGivingUp(t *testing.T) {
 	const maxWait = 100 * time.Millisecond
-	shortenUpdateAckMaxWait(t, maxWait)
-	var state committedSessionState
+	state := committedSessionState{updateAckMaxWait: maxWait}
 	state.applyMu.Lock()
 	state.started = true
 	state.finishStart()
@@ -240,8 +298,14 @@ func TestRestoreStartSpecStartFinishedWhileGivingUp(t *testing.T) {
 		state.applyMu.Unlock()
 	}()
 
-	if restored, err := state.restoreStartSpec(startSpecInitial); restored || err != nil {
+	var abandoned abandonCalls
+	if restored, err := state.restoreStartSpec(startSpecInitial, abandoned.record); restored || err != nil {
 		t.Fatalf("restoreStartSpec() = %v, %v, want false, nil", restored, err)
+	}
+	// Told before the deferral was tried, and taken back as it was not
+	// deferred: the caller rolls the committed session back by an update.
+	if !slices.Equal(abandoned, abandonCalls{true, false}) {
+		t.Fatalf("abandon calls = %v, want true then false", abandoned)
 	}
 	if _, deferred := state.finishStart(); deferred {
 		t.Fatal("restoreStartSpec() deferred a follow-up after the start finished")

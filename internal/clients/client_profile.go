@@ -20,6 +20,12 @@ type clientProfile struct {
 	// aggregate data from before the commit on (see
 	// maprclient.SessionState.ExpectAggregates).
 	expectQuery func(pending bool)
+	// reloading, if set, is told that an interactive reload began to update
+	// the connections (true) and that it ended, committed or not (false),
+	// so that aggregates a server sends between its acknowledgement and
+	// the commit go to the committed query's result (see
+	// applyInteractiveReload and maprclient.SessionState.Switching).
+	reloading func(pending bool)
 	// failedCommandStatus is the least exit status of a connection whose
 	// server reported a failed command (see sessionStatus); 0 leaves the
 	// handler's status as it is, so that dtail's follow mode, dmap (whose

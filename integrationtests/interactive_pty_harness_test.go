@@ -68,6 +68,7 @@ func (f ptyStepFailure) Error() string {
 // is killed, so the run fails at once instead of sending input that the
 // scenario did not reach.
 const ptyHarnessScript = `
+import errno
 import json
 import os
 import pty
@@ -156,6 +157,12 @@ def run_step(index, step, start):
     try:
         os.write(fd, data.encode("utf-8"))
     except OSError as err:
+        # macOS (unlike Linux, which discards the input) fails a write to the
+        # PTY master with EIO once the process closed its side, e.g. after it
+        # exited. The input has no reader then, as on Linux; a later step
+        # waiting for output still fails as the process exited.
+        if err.errno == errno.EIO:
+            return None
         return "unable to send the input: %s" % err
     return None
 

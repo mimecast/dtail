@@ -159,7 +159,8 @@ func (h *HealthHandler) ignoreAfterEnd(ctx context.Context, argc int, commandNam
 // ignoreAuthKey drops an AUTHKEY command without an answer and without
 // claiming the session's shutdown, so the health command the client sends
 // after it is still answered OK. dtailhealth registered the public key of
-// its auth key (<auth key>.pub) before its health command until task 7c4,
+// its auth key (<auth key>.pub) before its health command until its
+// client stopped registering one (clients.NewHealthClient sets NoAuthKey),
 // and dtailhealth binaries of protocol 5 from before that still do; the
 // health handler used to report it as unknown and end the session, so a
 // healthy server was reported CRITICAL. Nothing is registered: the health

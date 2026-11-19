@@ -24,8 +24,10 @@ type pathCompletionSource struct {
 // completeFilesValue completes the word at the cursor when it is inside the
 // value of :reload --files (after "--files " in a started value, quoted or
 // not, or in "--files=..."), in a mode whose :reload accepts --files. It
-// reports false elsewhere, also where the value has not started (then the
-// current files are inserted as before).
+// reports false elsewhere, also where the value has not started and the
+// session reads files (then the current files are inserted,
+// reloadWordCandidates); in a session that reads none, a value not started
+// is completed like a started empty one (filesValueAt).
 //
 // The value is split like session.splitFiles does: at commas, blanks
 // around an entry trimmed, so the last entry is completed. Its directory
@@ -49,7 +51,7 @@ func completeFilesValue(line string, pos int, args config.Args, source pathCompl
 		return completion{}, false
 	}
 	parsed := splitInteractiveArgsPartial(rest)
-	value, valueStart, ok := flagValueOf(parsed, filesFlagNames)
+	value, valueStart, ok := filesValueAt(parsed, args.What)
 	if !ok {
 		return completion{}, false
 	}
@@ -111,6 +113,37 @@ func flagValueOf(parsed partialArgs, names []string) (string, int, bool) {
 	return "", 0, false
 }
 
+// filesValueAt returns the --files value the cursor is in and its offset
+// in parsed.current, like flagValueOf, and also takes a value that has not
+// started (the cursor right after "--files " or "-files ") as an empty
+// one when the session reads no files (namesNoFile(current), its --files
+// value): there is no current value to insert then, and the session's hint
+// (sessionNoFilesText) promises that Tab lists paths, so the working
+// directory is listed as after "--files=".
+func filesValueAt(parsed partialArgs, current string) (string, int, bool) {
+	if value, start, ok := flagValueOf(parsed, filesFlagNames); ok {
+		return value, start, true
+	}
+	n := len(parsed.tokens)
+	if parsed.started || parsed.escaped || n == 0 || !slices.Contains(filesFlagNames, parsed.tokens[n-1]) ||
+		!namesNoFile(current) {
+		return "", 0, false
+	}
+	return "", 0, true
+}
+
+// namesNoFile reports whether the --files value files names no file to
+// insert again: every entry (split as session.splitFiles does) is empty or
+// stdin ("-", probeStdin, which a serverless session without files gets).
+func namesNoFile(files string) bool {
+	for _, entry := range strings.Split(files, ",") {
+		if entry = strings.TrimSpace(entry); entry != "" && entry != probeStdin {
+			return false
+		}
+	}
+	return true
+}
+
 // lastFilesEntryStart returns the offset in a --files value where its last
 // comma-separated entry starts, after the blanks session.splitFiles trims.
 func lastFilesEntryStart(value string) int {
@@ -161,7 +194,7 @@ func hiddenRune(r rune) bool {
 // hasHiddenRune reports whether s holds a control or format character
 // (hiddenRune). Completion offers no server or log text holding one: the
 // path completion (readableFilesName) and the query completion
-// (completeQueryWord) both drop it.
+// (queryCandidateSource.groups) both drop it.
 func hasHiddenRune(s string) bool {
 	return strings.IndexFunc(s, hiddenRune) >= 0
 }

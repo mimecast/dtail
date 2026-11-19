@@ -103,13 +103,7 @@ func (s *Serverless) ReplaceStartSessionSpec(spec sessionspec.Spec) (bool, error
 // RestoreStartSessionSpec rolls the start spec back after a failed reload
 // (see Connector).
 func (s *Serverless) RestoreStartSessionSpec(spec sessionspec.Spec) (bool, error) {
-	return s.sessionState.restoreStartSpec(spec)
-}
-
-// RestoreCommittedSession resets the local session snapshot without advancing
-// the generation.
-func (s *Serverless) RestoreCommittedSession(spec sessionspec.Spec, generation uint64, committed bool) {
-	s.sessionState.restore(spec, generation, committed)
+	return s.sessionState.restoreStartSpec(spec, abandonStartWorkload(s.handler))
 }
 
 // Start the serverless connection.
@@ -183,7 +177,7 @@ func (s *Serverless) handleConnection(ctx context.Context, cancel context.Cancel
 		return err
 	}
 	transfer := s.startServerlessIO(ctx, serverHandler, cancelOutputDrain)
-	dispatchErr := dispatchInitialCommands(s.Server(), s.handler, s.commands, s.interactive,
+	dispatchErr := dispatchInitialCommands(ctx, s.Server(), s.handler, s.commands, s.interactive,
 		s.sessionSpec, &s.sessionState, s.logger)
 	var transferErr error
 	if dispatchErr == nil {

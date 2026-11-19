@@ -1,6 +1,7 @@
 package connectors
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -57,9 +58,9 @@ const defaultSessionAckTimeout = 2 * time.Second
 // reading the acknowledgement, and a flood of client-bound output keeps the
 // handler busy, stretching the idle-time timeout. The initial SESSION
 // START, waited for on the connection's own goroutine, has no such cap, so
-// a long pause right after it only delays it.
-// It is a variable only so that tests can shorten it.
-var sessionUpdateAckMaxWait = 10 * time.Second
+// a long pause right after it only delays it. It is the default of
+// committedSessionState.updateAckMaxWait.
+const sessionUpdateAckMaxWait = 10 * time.Second
 
 // committedSessionState is the session state of one connection: the spec
 // and generation the server acknowledged last, and what its initial SESSION
@@ -91,6 +92,19 @@ type committedSessionState struct {
 	// committed meanwhile (snapshot).
 	followUp    sessionspec.Spec
 	hasFollowUp bool
+	// updateAckMaxWait replaces sessionUpdateAckMaxWait when above 0. It is
+	// set before the state is used and never changed after; only tests set
+	// it, to shorten the waits of the state they test.
+	updateAckMaxWait time.Duration
+}
+
+// ackMaxWait is the wall-clock cap of what the interactive control loop
+// waits for on this connection (see sessionUpdateAckMaxWait).
+func (s *committedSessionState) ackMaxWait() time.Duration {
+	if s.updateAckMaxWait > 0 {
+		return s.updateAckMaxWait
+	}
+	return sessionUpdateAckMaxWait
 }
 
 // replaceStartSpec makes spec the workload of the initial SESSION START if
@@ -101,7 +115,7 @@ type committedSessionState struct {
 // for at most sessionUpdateAckMaxWait: it returns ErrSessionStartPending
 // then, as the start's own wait has no wall-clock limit.
 func (s *committedSessionState) replaceStartSpec(spec sessionspec.Spec) (bool, error) {
-	if !s.applyMu.lockWithin(sessionUpdateAckMaxWait) {
+	if !s.applyMu.lockWithin(s.ackMaxWait()) {
 		return false, ErrSessionStartPending
 	}
 	defer s.applyMu.Unlock()
@@ -126,15 +140,40 @@ func (s *committedSessionState) replaceStartSpec(spec sessionspec.Spec) (bool, e
 // returned. Should the start have finished in the meantime, the lock is
 // taken again: replaceStartSpec then reports false, and the caller updates
 // the committed session as for any start that began.
-func (s *committedSessionState) restoreStartSpec(spec sessionspec.Spec) (bool, error) {
+//
+// abandon(true) is called before the rollback is deferred, and
+// abandon(false) if it then was not: the connection's handler drops the
+// aggregates of the start's workload from then on (startWorkloadAbandoner),
+// and being told first, it misses none of those behind the start's
+// acknowledgement.
+func (s *committedSessionState) restoreStartSpec(spec sessionspec.Spec, abandon func(bool)) (bool, error) {
 	restored, err := s.replaceStartSpec(spec)
 	if !errors.Is(err, ErrSessionStartPending) {
 		return restored, err
 	}
+	abandon(true)
 	if s.deferStartFollowUp(spec) {
 		return false, ErrSessionRollbackDeferred
 	}
+	abandon(false)
 	return s.replaceStartSpec(spec)
+}
+
+// startWorkloadAbandoner is implemented by the handlers that aggregate
+// what the server sends (handlers.MaprHandler): AbandonStartWorkload(true)
+// tells them that the workload of the initial SESSION START in flight was
+// rolled back, so its aggregates are not the client's result's.
+type startWorkloadAbandoner interface {
+	AbandonStartWorkload(abandoned bool)
+}
+
+// abandonStartWorkload returns the abandon callback of restoreStartSpec
+// for handler; it does nothing for a handler that aggregates nothing.
+func abandonStartWorkload(handler handlers.Handler) func(bool) {
+	if abandoner, ok := handler.(startWorkloadAbandoner); ok {
+		return abandoner.AbandonStartWorkload
+	}
+	return func(bool) {}
 }
 
 // deferStartFollowUp makes spec the follow-up of the initial SESSION START
@@ -180,22 +219,6 @@ func (s *committedSessionState) commit(spec sessionspec.Spec, generation uint64)
 	s.spec = spec
 }
 
-func (s *committedSessionState) restore(spec sessionspec.Spec, generation uint64, committed bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !committed {
-		s.committed = false
-		s.generation = 0
-		s.spec = sessionspec.Spec{}
-		return
-	}
-
-	s.committed = true
-	s.generation = generation
-	s.spec = spec
-}
-
 func (s *committedSessionState) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -226,8 +249,9 @@ func (s *committedSessionState) snapshot() (sessionspec.Spec, uint64, bool) {
 // stream of a non-interactive client, or SESSION START for an
 // --interactive-query client with a known mode. Every protocol 5 server
 // supports SESSION START, so a failed start fails the connection; there is
-// no fallback to the command stream.
-func dispatchInitialCommands(server string, handler handlers.Handler, commands []string,
+// no fallback to the command stream. ctx is the connection's context: its
+// end ends the wait for the start's acknowledgement.
+func dispatchInitialCommands(ctx context.Context, server string, handler handlers.Handler, commands []string,
 	interactiveQuery bool, initialSpec sessionspec.Spec, state *committedSessionState,
 	logger logging.Logger) error {
 	if !interactiveQuery || initialSpec.Mode == omode.Unknown {
@@ -237,7 +261,7 @@ func dispatchInitialCommands(server string, handler handlers.Handler, commands [
 		return sendCommandStream(handler, commands)
 	}
 
-	if err := startInitialSession(server, handler, state, initialSpec, logger); err != nil {
+	if err := startInitialSession(ctx, server, handler, state, initialSpec, logger); err != nil {
 		state.clear()
 		return err
 	}
@@ -254,7 +278,13 @@ func dispatchInitialCommands(server string, handler handlers.Handler, commands [
 // the start (restoreStartSpec) left a follow-up spec: the session is
 // updated to it right after the start was acknowledged, still under
 // applyMu, so no later transition sees the reloaded spec in between.
-func startInitialSession(server string, handler handlers.Handler, state *committedSessionState,
+//
+// The waits for both acknowledgements end with ctx, the connection's
+// context (sessionRequest.awaitAck): a :quit or Ctrl-C while the start is
+// unacknowledged returns context.Canceled at once instead of after
+// defaultSessionAckTimeout of idle handler time (or, behind a paused
+// output, not before it ran again).
+func startInitialSession(ctx context.Context, server string, handler handlers.Handler, state *committedSessionState,
 	initialSpec sessionspec.Spec, logger logging.Logger) error {
 	state.applyMu.Lock()
 	defer state.applyMu.Unlock()
@@ -266,7 +296,7 @@ func startInitialSession(server string, handler handlers.Handler, state *committ
 	}
 	// No wall-clock cap (maxWait 0): this runs on the connection's own
 	// goroutine, and a paused output only delays the acknowledgement.
-	err := applySessionSpecLocked(server, handler, state, spec, 0, defaultSessionAckTimeout, 0, logger)
+	err := applySessionSpecLocked(ctx, server, handler, state, spec, 0, defaultSessionAckTimeout, 0, logger)
 	followUp, hasFollowUp := state.finishStart()
 	if !hasFollowUp {
 		return err
@@ -275,27 +305,28 @@ func startInitialSession(server string, handler handlers.Handler, state *committ
 	if err != nil {
 		return err
 	}
-	return applyStartFollowUp(server, handler, state, followUp, logger)
+	return applyStartFollowUp(ctx, server, handler, state, followUp, logger)
 }
 
 // applyStartFollowUp updates the session the initial SESSION START just
 // committed to followUp, the spec a failed reload rolled it back to. Until
-// the update is acknowledged the server runs the reloaded spec, and all it
+// the update is acknowledged the server runs the reloaded spec, and what it
 // sends meanwhile reaches the client, which filters no output by
-// generation: lines of the reloaded workload are printed, and with dmap
-// its aggregates are merged into the client's aggregation (with dtail
-// switched from following lines to a query, they can print as
-// AGGREGATE|... lines). Only what dserver still queued when the update
-// arrived is dropped. A failed update fails the start and so ends the
+// generation: lines of the reloaded workload are printed. Its aggregates
+// are dropped by the handler while the client's kept workload is a query
+// (restoreStartSpec's abandon, client.Aggregate.AbandonStartWorkload);
+// with dtail rolled back to following lines they are no aggregate data to
+// the handler and can print as AGGREGATE|... lines. What dserver still
+// queued when the update arrived is dropped by dserver. A failed update fails the start and so ends the
 // connection (a retrying client reconnects with the client's current
 // spec), rather than leaving it on the reloaded spec. The caller holds
 // applyMu.
-func applyStartFollowUp(server string, handler handlers.Handler, state *committedSessionState,
+func applyStartFollowUp(ctx context.Context, server string, handler handlers.Handler, state *committedSessionState,
 	followUp sessionspec.Spec, logger logging.Logger) error {
 	_, generation, _ := state.snapshot()
 	logging.OrNop(logger).Debug(server, "Rolling the session start back to the spec of before a failed reload",
 		"generation", generation)
-	if err := applySessionSpecLocked(server, handler, state, followUp, generation,
+	if err := applySessionSpecLocked(ctx, server, handler, state, followUp, generation,
 		defaultSessionAckTimeout, 0, logger); err != nil {
 		return fmt.Errorf("roll back the reloaded spec of the session start: %w", err)
 	}
@@ -315,7 +346,7 @@ func applySessionSpecWithGeneration(server string, handler handlers.Handler,
 	// initial SESSION START bootstrap on the same connection. The interactive
 	// control loop calls this, so neither the lock nor the acknowledgement
 	// is waited for longer than sessionUpdateAckMaxWait.
-	if !state.applyMu.lockWithin(sessionUpdateAckMaxWait) {
+	if !state.applyMu.lockWithin(state.ackMaxWait()) {
 		return fmt.Errorf("%w: %s", ErrSessionStartPending, server)
 	}
 	defer state.applyMu.Unlock()
@@ -323,15 +354,18 @@ func applySessionSpecWithGeneration(server string, handler handlers.Handler,
 	if useCurrentGeneration {
 		_, generation, _ = state.snapshot()
 	}
-	return applySessionSpecLocked(server, handler, state, spec, generation, timeout,
-		sessionUpdateAckMaxWait, logger)
+	// The control loop's waits are bounded by the cap alone, so they take
+	// no context.
+	return applySessionSpecLocked(context.Background(), server, handler, state, spec, generation, timeout,
+		state.ackMaxWait(), logger)
 }
 
 // applySessionSpecLocked sends SESSION START (generation 0) or SESSION
 // UPDATE generation+1 for spec, and commits spec once the server
 // acknowledged it, waiting for that as handlers.Handler.WaitForSessionAck
-// with timeout and maxWait. The caller holds state.applyMu.
-func applySessionSpecLocked(server string, handler handlers.Handler,
+// with timeout and maxWait, and until ctx is done. The caller holds
+// state.applyMu.
+func applySessionSpecLocked(ctx context.Context, server string, handler handlers.Handler,
 	state *committedSessionState, spec sessionspec.Spec, generation uint64,
 	timeout, maxWait time.Duration, logger logging.Logger) error {
 	logger = logging.OrNop(logger)
@@ -343,46 +377,135 @@ func applySessionSpecLocked(server string, handler handlers.Handler,
 		return err
 	}
 
-	action := "start"
-	nextGeneration := uint64(0)
-	command, err := spec.StartCommand()
+	request, err := newSessionRequest(spec, generation)
 	if err != nil {
 		return err
 	}
 
-	if generation != 0 {
-		action = "update"
-		nextGeneration = generation + 1
-		command, err = spec.UpdateCommand(nextGeneration)
-		if err != nil {
-			return err
-		}
-	}
-
 	drainSessionAcks(handler)
-	if sendErr := handler.SendMessage(command); sendErr != nil {
+	if sendErr := handler.SendMessage(request.command); sendErr != nil {
 		return sendErr
 	}
 
-	ack, ok := handler.WaitForSessionAck(resolveSessionAckTimeout(timeout), maxWait)
-	if !ok {
-		return ErrSessionAckTimeout
+	ack, err := request.awaitAck(ctx, server, handler, resolveSessionAckTimeout(timeout), maxWait, logger)
+	if err != nil {
+		return err
 	}
-	if ack.Error != "" {
-		return fmt.Errorf("%w: %s", ErrSessionRejected, ack.Error)
-	}
-	if ack.Action != action {
-		return fmt.Errorf("%w: got action %q want %q", ErrUnexpectedSessionAck, ack.Action, action)
-	}
-	if ack.Generation == 0 {
-		return fmt.Errorf("%w: missing generation", ErrUnexpectedSessionAck)
-	}
-	if action == "update" && ack.Generation != nextGeneration {
-		return fmt.Errorf("%w: got generation %d want %d", ErrUnexpectedSessionAck, ack.Generation, nextGeneration)
-	}
-
 	state.commit(spec, ack.Generation)
-	logger.Debug(server, "Committed session spec", "action", action, "generation", ack.Generation)
+	// Not waited for, like the handler's "Sending command": this runs on
+	// the interactive control loop, which a paused logger must not block.
+	go logger.Debug(server, "Committed session spec", "action", request.action, "generation", ack.Generation)
+	return nil
+}
+
+// sessionRequest is one SESSION START or UPDATE command and what its
+// acknowledgement must look like: the action ("start" or "update") and,
+// for an update, the generation it is numbered with (0 for a start, whose
+// generation the server chooses).
+type sessionRequest struct {
+	command    string
+	action     string
+	generation uint64
+}
+
+// newSessionRequest returns the SESSION START of spec for generation 0 and
+// else its SESSION UPDATE numbered generation+1.
+func newSessionRequest(spec sessionspec.Spec, generation uint64) (sessionRequest, error) {
+	if generation == 0 {
+		command, err := spec.StartCommand()
+		return sessionRequest{command: command, action: "start"}, err
+	}
+	command, err := spec.UpdateCommand(generation + 1)
+	return sessionRequest{command: command, action: "update", generation: generation + 1}, err
+}
+
+// awaitAck waits for the acknowledgement of the request, as
+// handlers.Handler.WaitForSessionAck with timeout and maxWait, and returns
+// it, or why the request was not acknowledged: ctx's error if ctx ended the
+// wait (waitForSessionAck), else ErrSessionAckTimeout.
+//
+// Acknowledgements of earlier requests are drained before a request is
+// sent, but one of a request that timed out can still arrive while its
+// rollback, another SESSION UPDATE, waits for its own. An update's ok
+// acknowledgement with a generation below the request's is such a late
+// one and is skipped; the caller numbers a rollback above the update it
+// rolls back (see reloadRun.update in internal/clients), so the two can
+// not be mistaken for each other. A late acknowledgement taken for the
+// rollback's reported the rollback as done while the server had rejected
+// it. Every wait after a skipped acknowledgement gets the idle timeout
+// anew, while maxWait bounds them all together.
+//
+// An error acknowledgement carries no generation, so a late rejection of
+// an earlier request can not be told from this request's and fails it:
+// the caller then reports a failure although the server may have applied
+// the request. For a rollback that errs on the visible side (the user is
+// told that the servers may differ).
+func (r sessionRequest) awaitAck(ctx context.Context, server string, handler handlers.Handler,
+	timeout, maxWait time.Duration, logger logging.Logger) (handlers.SessionAck, error) {
+	start := time.Now()
+	for {
+		wait := maxWait
+		if maxWait > 0 {
+			if wait = maxWait - time.Since(start); wait <= 0 {
+				return handlers.SessionAck{}, ErrSessionAckTimeout
+			}
+		}
+		ack, ok := waitForSessionAck(ctx, handler, timeout, wait)
+		if !ok {
+			if err := ctx.Err(); err != nil {
+				return handlers.SessionAck{}, err
+			}
+			return handlers.SessionAck{}, ErrSessionAckTimeout
+		}
+		if r.isStale(ack) {
+			go logger.Debug(server, "Skipping late session acknowledgement",
+				"generation", ack.Generation, "awaited", r.generation)
+			continue
+		}
+		return ack, r.check(ack)
+	}
+}
+
+// contextAckWaiter is implemented by the handlers whose acknowledgement
+// wait can be ended by a context (the client handlers of
+// internal/clients/handlers). It is optional so that handlers.Handler, and
+// every implementation of it, keeps the plain WaitForSessionAck.
+type contextAckWaiter interface {
+	WaitForSessionAckContext(ctx context.Context, timeout, maxWait time.Duration) (handlers.SessionAck, bool)
+}
+
+// waitForSessionAck waits for handler's next session acknowledgement, also
+// ending the wait once ctx is done where the handler supports it. A
+// handler that does not is waited for as WaitForSessionAck bounds it.
+func waitForSessionAck(ctx context.Context, handler handlers.Handler,
+	timeout, maxWait time.Duration) (handlers.SessionAck, bool) {
+	if waiter, ok := handler.(contextAckWaiter); ok {
+		return waiter.WaitForSessionAckContext(ctx, timeout, maxWait)
+	}
+	return handler.WaitForSessionAck(timeout, maxWait)
+}
+
+// isStale reports whether ack acknowledges an update numbered below this
+// update request, i.e. one sent before it.
+func (r sessionRequest) isStale(ack handlers.SessionAck) bool {
+	return r.action == "update" && ack.Error == "" && ack.Action == "update" &&
+		ack.Generation != 0 && ack.Generation < r.generation
+}
+
+// check returns nil if ack acknowledges the request, ErrSessionRejected if
+// the server rejected it and ErrUnexpectedSessionAck for any other
+// acknowledgement.
+func (r sessionRequest) check(ack handlers.SessionAck) error {
+	switch {
+	case ack.Error != "":
+		return fmt.Errorf("%w: %s", ErrSessionRejected, ack.Error)
+	case ack.Action != r.action:
+		return fmt.Errorf("%w: got action %q want %q", ErrUnexpectedSessionAck, ack.Action, r.action)
+	case ack.Generation == 0:
+		return fmt.Errorf("%w: missing generation", ErrUnexpectedSessionAck)
+	case r.action == "update" && ack.Generation != r.generation:
+		return fmt.Errorf("%w: got generation %d want %d", ErrUnexpectedSessionAck, ack.Generation, r.generation)
+	}
 	return nil
 }
 
@@ -490,6 +613,9 @@ func containsReadCommand(commands []string) bool {
 	return false
 }
 
+// drainSessionAcks drops the acknowledgements queued before a request is
+// sent, which can only belong to earlier requests. One arriving after this
+// is handled by sessionRequest.awaitAck.
 func drainSessionAcks(handler handlers.Handler) {
 	for {
 		if _, ok := handler.WaitForSessionAck(0, 0); !ok {

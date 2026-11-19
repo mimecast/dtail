@@ -73,6 +73,21 @@ The `Server.Permissions` map controls which files each SSH user may read:
 * If no allow rule matches, the path is denied (deny by default).
 * The regex is matched against the resolved absolute file path (symlinks are
   resolved first), so write rules for the real path, not for a symlink.
+  A rule matches that path string, not the file's identity: on a file
+  system that ignores case or Unicode normalization (ext4 with casefold,
+  vfat, CIFS, macOS), `/var/log/SECRET/x` names the same file as
+  `/var/log/secret/x` but passes the deny rule `!^/var/log/secret/`. Write
+  case-insensitive rules there (`!(?i)^/var/log/secret/`).
+* A path that holds a newline (in the file name or in a directory name above
+  it, after symlinks are resolved) is never readable, whatever the rules
+  say; the read fails with `read: no permission to read file` and the path
+  listing offers neither it nor a directory with such a name. In a rule `.`
+  matches no newline and `$` only the end of the path, so the deny rule
+  `!^/var/log/secret/.*$` would not match `/var/log/secret/a<newline>b`
+  while the allow rule `^/var/log/` would; without this, anyone able to
+  create such a name beneath a denied directory could have it read past the
+  deny rule. Rules therefore never need to think of newlines. Scheduled and
+  continuous jobs, which the rules do not apply to, read such paths.
 * The DTail permissions are checked in addition to the operating system's
   file permissions: the user still needs OS read access to the file (or the
   `dserver` run user does, when built without Linux ACL support).
@@ -90,9 +105,17 @@ completion asks `dserver` for: it offers only files the user may read and
 only units of `journal:` targets the user may read. It offers a directory
 when an allow rule can match some path beneath it, unless a deny rule
 already matches the directory path itself (as `/var/log/secret/` above for
-`jamesblake`). A deny rule that only matches the files beneath (e.g.
-`!^/var/log/private/.*\.log$`) does not hide the directory's name, so to
-hide a directory write a deny rule for the directory path. An unanchored
+`jamesblake`). A deny rule ending in `$` hides a directory only when it
+matches the directory path with its trailing `/` and everything beneath it
+(`!^/var/log/secret/.*$`), not when it covers only the files right in it
+(`!^/var/log/[^/]*$`), whose subdirectories stay reachable. A deny rule
+that does not match the directory path itself does not hide the
+directory's name, although it may deny every file beneath: one that only
+matches the files beneath (e.g. `!^/var/log/private/.*\.log$`), or
+`!^/var/log/secret/.+$`, whose `.+` needs a character after the `/`. So to
+hide a directory write a deny rule for the directory path:
+`!^/var/log/secret/` or `!^/var/log/secret/.*$`. The read check itself is
+not affected: such files are denied either way. An unanchored
 allow rule such as `\.log$` makes every directory listable that the OS lets
 `dserver` read. A directory the user may not list looks the same as one
 that does not exist. A `..` in the typed path removes the directory before

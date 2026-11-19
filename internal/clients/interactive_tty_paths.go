@@ -118,33 +118,71 @@ func (c *baseClient) awaitPathListing(e *interactiveEditor, pause *interactivePa
 // serverless answer does not arrive while paused either, although its
 // payload bypasses the handler, see TestProbeAnswerWhileOutputPaused). The
 // line being edited is taken off the screen first, so the output does not
-// run into it, and the Terminal draws it again afterwards (editorScreen).
+// run into it, and the Terminal draws it again afterwards (hideLine,
+// showLine). The output is always paused here: the Tab that led here
+// paused it for typing unless it was paused already (editorKey calls
+// startTyping before it completes), so there is no path for running
+// output; runOutput would simply run the wait if it were not.
 func (c *baseClient) waitForListing(e *interactiveEditor, pause *interactivePause,
 	line string, pos int, done <-chan struct{}, timeout time.Duration) bool {
 
-	wait := func() bool {
+	var arrived bool
+	e.hideLine(line, pos)
+	pause.runOutput(func() {
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 		select {
 		case <-done:
-			return true
+			arrived = true
 		case <-timer.C:
-			return false
 		}
-	}
-	if !pause.paused {
-		return wait()
-	}
-	var arrived bool
-	e.screen.hideLine(line, pos)
-	pause.runOutput(func() { arrived = wait() })
-	e.screen.restoreLine(line, pos)
-	e.redrawLine()
+	})
+	e.showLine(line, pos)
 	return arrived
 }
 
+// hideLine takes the line being edited (its cursor at byte offset pos) off
+// the screen for a Tab's wait (editorScreen.hideLine). Until showLine the
+// Terminal must not draw: its cursor bookkeeping still describes the line
+// as it was drawn, so a redraw would move up from the cursor into the
+// output that ran since and draw the line over it. Two things could have
+// it draw from another goroutine meanwhile and are held off (hidden): a
+// resized window (SIGWINCH, deferred until showLine, see resize) and the
+// Ctrl-C statistics (written to the TTY as they are, editorOutput). A nil
+// editor (tests completing without one) has no line to hide.
+func (e *interactiveEditor) hideLine(line string, pos int) {
+	if e == nil {
+		return
+	}
+	e.hideMu.Lock()
+	defer e.hideMu.Unlock()
+	e.screen.hideLine(line, pos)
+	e.hidden = true
+}
+
+// showLine gives the line hidden by hideLine its rows back below the
+// output that ran meanwhile (editorScreen.restoreLine) and has the
+// Terminal draw prompt and line there (redrawLine). A window size change
+// that arrived meanwhile is taken over then, with the line on the screen
+// again, as the Terminal expects it for a resize.
+func (e *interactiveEditor) showLine(line string, pos int) {
+	if e == nil {
+		return
+	}
+	e.hideMu.Lock()
+	e.screen.restoreLine(line, pos)
+	e.redrawLine()
+	e.hidden = false
+	resize := e.resizePending && e.resize != nil
+	e.resizePending = false
+	e.hideMu.Unlock()
+	if resize {
+		e.resize()
+	}
+}
+
 // redrawLine has the Terminal draw its prompt and line again below the
-// output a Tab let run (after restoreLine). Its Write clears the rows it
+// output a Tab let run (after restoreLine, showLine). Its Write clears the rows it
 // believes the line takes and draws prompt and line, which also puts its
 // cursor bookkeeping right again: hideLine erased the prompt too, and
 // without a redraw (a completion that lists nothing only sets the new

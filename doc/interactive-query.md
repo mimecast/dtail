@@ -120,7 +120,13 @@ editor (golang.org/x/term, no other dependency):
   * right after `--grep`, `--regex`, `--query` or `--files` (and a blank),
     their **current value**, quoted for the `:reload` tokenizer, so a long
     query is edited instead of typed again:
-    `:reload --query <Tab>` inserts `'from STATS select ...'`;
+    `:reload --query <Tab>` inserts `'from STATS select ...'`; in a session
+    that reads no files (none, or only the `-` of serverless mode),
+    `:reload --files <Tab>` has no value to insert and lists the working
+    directory's paths instead, like `--files=<Tab>`; a current value
+    holding a control or format character (a tab or line break given on the
+    command line, as in `--regex $'a\tb'`) is not inserted, as the edit
+    line can not show it: Tab says so and the new value is typed;
   * inside a `--query` value (in `dmap` and `dtail --query`; quoted with
     single or double quotes, escaped, or as `--query=...`), the query
     language: clause keywords, aggregations (`count(`), where operators,
@@ -308,7 +314,10 @@ editor (golang.org/x/term, no other dependency):
   * `i` `a` `I` `A` to insert, `r` to replace, `~` to switch case, `p` `P`
     to put what was deleted or yanked;
   * `u` undo and Ctrl-R redo (per line), `k` `j` earlier and later lines
-    of the history.
+    of the history. They and Up/Down (or Ctrl-P/Ctrl-N, in either mode)
+    move one history position: `k` then Up goes on to the next older line, and `j` or Down
+    past the newest one gives back the line that was being typed. `k` and
+    `j` put the cursor at the start of the line, Up and Down at its end.
 
   Enter runs the line in either mode. Keys the editor itself handles work
   in both modes as in insert mode: Backspace, the arrows, Home/End and the
@@ -319,6 +328,32 @@ editor (golang.org/x/term, no other dependency):
   busy) is read as Alt plus that key, so Esc `e` opens the external editor.
 * Tab always completes, so a literal tab cannot be typed into a value; use
   `\t` in a regex instead.
+* **Pasting**: the editor asks the terminal for bracketed paste, so pasted
+  text is taken as text, not as keys: a pasted tab completes nothing, and
+  the lines of a multi-line paste are entered one after the other, each run
+  as it stands (paste several control commands at once). Blank lines of a
+  paste are skipped: only the Enter key pauses and resumes the output.
+  Tabs and other control and format characters in a paste (also C1
+  controls and characters such as U+202E) become blanks (use `\t` in a
+  regex). Pasted text that stays on the line (no line break at its end)
+  pauses the output like typed text, to be checked and entered. In vi mode
+  a paste is inserted at the cursor, also in normal mode. A terminal
+  without bracketed paste sends a paste as typed keys, as before: its tabs
+  complete. The mode is switched off for the external editor and when the
+  session ends, and left alone while `dtail` runs in the background; while
+  `dtail` is stopped with Ctrl-Z it stays on, like the terminal mode, so a
+  shell that does not set the mode itself (`dash`) shows the paste markers
+  (`^[[200~`) around text pasted at its prompt. After a forced exit (a
+  second Ctrl-C while the shutdown hangs) it may stay on as well, as the
+  exit does not wait for the terminal; `printf '\033[?2004l'` switches it
+  off. Two limits come with the markers, which are all that tells a paste
+  from typing: pasted text that itself holds the end marker (`ESC [201~`,
+  where the terminal does not filter it out) ends the paste there and the
+  rest is read as typed keys; and on a link that delivers the start marker
+  in two pieces right after its ESC (ssh over a bad line), the paste is
+  taken without the above (tabs stay, no pause), and in vi mode that ESC
+  enters normal mode, so `[200~` and the pasted text are read as normal
+  mode keys.
 * A line is limited to 4095 characters. A longer one is rejected with an
   error, not run and not kept in the history (the editor would otherwise
   cut it silently); output its typing paused goes on.
@@ -327,7 +362,8 @@ The terminal is switched to "cbreak" mode for this: line buffering and echo
 are off, but Ctrl-C and Ctrl-Z still send their signals and log output keeps
 its line endings. After Ctrl-Z and `fg` the mode is set again (bash and zsh
 leave the terminal in their own mode), and the editor follows window size
-changes. The previous mode is restored when the interactive session ends,
+changes (one that arrives while a Tab waits for a server, with the line
+taken off the screen, is applied when the line is drawn again). The previous mode is restored when the interactive session ends,
 also on a forced exit after a second Ctrl-C. While `dtail` runs in the
 background (`bg`, `&`) it leaves the terminal mode alone; like any program
 reading its terminal, an interactive `dtail` in the background is stopped
@@ -358,7 +394,9 @@ would land behind the question), Tab completes nothing, and the answer is
 not added to the history. Statistics printed with Ctrl-C go through the
 line editor, which draws the line being typed again below them; so with
 `--interactive-query` and stdout redirected to a file or pipe they go to
-the control terminal, not into the redirected output.
+the control terminal, not into the redirected output. While a Tab waits for
+a server (the line is off the screen and the output runs) they are written
+like that output, and the line is drawn below them when the wait ends.
 
 `:help` and `:fields` keep the output paused, so their answer does not
 scroll away, and the next empty line resumes the output. Typed while the
@@ -440,11 +478,20 @@ only when stdout is a terminal and no payload goes to a log file (not with
 `--logger file` or `--log-payload`); piped output (`dmap ... > out`) and log
 files get it as one run of text in the `RawQuery*` colors, so that
 `grep 'from STATS select' out` finds it. A word the parser rejects
-(e.g. a quoted value after the numeric `==`, where `eq` compares strings)
-stays unpainted. A message of several lines (e.g. a `reload failed:` error
-naming two problems) is painted line by line. Every style is a foreground color and an attribute (no background, so it
-reads on dark and light terminals) in the client config section
-`Client.TermColors.Interactive`, for example:
+(e.g. a quoted value after the numeric `==`, where `eq` compares strings,
+or an outfile path starting with `append:`) stays unpainted. A message of
+several lines (e.g. a `reload failed:` error naming two problems) is painted
+line by line. A failure message (`reload failed:`, `query failed:`, `tail
+failed:`, `interactive query error:`) can end in text a server sent, the
+reason it rejected the update; control and format characters in it are shown
+as escapes (`\x1b`, `\r`, `\t`, `\u202e`), with and without colors, so that
+such text can not drive the terminal. A line break in it is shown as `\n`:
+the message has one line per error (per server, and per failed rollback), so
+a server's text can not start a line that looks like dtail's own output. The `:fields` answer is painted by what
+each line is, so a field or note from a server that looks like a heading is
+not painted as one. Every style is a foreground color and an attribute (no
+background, so it reads on dark and light terminals) in the client config
+section `Client.TermColors.Interactive`, for example:
 
 ```json
 {
@@ -661,10 +708,11 @@ dmap --servers app01 --files /var/log/app.log \
   right after its start is acknowledged (the answer says `rolled back once
   it is acknowledged`); if that fails, its connection ends. Until the
   switch back is acknowledged (one round trip), what that server sends for
-  the reloaded workload reaches the client: its lines are printed, and with
-  `dmap` its results are merged into the current aggregation (an
-  interactive `dtail` that the failed reload switched from following lines
-  to a query can print them as `AGGREGATE|...` lines). A reload entered
+  the reloaded workload reaches the client: its lines are printed. Results
+  of the reloaded query are dropped and do not get into the current
+  aggregation (an interactive `dtail` that the failed reload was to switch
+  from following lines to a query can print them as `AGGREGATE|...` lines,
+  as it expects no results then). A reload entered
   meanwhile treats that server as still connecting.
 * A reload changes the servers one after the other and waits for each at
   most 10 seconds, and as long again for each rollback, so with servers

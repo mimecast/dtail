@@ -2,6 +2,8 @@ package clients
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -339,5 +341,98 @@ func TestQueryAndTailLinesResumeAnExplicitPause(t *testing.T) {
 	}
 	if conns[0].generation != 6 {
 		t.Fatalf("generation = %d, want 6 after two switches", conns[0].generation)
+	}
+}
+
+// TestFailureMessagesEscapeServerText: the reason a server gives for a
+// rejected update reaches the control TTY after "reload failed:", "query
+// failed:" and "tail failed:". Its control and format characters are
+// written as Go escapes, so server text can not drive the terminal (ESC),
+// return the cursor (CR) or reorder the line (U+202E). A line feed in it
+// is escaped too, so it can not forge a line of control output ("reload
+// applied successfully"): the message has one line per error, as many as
+// with a harmless reason.
+func TestFailureMessagesEscapeServerText(t *testing.T) {
+	const hostile = "\x1b[2Jevil\r\u202e\u009b\tend\nreload applied successfully"
+	c, conns := newSwitchTestClient(t, config.Args{What: "/var/log/app.log", RegexStr: "ERROR"})
+	base := &c.baseClient
+	for _, conn := range conns {
+		conn.applyErr = fmt.Errorf("%w: %s", connectors.ErrSessionRejected, hostile)
+	}
+	lines := map[string]string{
+		"reload failed: ": ":reload --regex WARN",
+		"query failed: ":  ":query " + switchTestQuery,
+		"tail failed: ":   ":tail WARN",
+	}
+	for prefix, line := range lines {
+		for _, conn := range conns {
+			conn.applyErr = fmt.Errorf("%w: harmless", connectors.ErrSessionRejected)
+		}
+		harmless := runControlLine(t, base, line)
+		for _, conn := range conns {
+			conn.applyErr = fmt.Errorf("%w: %s", connectors.ErrSessionRejected, hostile)
+		}
+		out := runControlLine(t, base, line)
+		if got, want := strings.Count(out, "\n"), strings.Count(harmless, "\n"); got != want {
+			t.Errorf("%s = %q: %d lines, want the %d of a harmless reason (%q)", line, out, got, want, harmless)
+		}
+		if strings.Contains(out, "\nreload applied") || !strings.Contains(out, `end\nreload applied successfully`) {
+			t.Errorf("%s = %q, want the reason's line feed escaped", line, out)
+		}
+		if !strings.HasPrefix(out, prefix) || !strings.HasSuffix(out, "\n") {
+			t.Fatalf("%s = %q, want a %q line", line, out, prefix)
+		}
+		if strings.ContainsAny(out, "\x1b\r\t\u202e\u009b") {
+			t.Errorf("%s wrote raw control or format characters: %q", line, out)
+		}
+		if !strings.Contains(out, `\x1b[2Jevil\r\u202e\u009b\tend`) {
+			t.Errorf("%s = %q, want the server text escaped", line, out)
+		}
+	}
+}
+
+// TestTerminalTextKeepsPrintableText: text without control or format
+// characters is unchanged byte for byte (quotes, backslashes, non-ASCII
+// text and the line feeds of a joined error included); an invalid byte is
+// written as \xNN.
+func TestTerminalTextKeepsPrintableText(t *testing.T) {
+	tests := map[string]string{
+		"":                            "",
+		"up: rejected \"a\\b\"\nlate": "up: rejected \"a\\b\"\nlate",
+		"größe 日本 €":                  "größe 日本 €",
+		"a\x00b\x7fc":                 `a\x00b\x7fc`,
+		"line\u2028sep":               `line\u2028sep`,
+		"bad\xffbyte\x80":             `bad\xffbyte\x80`,
+	}
+	for in, want := range tests {
+		if got := terminalText(in); got != want {
+			t.Errorf("terminalText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestErrorLines: the errors of an errors.Join, also a nested one, get a
+// line each, and a line feed inside one of them is escaped; an error that
+// is no join, also one wrapping two errors with a message of its own, is
+// one line.
+func TestErrorLines(t *testing.T) {
+	first := errors.New("srv1: rejected: a\nb")
+	second := errors.New("srv2: rollback")
+	third := errors.New("srv3: rollback")
+	tests := map[string]struct {
+		err  error
+		want string
+	}{
+		"single":      {first, `srv1: rejected: a\nb`},
+		"join":        {errors.Join(first, second), `srv1: rejected: a\nb` + "\nsrv2: rollback"},
+		"nested join": {errors.Join(first, errors.Join(second, third)), `srv1: rejected: a\nb` + "\nsrv2: rollback\nsrv3: rollback"},
+		"wrapped join": {fmt.Errorf("reload: %w", errors.Join(second, third)),
+			`reload: srv2: rollback\nsrv3: rollback`},
+		"two wrapped": {fmt.Errorf("%w and %w", second, third), "srv2: rollback and srv3: rollback"},
+	}
+	for name, tt := range tests {
+		if got := errorLines(tt.err); got != tt.want {
+			t.Errorf("%s: errorLines = %q, want %q", name, got, tt.want)
+		}
 	}
 }

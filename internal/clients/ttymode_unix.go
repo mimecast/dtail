@@ -62,7 +62,7 @@ func (m *cbreakTTY) restore() error {
 }
 
 // foreground reports whether this process's group is the terminal's
-// foreground process group. Setting the mode from a background job (after
+// foreground process group (ttyMode). Setting the mode from a background job (after
 // "bg", or when "kill %1" continues a stopped job to let it exit) raises
 // SIGTTOU, whose default action stops the process instead. Ignoring
 // SIGTTOU is no way out: the write would then change the shell's terminal.

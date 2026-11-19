@@ -382,8 +382,10 @@ func TestInteractiveEditorForcedExitAndContinue(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = slave.Close() })
 	client := newPauseTestClient(newPausingTestLogger())
-	client.setForceExitHook = func(f func()) { hook, hookSet = f, true }
-	lines := client.newControlLines(slave, client.newInteractivePause(), nil)
+	deps := testEditorDeps()
+	deps.watchSignals = watchTTYSignals // SIGCONT is what this tests.
+	deps.setForceExitHook = func(f func()) { hook, hookSet = f, true }
+	lines := client.newControlLines(slave, client.newInteractivePause(), nil, deps)
 	if _, ok := lines.(*interactiveEditor); !ok {
 		t.Fatalf("control lines on a terminal = %T, want *interactiveEditor", lines)
 	}
@@ -443,8 +445,10 @@ func TestInteractiveEditorForcedExitWhileWatcherBlocked(t *testing.T) {
 	}
 	var hook func()
 	client := newPauseTestClient(newPausingTestLogger())
-	client.setForceExitHook = func(f func()) { hook = f }
-	lines := client.newControlLines(slave, client.newInteractivePause(), nil)
+	deps := testEditorDeps()
+	deps.watchSignals = watchTTYSignals // SIGWINCH is what this tests.
+	deps.setForceExitHook = func(f func()) { hook = f }
+	lines := client.newControlLines(slave, client.newInteractivePause(), nil, deps)
 	editor, ok := lines.(*interactiveEditor)
 	if !ok || hook == nil {
 		t.Fatalf("control lines on a terminal = %T (hook set %v), want *interactiveEditor with hook",

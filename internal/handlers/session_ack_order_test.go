@@ -1,8 +1,8 @@
 package handlers
 
 // Tests that dserver sends the SESSION START/UPDATE acknowledgement ahead of
-// the payload of the generation it acknowledges (task fd4). The session
-// output delivers payload before server messages (task 1c4), and the
+// the payload of the generation it acknowledges. The session
+// output delivers payload before server messages, and the
 // acknowledgement used to be one of them, queued after the read commands
 // were dispatched: on a slow link it then waited behind the whole session
 // output buffer (megabytes), and the client's 2 s acknowledgement wait

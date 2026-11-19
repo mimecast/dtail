@@ -15,10 +15,14 @@ type probeCollector struct {
 
 // addFields adds the fields of one parsed line of table: $-variables to
 // Variables and to the table's TableVariables, the "*" placeholder nowhere,
-// every other field to the table.
+// every other field to the table. The fields are added in name order, not
+// in the map's random one, so that the same sample always keeps the same
+// fields where a cap (ProbeMaxFieldsPerTable) cuts them: of one line's
+// fields the first by name.
 func (c *probeCollector) addFields(table string, fields map[string]string) {
 	tableFields := c.ensureTable(table)
-	for key, value := range fields {
+	for _, key := range sortedKeys(fields) {
+		value := fields[key]
 		switch {
 		case key == "*":
 		case strings.HasPrefix(key, "$"):

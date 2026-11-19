@@ -56,7 +56,7 @@ func run() int {
 	flag.StringVar(&args.LogLevel, "logLevel", "none", "Log level")
 	flag.StringVar(&args.ServersStr, "server", "", "Remote server to connect")
 	// Kept for compatibility only: the health client never registers an
-	// auth key (clients.NewHealthClient, task 7c4), so this flag changes
+	// auth key (clients.NewHealthClient), so this flag changes
 	// nothing; NoAuthKey is set below whatever it says.
 	flag.BoolVar(&args.NoAuthKey, "no-auth-key", false,
 		"No effect, kept for compatibility (dtailhealth never registers an auth key)")

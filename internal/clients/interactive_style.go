@@ -91,7 +91,17 @@ func (s *interactiveStyle) banner(text string) string  { return s.paint(s.themeO
 func (s *interactiveStyle) hint(text string) string    { return s.paint(s.themeOf().Hint, text) }
 func (s *interactiveStyle) paused(text string) string  { return s.paint(s.themeOf().Paused, text) }
 func (s *interactiveStyle) success(text string) string { return s.paint(s.themeOf().Success, text) }
-func (s *interactiveStyle) failure(text string) string { return s.paint(s.themeOf().Error, text) }
+
+// failure paints a message that something failed. Such a message may end in
+// text a server sent (the reason of a rejected update after "reload
+// failed:", "query failed:" or "tail failed:") or in a line the user
+// pasted, so its control and format characters are escaped here, for
+// every failure and also without colors (terminalText). The line feeds of
+// a message stay: the callers that report an error which may hold server
+// text pass errorLines of it, whose lines are one error each.
+func (s *interactiveStyle) failure(text string) string {
+	return s.paint(s.themeOf().Error, terminalText(text))
+}
 
 // themeOf returns the theme of s, the zero theme for nil (paint then
 // returns its text unchanged anyway).
@@ -132,7 +142,14 @@ const interactivePrompt = "dtail> "
 
 // help paints the :help text (interactiveHelpText) line by line: the line
 // naming the commands and the lines introducing examples as headings, each
-// example's command as a command and its explanation as an example.
+// example's command as a command and its explanation as an example. It
+// tells the lines apart by their text ("Commands:", a line ending in
+// "e.g.:", an example's two leading blanks before its colon). Unlike the
+// :fields answer, which is painted from its structure (fields), every line
+// of the help is a constant of dtail (interactiveHelpText, helpExamples):
+// no server, file or user text is in it, so no line can be taken for
+// another kind, and TestInteractiveHelpIsPaintedByKind fails when a
+// changed help line would be.
 func (s *interactiveStyle) help(text string) string {
 	if s == nil {
 		return text
@@ -181,47 +198,40 @@ func (s *interactiveStyle) keyValues(pairs []keyValue) string {
 	return strings.Join(parts, " ")
 }
 
-// fields paints the :fields answer (fieldsText) line by line: the answer
-// without field data (fieldsEmptyMessage) as a hint, else the header
-// and the log format and table lines as headings, each field's name as a
-// key and its sample values as values, and probe errors as errors. Every
-// text from a server in it is already escaped (displayText), so painting
-// whole lines and parts of them cannot combine with sequences of its own.
-func (s *interactiveStyle) fields(text string) string {
-	if s == nil {
-		return text
-	}
-	if text == fieldsEmptyMessage {
-		// No catalog yet: a hint what to do, not a catalog's heading.
-		return s.paint(s.theme.Hint, text)
-	}
-	lines := strings.Split(text, "\n")
+// fields paints the :fields answer (fieldsLines), each line by what it is
+// (fieldsLineKind), not by what its text looks like: the answer without
+// field data as a hint, the header and the log format, table and
+// $variables lines as headings, each field's name as a key and its sample
+// values as values, probe errors as errors. Every text from a server in it
+// is already escaped (displayText), so painting whole lines and parts of
+// them cannot combine with sequences of its own. A nil style returns the
+// plain text (fieldsText).
+func (s *interactiveStyle) fields(lines []fieldsLine) string {
+	painted := make([]string, len(lines))
 	for i, line := range lines {
-		switch {
-		case i == 0 || strings.HasPrefix(line, "log format ") ||
-			(strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, fieldsSampleIndent) &&
-				strings.HasSuffix(line, ":")):
-			lines[i] = s.paint(s.theme.Heading, line)
-		case strings.HasPrefix(line, "probe error on ") || strings.HasPrefix(line, "no table "):
-			lines[i] = s.paint(s.theme.Error, line)
-		case strings.HasPrefix(line, fieldsSampleIndent):
-			lines[i] = s.fieldsSample(line)
-		}
+		painted[i] = s.fieldsLine(line)
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(painted, "\n")
 }
 
-// fieldsSample paints one field line of writeFieldsSamples: the name and,
-// after " e.g. ", the sample values.
-func (s *interactiveStyle) fieldsSample(line string) string {
-	body := line[len(fieldsSampleIndent):]
-	name, values, found := strings.Cut(body, fieldsSamplesSeparator)
-	if !found {
-		return fieldsSampleIndent + s.paint(s.theme.Key, body)
+// fieldsLine paints one line of the :fields answer.
+func (s *interactiveStyle) fieldsLine(line fieldsLine) string {
+	theme := s.themeOf()
+	switch line.kind {
+	case fieldsHint:
+		return s.paint(theme.Hint, line.text)
+	case fieldsHeading:
+		return s.paint(theme.Heading, line.text)
+	case fieldsError:
+		return s.paint(theme.Error, line.text)
+	case fieldsSample:
+		name := fieldsSampleIndent + s.paint(theme.Key, strings.TrimPrefix(line.text, fieldsSampleIndent))
+		if line.values == "" {
+			return name
+		}
+		return name + line.pad + fieldsSamplesSeparator + s.paint(theme.Value, line.values)
 	}
-	trimmed := strings.TrimRight(name, " ")
-	return fieldsSampleIndent + s.paint(s.theme.Key, trimmed) + name[len(trimmed):] +
-		fieldsSamplesSeparator + s.paint(s.theme.Value, values)
+	return line.text
 }
 
 // candidateKind is the kind of a Tab completion candidate, which decides

@@ -463,7 +463,7 @@ func TestDCatColors(t *testing.T) {
 	})
 
 	// Serverless mode with --noColor: the payload goes straight to stdout,
-	// past the client logger, and used to stay colored (task v94).
+	// past the client logger, and used to stay colored.
 	t.Run("ServerlessNoColor", func(t *testing.T) {
 		testDCatNoColorServerless(t, testLogger)
 	})

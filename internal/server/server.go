@@ -189,12 +189,21 @@ func (s *Server) Start(ctx context.Context) (int, error) {
 	}()
 
 	<-ctx.Done()
+	s.stopSharedWork()
 	if closeErr := listener.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
 		s.log().Trace("Close listener", closeErr)
 	}
 	<-listenerDone
 	// For future use.
 	return 0, nil
+}
+
+// stopSharedWork stops the work that belongs to no session and so is
+// stopped by no session's end: the journal unit listing, whose journalctl
+// run goes on without a waiting session (journal.UnitCache) and would
+// outlive the shutdown by up to 30 s.
+func (s *Server) stopSharedWork() {
+	s.journalUnits.Close()
 }
 
 func (s *Server) listenContext(ctx context.Context, network, address string) (net.Listener, error) {

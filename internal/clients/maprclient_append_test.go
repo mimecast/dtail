@@ -84,7 +84,7 @@ func TestMaprClientCumulativeAppendInterimReports(t *testing.T) {
 	mergeOutfileTestRow(t, snapshot, 7)
 
 	for i := 0; i < 3; i++ {
-		if err := c.writeResultsToOutfile(snapshot, false); err != nil {
+		if err := c.writeResultsToOutfile(c.clientLogger(), snapshot, false); err != nil {
 			t.Fatalf("interim report %d error = %v", i, err)
 		}
 	}
@@ -93,7 +93,7 @@ func TestMaprClientCumulativeAppendInterimReports(t *testing.T) {
 	}
 	assertScheduledTestFile(t, outfile+".query", "")
 
-	if err := c.writeResultsToOutfile(snapshot, true); err != nil {
+	if err := c.writeResultsToOutfile(c.clientLogger(), snapshot, true); err != nil {
 		t.Fatalf("final report error = %v", err)
 	}
 	assertScheduledTestFile(t, outfile, "count(foo)\n7\n")
@@ -103,7 +103,7 @@ func TestMaprClientCumulativeAppendInterimReports(t *testing.T) {
 	plain := newOutfileTestClient(outfileTestQuery(t, overwrite, false), CumulativeMode)
 	plainSnapshot := plain.session.Snapshot()
 	mergeOutfileTestRow(t, plainSnapshot, 7)
-	if err := plain.writeResultsToOutfile(plainSnapshot, false); err != nil {
+	if err := plain.writeResultsToOutfile(plain.clientLogger(), plainSnapshot, false); err != nil {
 		t.Fatalf("interim report without append error = %v", err)
 	}
 	assertScheduledTestFile(t, overwrite, "count(foo)\n7\n")
@@ -123,7 +123,7 @@ func TestMaprClientCumulativeAppendInterimReportsUnwritableOutfile(t *testing.T)
 			c := newOutfileTestClient(outfileTestQuery(t, outfile, true), CumulativeMode)
 			snapshot := c.session.Snapshot()
 			mergeOutfileTestRow(t, snapshot, 7)
-			if err := c.writeResultsToOutfile(snapshot, false); err == nil {
+			if err := c.writeResultsToOutfile(c.clientLogger(), snapshot, false); err == nil {
 				t.Fatal("interim report to an unwritable outfile succeeded")
 			}
 			if name == "missing directory" {

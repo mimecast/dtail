@@ -93,7 +93,14 @@ func TestMaprHandlerWriteEmptyMessageBetweenDelimiters(t *testing.T) {
 // sibling control message that merely starts with 'A') out of the aggregate
 // parser, which previously logged a spurious
 // "Unable to aggregate data ... expected 3 parts" error.
+// Every message goes through Write as a payload frame of a session with a
+// query: an aggregate message is consumed (and reported if it is not valid
+// aggregate data), any other is printed as payload without an error.
 func TestMaprHandlerClassifiesAuthKeyAckAsControl(t *testing.T) {
+	query, err := mapr.NewQuery("select status,count(status) from stats group by status", logging.NopLogger{})
+	if err != nil {
+		t.Fatalf("NewQuery() error = %v", err)
+	}
 	aggregate := protocol.AggregateMessageID + protocol.FieldSeparator() +
 		"host1" + protocol.FieldSeparator() + "payload"
 
@@ -139,9 +146,23 @@ func TestMaprHandlerClassifiesAuthKeyAckAsControl(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isAggregateMessage(tc.message); got != tc.wantAggregate {
-				t.Fatalf("isAggregateMessage(%q) = %v, want %v",
-					tc.message, got, tc.wantAggregate)
+			logger := &payloadRecordingLogger{}
+			handler := NewMaprHandler("srv1", maprclient.NewSessionState(query, logging.NopLogger{}), logger)
+			writeCapabilitiesAndLines(t, handler, []string{tc.message})
+
+			printed := logger.payload.String()
+			if tc.wantAggregate {
+				// Neither test message is valid aggregate data, so the
+				// aggregate parser reports it.
+				if printed != "" || len(logger.errors) != 1 {
+					t.Fatalf("aggregate message %q: printed %q, errors %q; want it consumed and reported",
+						tc.message, printed, logger.errors)
+				}
+				return
+			}
+			if !strings.Contains(printed, tc.message) || len(logger.errors) != 0 {
+				t.Fatalf("message %q: printed %q, errors %q; want it printed as payload without an error",
+					tc.message, printed, logger.errors)
 			}
 		})
 	}

@@ -48,6 +48,11 @@ type MaprClient struct {
 	baseClient
 	// Shared mapreduce state for all handlers and reporting paths.
 	session *maprclient.SessionState
+	// resultLog is the logger of session and of everything logged with one
+	// of its locks held (lockedLogger): it never blocks, unlike the client
+	// logger while the output is paused (see deferredLogger). Nil in
+	// tests that build the client without it.
+	resultLog *deferredLogger
 	// Selected cumulative reporting mode.
 	mode MaprClientMode
 	// Publication state prevents an empty interval from replacing a result
@@ -57,10 +62,6 @@ type MaprClient struct {
 	// dtail switched its session to the active query, which are not the
 	// query's (see incompleteResultReasons).
 	queryMarks queryFailureMarks
-	// liveServers returns the servers the first report of a query waits
-	// for (firstReportWindow); nil means the connections whose handler is
-	// not done. Tests replace it.
-	liveServers func() []string
 }
 
 type outfileReportState struct {
@@ -118,9 +119,11 @@ func newMaprClient(args config.Args, cfg config.RuntimeConfig, maprClientMode Ma
 	// client keeps what it was created with when it switches later.
 	retry := args.Mode == omode.TailClient && (query == nil || !query.HasOutfile())
 
+	session, resultLog := newMaprSession(query, loggers.Client)
 	c := MaprClient{
-		session: maprclient.NewSessionState(query, loggers.Client),
-		mode:    maprClientMode,
+		session:   session,
+		resultLog: resultLog,
+		mode:      maprClientMode,
 	}
 	// Only the command-line clients (DefaultMode) may run interactively.
 	// dserver's scheduled and continuous jobs (every other mode) have no
@@ -130,15 +133,8 @@ func newMaprClient(args config.Args, cfg config.RuntimeConfig, maprClientMode Ma
 		args.InteractiveQuery = false
 	}
 
-	base, initErr := newBaseClient(args, cfg, loggers, colorizer, clientProfile{
-		newHandler: func(server string) handlers.Handler {
-			return handlers.NewMaprHandler(server, c.session, loggers.Client)
-		},
-		retry:          retry,
-		commit:         c.commitSessionSpec,
-		switchWorkload: switchable,
-		expectQuery:    c.session.ExpectAggregates,
-	})
+	base, initErr := newBaseClient(args, cfg, loggers, colorizer,
+		maprClientProfile(&c, loggers, retry, switchable))
 	if initErr != nil {
 		return nil, fmt.Errorf("initialize mapreduce client: %w", initErr)
 	}
@@ -147,6 +143,24 @@ func newMaprClient(args config.Args, cfg config.RuntimeConfig, maprClientMode Ma
 	loggers.Client.Debug("Cumulative mapreduce mode?", c.isCumulative(query))
 
 	return &c, nil
+}
+
+// maprClientProfile returns the profile of the mapreduce client c: its
+// connections get MaprHandlers aggregating into c's session state, and an
+// interactive reload commits its spec to that state (commitSessionSpec),
+// which is told about the reload from its start on, so that no aggregate
+// of the reloaded query that arrives before the commit is lost.
+func maprClientProfile(c *MaprClient, loggers LoggerDependencies, retry, switchable bool) clientProfile {
+	return clientProfile{
+		newHandler: func(server string) handlers.Handler {
+			return handlers.NewMaprHandler(server, c.session, loggers.Client)
+		},
+		retry:          retry,
+		commit:         c.commitSessionSpec,
+		switchWorkload: switchable,
+		expectQuery:    c.session.ExpectAggregates,
+		reloading:      c.session.Switching,
+	}
 }
 
 // prepareMaprArgs parses the query of args, nil for a switchable client
@@ -222,6 +236,18 @@ func (c *MaprClient) Start(ctx context.Context, statsCh <-chan string) (status i
 	return c.finish(ctx.Err(), status)
 }
 
+// awaitReload waits for an interactive reload in flight, if any, to end. A
+// reload holds the aggregates the servers send after their acknowledgements
+// and merges them when it ends (see maprclient.SessionState.Switching), so
+// a final result read before that would lack them. With the sessions ended
+// the reload does not take long: an acknowledgement wait ends with its
+// session.
+func (c *MaprClient) awaitReload() {
+	reloadMu := c.reloadLock()
+	reloadMu.Lock()
+	defer reloadMu.Unlock()
+}
+
 // scheduled reports whether mode is one of dserver's scheduled job modes.
 func (mode MaprClientMode) scheduled() bool {
 	return mode == ScheduledMode || mode == ScheduledPartialMode
@@ -242,9 +268,13 @@ func (mode MaprClientMode) scheduled() bool {
 // incompleteResultReasons) is logged at WARN first instead, so the user
 // learns that the result may lack data.
 func (c *MaprClient) finish(ctxErr error, status int) int {
+	defer c.flushResultLog()
 	if c.mode.scheduled() {
 		return c.finishScheduled(ctxErr, status)
 	}
+	c.awaitReload()
+	// What a reload printed without blocking comes before the final result.
+	c.flushResultLog()
 	if c.session.Snapshot().Query == nil {
 		// Interactive dtail ended while following lines: no query, no
 		// result, nothing to warn about (see dropQuery).
@@ -262,6 +292,39 @@ func (c *MaprClient) finish(ctxErr error, status int) int {
 	}
 	c.clientLogger().Debug("Final result written")
 	return status
+}
+
+// lockedLogger returns the logger for diagnostics logged while a lock of
+// the session state or of a group set is held: one that never blocks.
+func (c *MaprClient) lockedLogger() logging.Logger {
+	if c.resultLog == nil {
+		return c.clientLogger()
+	}
+	return c.resultLog
+}
+
+// flushResultLog waits for the diagnostics of the mapreduce state to be
+// logged, so that none is lost when the client ends right after its final
+// result (e.g. the lines naming the outfile written).
+func (c *MaprClient) flushResultLog() {
+	if c.resultLog != nil {
+		c.resultLog.flush()
+	}
+}
+
+// controlLogger returns the logger for what the interactive control loop
+// prints while it commits a reload (commitSessionSpec): the last table of a
+// query that ends, and the errors of writing it. The control loop alone
+// answers the host key question, which pauses the client logger, so it
+// must never wait for that logger: with the question asked during a
+// reload, a :tail (dropQuery printing the query's last table) or the
+// reload's end left it in the paused logger for good, no lock involved.
+// The reporter and finish keep the client logger and so stay synchronous.
+func (c *MaprClient) controlLogger() clientlog.Logger {
+	if c.resultLog == nil {
+		return c.clientLogger()
+	}
+	return c.resultLog
 }
 
 func (c *MaprClient) finishScheduled(ctxErr error, status int) int {
@@ -440,33 +503,42 @@ func (c *MaprClient) periodicReportResults(ctx context.Context) {
 // (earlyFirstReport), the servers' first aggregates merged for the
 // generation (SessionSnapshot.AggregatesArrived) move the next report to
 // shortly after them (firstReportWindow: firstReportSettle after the last
-// live server's, or, while one is missing, half an interval after the first
-// server's). Every report
-// after it follows one interval after the previous one, which keeps the
-// reports between the servers' sends, at most half an interval behind them,
-// so each table holds one send of every server.
+// live server's, or, while one is missing and its connection is up, half an
+// interval after the first server's; firstReportWindow.postpone). Every
+// report after it is planned one interval after the instant the previous
+// one was planned for (reportSchedule, so the time a report takes does not
+// add up), which keeps the reports between the servers' sends, at most half
+// an interval behind them. A table then normally holds one send of every
+// server; it is no guarantee, as each server sends by its own clock, one
+// interval after it started the query, and a send takes its time to arrive
+// and to be merged.
 func (c *MaprClient) reportGeneration(ctx context.Context, snapshot maprclient.SessionSnapshot) bool {
 	interval := c.reportDelay(snapshot.Query, false)
 	window := c.newFirstReportWindow(snapshot, interval)
+	allArrived := func() bool { return c.allLiveArrived(snapshot) }
 	delay := c.reportDelay(snapshot.Query, true)
 	c.clientLogger().Debug("Sleeping before processing mapreduce results", "generation", snapshot.Generation, "delay", delay)
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
+	schedule := newReportSchedule(time.Now(), delay)
+	defer schedule.timer.Stop()
 
 	for {
 		select {
 		case <-window.arrived:
-			all := c.allLiveArrived(snapshot)
-			timer.Reset(window.settle(time.Now(), all))
+			all := allArrived()
+			now := time.Now()
+			schedule.in(now, window.settle(now, all))
 			c.clientLogger().Debug("Mapreduce aggregates of a server arrived", "generation", snapshot.Generation,
 				"allLiveServers", all)
-		case <-timer.C:
+		case <-schedule.timer.C:
+			if now := time.Now(); c.postponeReport(window, schedule, now, allArrived) {
+				continue
+			}
 			window.reporting()
 			c.clientLogger().Debug("Gathering interim mapreduce result")
 			if err := c.reportResults(false); err != nil {
 				c.clientLogger().Error("Unable to gather mapreduce result", err)
 			}
-			timer.Reset(interval)
+			schedule.next(time.Now(), interval)
 		case <-c.session.Changes():
 			c.clientLogger().Debug("Mapreduce query generation changed, recalculating report interval")
 			return true
@@ -474,6 +546,19 @@ func (c *MaprClient) reportGeneration(ctx context.Context, snapshot maprclient.S
 			return false
 		}
 	}
+}
+
+// postponeReport puts the report due at now off if the first report's
+// window says so (firstReportWindow.postpone) and reports whether it did.
+func (c *MaprClient) postponeReport(window *firstReportWindow, schedule *reportSchedule, now time.Time,
+	allArrived func() bool) bool {
+	wait, ok := window.postpone(now, allArrived)
+	if !ok {
+		return false
+	}
+	schedule.in(now, wait)
+	c.clientLogger().Debug("Mapreduce report put off for the first aggregates of the live servers", "wait", wait)
+	return true
 }
 
 // awaitQueryChange waits until the session state changes (a query is
@@ -487,19 +572,30 @@ func (c *MaprClient) awaitQueryChange(ctx context.Context) bool {
 	}
 }
 
+// reportResults reports the current result (prints it or writes the
+// outfile), printing and logging synchronously to the client logger.
 func (c *MaprClient) reportResults(finalResult bool) error {
+	return c.reportResultsTo(c.clientLogger(), finalResult)
+}
+
+// reportResultsTo is reportResults printing and logging to out: the
+// client logger, or controlLogger on the control loop.
+func (c *MaprClient) reportResultsTo(out clientlog.Logger, finalResult bool) error {
 	snapshot := c.session.Snapshot()
 	if snapshot.Query == nil || snapshot.GlobalGroup == nil {
 		return nil
 	}
 
 	if snapshot.Query.HasOutfile() {
-		return c.writeResultsToOutfile(snapshot, finalResult)
+		return c.writeResultsToOutfile(out, snapshot, finalResult)
 	}
-	return c.printResults(snapshot)
+	return c.printResults(out, snapshot)
 }
 
-func (c *MaprClient) printResults(snapshot maprclient.SessionSnapshot) error {
+// printResults renders the result of snapshot and prints it to out, unless
+// it has no rows or did not change since the last print. The table is
+// rendered here in any case; only its output may be deferred (out).
+func (c *MaprClient) printResults(out clientlog.Logger, snapshot maprclient.SessionSnapshot) error {
 	var result string
 	var err error
 	var numRows int
@@ -522,39 +618,43 @@ func (c *MaprClient) printResults(snapshot maprclient.SessionSnapshot) error {
 
 	changed, ok := c.session.CommitRenderedResult(snapshot.Generation, result)
 	if !ok {
-		c.clientLogger().Debug("Discarding stale mapreduce result", "generation", snapshot.Generation)
+		out.Debug("Discarding stale mapreduce result", "generation", snapshot.Generation)
 		return nil
 	}
 	if !changed {
-		c.clientLogger().Debug("Result hasn't changed compared to last time...")
+		out.Debug("Result hasn't changed compared to last time...")
 		return nil
 	}
 
 	if numRows == 0 {
-		c.clientLogger().Debug("Empty result set this time...")
+		out.Debug("Empty result set this time...")
 		return nil
 	}
 
 	rawQuery := c.runtime.output.PaintMaprRawQuery(snapshot.Query.RawQuery)
-	clientlog.Raw(c.clientLogger(), fmt.Sprintf("%s\n", rawQuery))
+	clientlog.Raw(out, fmt.Sprintf("%s\n", rawQuery))
 
 	if rowsLimit > 0 && numRows > rowsLimit {
-		c.clientLogger().Warn(fmt.Sprintf("Got %d results but limited terminal output "+
+		out.Warn(fmt.Sprintf("Got %d results but limited terminal output "+
 			"to %d rows! Use 'limit' clause to override!", numRows, rowsLimit))
 	}
-	clientlog.Raw(c.clientLogger(), fmt.Sprintf("%s\n", result))
+	clientlog.Raw(out, fmt.Sprintf("%s\n", result))
 	return nil
 }
 
-func (c *MaprClient) writeResultsToOutfile(snapshot maprclient.SessionSnapshot, finalResult bool) error {
+func (c *MaprClient) writeResultsToOutfile(out clientlog.Logger, snapshot maprclient.SessionSnapshot,
+	finalResult bool) error {
 	current, err := c.session.WithCurrentSnapshot(snapshot, func() error {
 		// Lock order inside the callback is SessionState read lock, then
 		// outfileState.mu, then the aggregate/file locks. Do not re-enter
-		// SessionState from this callback.
+		// SessionState from this callback, and log only through
+		// lockedLogger in it: the client logger blocks while the output
+		// is paused, which would keep these locks from a :reload
+		// (deferredLogger).
 		return c.writeCurrentResultsToOutfile(snapshot, finalResult)
 	})
 	if !current {
-		c.clientLogger().Debug("Discarding stale mapreduce outfile result", "generation", snapshot.Generation)
+		out.Debug("Discarding stale mapreduce outfile result", "generation", snapshot.Generation)
 		return nil
 	}
 	return err
@@ -562,7 +662,7 @@ func (c *MaprClient) writeResultsToOutfile(snapshot maprclient.SessionSnapshot, 
 
 func (c *MaprClient) writeCurrentResultsToOutfile(snapshot maprclient.SessionSnapshot, finalResult bool) error {
 	cumulative := c.isCumulative(snapshot.Query)
-	c.clientLogger().Debug("writeResultsToOutfile called", "finalResult", finalResult, "cumulative", cumulative, "generation", snapshot.Generation)
+	c.lockedLogger().Debug("writeResultsToOutfile called", "finalResult", finalResult, "cumulative", cumulative, "generation", snapshot.Generation)
 	if cumulative {
 		return c.writeCumulativeResult(snapshot, finalResult)
 	}
@@ -574,7 +674,7 @@ func (c *MaprClient) writeCurrentResultsToOutfile(snapshot maprclient.SessionSna
 		if err := group.WriteResult(snapshot.Query, true); err != nil {
 			return fmt.Errorf("unable to write non-cumulative mapreduce result: %w", err)
 		}
-		c.clientLogger().Debug("WriteResult completed for non-cumulative append mode")
+		c.lockedLogger().Debug("WriteResult completed for non-cumulative append mode")
 		return nil
 	}
 
@@ -592,7 +692,7 @@ func (c *MaprClient) writeCurrentResultsToOutfile(snapshot maprclient.SessionSna
 		c.outfileState.hasRows = false
 	}
 	if empty && c.outfileState.hasRows {
-		c.clientLogger().Debug("Preserving previous non-empty outfile result", "generation", snapshot.Generation)
+		c.lockedLogger().Debug("Preserving previous non-empty outfile result", "generation", snapshot.Generation)
 		return nil
 	}
 	if err := group.WriteResult(snapshot.Query, true); err != nil {
@@ -601,7 +701,7 @@ func (c *MaprClient) writeCurrentResultsToOutfile(snapshot maprclient.SessionSna
 	if !empty {
 		c.outfileState.hasRows = true
 	}
-	c.clientLogger().Debug("WriteResult completed for non-cumulative mode")
+	c.lockedLogger().Debug("WriteResult completed for non-cumulative mode")
 	return nil
 }
 
@@ -619,7 +719,7 @@ func (c *MaprClient) writeCurrentResultsToOutfile(snapshot maprclient.SessionSna
 func (c *MaprClient) writeCumulativeResult(snapshot maprclient.SessionSnapshot, finalResult bool) error {
 	if snapshot.Query.Outfile.AppendMode {
 		if !finalResult {
-			c.clientLogger().Debug("Not appending interim cumulative mapreduce result", "generation", snapshot.Generation)
+			c.lockedLogger().Debug("Not appending interim cumulative mapreduce result", "generation", snapshot.Generation)
 			return checkAppendOutfile(snapshot.Query.Outfile.FilePath)
 		}
 		// Serializes with appendReplacedResult, which writes a replaced
@@ -630,7 +730,7 @@ func (c *MaprClient) writeCumulativeResult(snapshot maprclient.SessionSnapshot, 
 	if err := snapshot.GlobalGroup.WriteResult(snapshot.Query, finalResult); err != nil {
 		return fmt.Errorf("unable to write cumulative mapreduce result: %w", err)
 	}
-	c.clientLogger().Debug("WriteResult completed for cumulative mode")
+	c.lockedLogger().Debug("WriteResult completed for cumulative mode")
 	return nil
 }
 
@@ -699,7 +799,8 @@ func (c *MaprClient) appendReplacedResult(previous maprclient.SessionSnapshot) {
 		return
 	}
 	if err := c.writeCumulativeResult(previous, true); err != nil {
-		c.clientLogger().Error("Unable to append the replaced query's mapreduce result", err)
+		// On the control loop: never the client logger (controlLogger).
+		c.controlLogger().Error("Unable to append the replaced query's mapreduce result", err)
 	}
 }
 
@@ -718,8 +819,11 @@ func (c *MaprClient) appendReplacedResult(previous maprclient.SessionSnapshot) {
 // the periodic reports until a new query is committed.
 func (c *MaprClient) dropQuery(generation uint64) {
 	if c.session.Snapshot().Query != nil {
-		if err := c.reportResults(true); err != nil {
-			c.clientLogger().Error("Unable to write final mapreduce result", err)
+		// On the control loop: printed and logged without waiting for a
+		// paused client logger (controlLogger).
+		out := c.controlLogger()
+		if err := c.reportResultsTo(out, true); err != nil {
+			out.Error("Unable to write final mapreduce result", err)
 		}
 	}
 	c.session.ClearQuery(generation)

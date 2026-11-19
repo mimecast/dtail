@@ -263,16 +263,50 @@ func (p *defaultParser) configureFieldPlan(plan mapr.ParserFieldPlan) {
 
 // Probe is the default format's own probe: the generic probe, with the fields
 // of every line grouped by the MAPREDUCE:<TABLE> of the line, the table a
-// query names with `from TABLE`.
+// query names with `from TABLE`. A table no table name can select
+// (mapr.SelectableTable: a name with lower-case letters, as a query's table
+// name is upper-cased) is not listed, so that every listed table is one a
+// query can name. Its lines are still read by a query without a table (no
+// from clause, or `from .`), so their fields and $variables are listed
+// under ProbeAnyTable, the entry of no table, which a completion offers
+// only while the query names none; the result's Note names the first such
+// table.
 func (p *defaultParser) Probe(sample ProbeSample) (ProbeResult, error) {
-	return probeLines(p, sample, defaultLineTable)
+	unselectable := ""
+	result, err := probeLines(p, sample, func(line string) string {
+		table := defaultLineTable(line)
+		if mapr.SelectableTable(table) {
+			return table
+		}
+		if unselectable == "" {
+			unselectable = strings.Clone(table)
+		}
+		return ProbeAnyTable
+	})
+	if err == nil && unselectable != "" {
+		result.Note = unselectableTableNote(unselectable)
+	}
+	return result, err
+}
+
+// unselectableTableNote is the probe note about the lines of table, whose
+// fields the probe lists under no table. The name, log content, is cut to
+// ProbeMaxNameBytes and Go-quoted.
+func unselectableTableNote(table string) string {
+	return fmt.Sprintf("the fields of the lines of table %q are listed without a table: table "+
+		"names are upper-cased (`from stats` reads STATS), so no table name selects them; "+
+		"query them without from (or from .)",
+		truncateUTF8(table, ProbeMaxNameBytes))
 }
 
 // ProbeLineTable tells the table of a line of the default format without
 // parsing its fields (ProbeTabler): like MakeFieldsInto it needs an INFO
 // line of at least the 11 tokens of a mapreduce line whose table token
 // starts with "MAPREDUCE:". A line whose key=value fields do not parse is
-// named a table too, which the probe then lists without fields.
+// named a table too, which the probe then lists without fields. A line of a
+// table no table name can select (mapr.SelectableTable) is assigned to
+// ProbeAnyTable, as Probe lists its fields there: its table is not listed,
+// and the table probe of the upper-cased name does not keep it.
 func (p *defaultParser) ProbeLineTable(maprLine string) (string, bool) {
 	if !strings.HasPrefix(maprLine, "INFO") {
 		return "", false
@@ -284,6 +318,9 @@ func (p *defaultParser) ProbeLineTable(maprLine string) (string, bool) {
 			var ok bool
 			if table, ok = strings.CutPrefix(token, "MAPREDUCE:"); !ok {
 				return "", false
+			}
+			if !mapr.SelectableTable(table) {
+				table = ProbeAnyTable
 			}
 		}
 		if tokenIndex == defaultTableToken+1 {

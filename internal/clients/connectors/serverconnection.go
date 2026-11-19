@@ -186,13 +186,7 @@ func (c *ServerConnection) ReplaceStartSessionSpec(spec sessionspec.Spec) (bool,
 // RestoreStartSessionSpec rolls the start spec back after a failed reload
 // (see Connector).
 func (c *ServerConnection) RestoreStartSessionSpec(spec sessionspec.Spec) (bool, error) {
-	return c.sessionState.restoreStartSpec(spec)
-}
-
-// RestoreCommittedSession resets the local session snapshot without advancing
-// the generation.
-func (c *ServerConnection) RestoreCommittedSession(spec sessionspec.Spec, generation uint64, committed bool) {
-	c.sessionState.restore(spec, generation, committed)
+	return c.sessionState.restoreStartSpec(spec, abandonStartWorkload(c.handler))
 }
 
 // Attempt to parse the server port address from the provided server FQDN.
@@ -217,55 +211,52 @@ func ParseServerAddress(address string, defaultPort int) (string, int, error) {
 		return "", 0, fmt.Errorf("parse server address %q: address is empty or contains surrounding whitespace", address)
 	}
 
-	if strings.HasPrefix(address, "[") {
-		if strings.HasSuffix(address, "]") {
-			hostname := address[1 : len(address)-1]
-			if err := validateIPv6Host(hostname); err != nil {
-				return "", 0, fmt.Errorf("parse server address %q: %w", address, err)
-			}
-			return hostname, defaultPort, nil
-		}
-
-		hostname, portText, splitErr := net.SplitHostPort(address)
-		if splitErr != nil {
-			return "", 0, fmt.Errorf("parse server address %q: %w", address, splitErr)
-		}
-		if validateErr := validateIPv6Host(hostname); validateErr != nil {
-			return "", 0, fmt.Errorf("parse server address %q: %w", address, validateErr)
-		}
-		port, portErr := parseServerPort(address, portText)
-		if portErr != nil {
-			return "", 0, portErr
-		}
-		return hostname, port, nil
-	}
-
-	if strings.Count(address, ":") > 1 {
-		if validateErr := validateIPv6Host(address); validateErr != nil {
-			return "", 0, fmt.Errorf("parse server address %q: %w", address, validateErr)
+	switch {
+	case strings.HasPrefix(address, "["):
+		return parseBracketedAddress(address, defaultPort)
+	case strings.Count(address, ":") > 1:
+		// A bare IPv6 address: it can carry no port.
+		if err := validateIPv6Host(address); err != nil {
+			return "", 0, fmt.Errorf("parse server address %q: %w", address, err)
 		}
 		return address, defaultPort, nil
+	case strings.Contains(address, ":"):
+		return splitServerHostPort(address, validateServerHost)
 	}
-
-	if strings.Contains(address, ":") {
-		hostname, portText, splitErr := net.SplitHostPort(address)
-		if splitErr != nil {
-			return "", 0, fmt.Errorf("parse server address %q: %w", address, splitErr)
-		}
-		if validateErr := validateServerHost(hostname); validateErr != nil {
-			return "", 0, fmt.Errorf("parse server address %q: %w", address, validateErr)
-		}
-		port, portErr := parseServerPort(address, portText)
-		if portErr != nil {
-			return "", 0, portErr
-		}
-		return hostname, port, nil
-	}
-
-	if validateErr := validateServerHost(address); validateErr != nil {
-		return "", 0, fmt.Errorf("parse server address %q: %w", address, validateErr)
+	if err := validateServerHost(address); err != nil {
+		return "", 0, fmt.Errorf("parse server address %q: %w", address, err)
 	}
 	return address, defaultPort, nil
+}
+
+// parseBracketedAddress parses [ipv6], which gets defaultPort, and
+// [ipv6]:port.
+func parseBracketedAddress(address string, defaultPort int) (string, int, error) {
+	if !strings.HasSuffix(address, "]") {
+		return splitServerHostPort(address, validateIPv6Host)
+	}
+	hostname := address[1 : len(address)-1]
+	if err := validateIPv6Host(hostname); err != nil {
+		return "", 0, fmt.Errorf("parse server address %q: %w", address, err)
+	}
+	return hostname, defaultPort, nil
+}
+
+// splitServerHostPort splits address, a host:port or [ipv6]:port, and
+// checks its host with validateHost and its port.
+func splitServerHostPort(address string, validateHost func(string) error) (string, int, error) {
+	hostname, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", 0, fmt.Errorf("parse server address %q: %w", address, err)
+	}
+	if err = validateHost(hostname); err != nil {
+		return "", 0, fmt.Errorf("parse server address %q: %w", address, err)
+	}
+	port, err := parseServerPort(address, portText)
+	if err != nil {
+		return "", 0, err
+	}
+	return hostname, port, nil
 }
 
 func parseServerPort(address, portText string) (int, error) {
@@ -482,7 +473,7 @@ func (c *ServerConnection) handle(ctx context.Context, cancel context.CancelFunc
 	}
 	c.registerAuthKey()
 
-	dispatchErr := dispatchInitialCommands(c.server, c.handler, c.commands, c.interactive,
+	dispatchErr := dispatchInitialCommands(ctx, c.server, c.handler, c.commands, c.interactive,
 		c.sessionSpec, &c.sessionState, c.log())
 	if dispatchErr != nil {
 		dispatchErr = preferContextError(ctx, dispatchErr)

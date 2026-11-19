@@ -375,8 +375,15 @@ func TestAggregateArrivalSignalsFirstMergePerGeneration(t *testing.T) {
 	aggregate := NewAggregate("srv1", state, logging.NopLogger{})
 	snapshot := state.Snapshot()
 	addMessage(t, aggregate, countMessage("ERROR", aggregateCountStorage(t, query), "3"))
-	snapshot.GlobalGroup.Update(func(*mapr.GroupSet) { mergeMessages(t, aggregate) })
-	assertArrived(t, snapshot.AggregatesArrived, false)
+	// Asserted while the lock is still held: the missed merge schedules a
+	// retry mergeRetryDelay later (retryMerge), which merges, and signals,
+	// as soon as the lock is free. Checked after the Update, the assertion
+	// raced with that retry.
+	snapshot.GlobalGroup.Update(func(*mapr.GroupSet) {
+		mergeMessages(t, aggregate)
+		time.Sleep(2 * mergeRetryDelay) // a retry misses the lock as well
+		assertArrived(t, snapshot.AggregatesArrived, false)
+	})
 	if err := aggregate.Flush(); err != nil {
 		t.Fatalf("Flush() error = %v", err)
 	}

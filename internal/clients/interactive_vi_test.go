@@ -231,8 +231,16 @@ func TestEditInputViEscape(t *testing.T) {
 		{"esc esc", "\x1b\x1b", esc + esc, true},
 		{"text then esc", "abc\x1b", "abc" + esc, true},
 		{"alt-e still the editor", "\x1be", edit, true},
-		{"arrow untouched", "\x1b[A", "\x1b[A", true},
-		{"esc in paste untouched", "\x1b[200~a\x1b\x1b[201~", "\x1b[200~a\x1b\x1b[201~", true},
+		{"up and down are the vi history keys", "\x1b[Aa\x1b[B", string(viUpKey) + "a" + string(viDownKey), true},
+		{"other arrows untouched", "\x1b[C\x1b[D", "\x1b[C\x1b[D", true},
+		{"up in paste no history key, its ESC a blank", "\x1b[200~\x1b[A\x1b[201~", "\x1b[200~ [A\x1b[201~", true},
+		{"emacs mode keeps up and down", "\x1b[A\x1b[B", "\x1b[A\x1b[B", false},
+		{"ctrl-p and ctrl-n are the vi history keys", "a\x10b\x0e", "a" + string(viUpKey) + "b" + string(viDownKey), true},
+		{"ctrl-p and ctrl-n in paste blanks", "\x1b[200~\x10\x0e\x1b[B\x1b[201~\x10",
+			"\x1b[200~   [B\x1b[201~" + string(viUpKey), true},
+		{"emacs mode keeps ctrl-p and ctrl-n", "a\x10\x0e", "a\x10\x0e", false},
+		{"emacs mode: no arrow in paste either", "\x1b[200~\x1b[A\x1b[201~", "\x1b[200~ [A\x1b[201~", false},
+		{"esc in paste a blank, no vi escape", "\x1b[200~a\x1b\x1b[201~", "\x1b[200~a \x1b[201~", true},
 		{"emacs mode keeps a lone esc", "\x1b", "\x1b", false},
 	}
 	for _, tt := range tests {
@@ -251,7 +259,9 @@ func TestEditInputViEscape(t *testing.T) {
 // TestViReviewRegressions covers the cases of the vi mode review: the
 // cursor past the line's end (where the Terminal's Up, End and Right put
 // it), the register kept by an empty delete, Tab ending a pending operator,
-// k continuing from a line recalled with Up, e before trailing blanks, and
+// k continuing from a line recalled with Up (one history position, see
+// TestViHistoryOnePosition for the real Terminal), e before trailing
+// blanks, and
 // a put count capped at the editor's line limit.
 func TestViReviewRegressions(t *testing.T) {
 	v := newViEditor(nil, nil)
@@ -275,7 +285,7 @@ func TestViReviewRegressions(t *testing.T) {
 		t.Fatalf("d Tab w: %q at %d, want the line kept and the cursor at 6", line, pos)
 	}
 	v = newViEditor(viTestHistory{":show", ":help"}, nil)
-	if line, _ := runVi(t, v, viNormal, ":show", 0, "k"); line != ":help" {
+	if line, _ := runVi(t, v, viNormal, "", 0, string(viUpKey)+"k"); line != ":help" {
 		t.Fatalf("k after Up recalled %q, want %q", line, ":help")
 	}
 	if _, pos := runVi(t, newViEditor(nil, nil), viNormal, "ab  ", 0, "ee"); pos != 1 {
@@ -299,6 +309,8 @@ func TestEditInputBacklogSplitAcrossReads(t *testing.T) {
 		name, in, want string
 	}{
 		{"held arrow keys", strings.Repeat("\x1b[D", 30), strings.Repeat("\x1b[D", 30)},
+		{"up cut after its esc", strings.Repeat("\x1b[A", 30), strings.Repeat(string(viUpKey), 30)},
+		{"down cut after its bracket", "xx" + strings.Repeat("\x1b[B", 30), "xx" + strings.Repeat(string(viDownKey), 30)},
 		{"paste end cut", paste + "\x1b", paste + esc},
 		{"lone esc at a full read", strings.Repeat("x", 63) + "\x1b" + "b", strings.Repeat("x", 63) + "\x1bb"},
 	}

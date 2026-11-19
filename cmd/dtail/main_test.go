@@ -9,7 +9,7 @@ import (
 // TestApplyClientDeadlines verifies that --timeout and --shutdownAfter are turned
 // into client-side context deadlines and that the earliest one wins, which is
 // what makes the dtail follow client exit instead of reconnecting after a
-// timeout-induced disconnect (task xu0).
+// timeout-induced disconnect.
 func TestApplyClientDeadlines(t *testing.T) {
 	tests := []struct {
 		name          string

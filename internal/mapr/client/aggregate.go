@@ -66,7 +66,26 @@ type Aggregate struct {
 	// retrying is set while a retry of a merge that missed the global
 	// group set's lock is scheduled (retryMerge).
 	retrying bool
+	// heldFor is the session switch (SessionState.switchPending) the queued
+	// messages are held for, 0 when none are held (see SessionAcked).
+	heldFor uint64
+	// rolledBack is set once a second acknowledgement arrived within the
+	// switch heldFor: what is held since is the previous workload's again.
+	rolledBack bool
+	// acks counts the session acknowledgements of the connection
+	// (SessionAcked): the first is its initial SESSION START's.
+	acks int
+	// startAbandoned is set when the workload of the connection's initial
+	// SESSION START is one the client rolled back while the start was
+	// still unacknowledged (AbandonStartWorkload).
+	startAbandoned bool
+	// failures are the errors of fields that could not be aggregated,
+	// kept (at most maxKeptFailures) until mu is released (withLock).
+	failures []error
 }
+
+// maxKeptFailures bounds Aggregate.failures.
+const maxKeptFailures = 16
 
 // mergeRetryDelay is how long after a merge that missed the global group
 // set's lock the queued messages are tried again.
@@ -117,6 +136,8 @@ func (a *Aggregate) Expected() bool {
 // and queues it for the next Merge or Flush. message is copied, so the caller
 // may reuse it right away. A message of another generation than the queued
 // ones drops those first: they belong to a query that is no longer current.
+// Messages held for a session switch (SessionAcked) are kept, as they
+// belong to the generation the switch commits.
 func (a *Aggregate) Add(message []byte) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -124,7 +145,11 @@ func (a *Aggregate) Add(message []byte) error {
 	if a.session == nil {
 		return fmt.Errorf("missing client mapreduce session state")
 	}
-	if generation := a.session.Generation(); generation != a.generation {
+	if a.startAbandoned && a.acks < 2 {
+		// The abandoned start workload's (AbandonStartWorkload).
+		return nil
+	}
+	if generation := a.session.Generation(); generation != a.generation && a.heldFor == 0 {
 		a.reset()
 		a.generation = generation
 	}
@@ -152,41 +177,207 @@ func (a *Aggregate) Add(message []byte) error {
 // (retryMerge) and at the next Merge or Flush. Only once maxPendingBytes
 // are queued does it wait for the lock.
 func (a *Aggregate) Merge() error {
-	return a.merge(false)
+	a.merge(false)
+	return nil
 }
 
 // Flush aggregates any queued messages into the shared global group set,
 // waiting for its lock: during shutdown the last messages must not be lost.
+// Messages held for a pending session switch stay queued also here: the
+// end of the switch merges them (see SessionAcked).
 func (a *Aggregate) Flush() error {
-	return a.merge(true)
+	a.merge(true)
+	return nil
+}
+
+// SessionAcked is told by the connection's handler, in the order of the
+// received frames, that the server acknowledged a SESSION START or UPDATE:
+// the aggregate messages after it are those of the workload it
+// acknowledged.
+//
+// It matters while the client switches the session (SessionState.Switching,
+// an interactive reload): the servers are updated one after the other and
+// each starts the new workload as soon as it acknowledged the update, so
+// its first aggregates (for a small file its whole result) can arrive
+// before the client committed the new query. They used to be merged into
+// the replaced query's result, or dropped when no query ran yet, and were
+// missing in the new one's. Now the messages queued before the
+// acknowledgement are merged into the still current result, and those
+// after it are held until the switch ended, then merged into the result
+// current by then: the committed query's, or, after a failed switch, the
+// previous one's, to which a second acknowledgement within the switch
+// (the rollback's, dropping what was held for the abandoned workload)
+// brought the server back.
+//
+// The end of the switch settles what is held itself, waiting for the
+// global group set's lock (SessionState.Switching(false) calls endHold of
+// every holder, one after the other): once it returned, the result holds
+// it, also of a connection whose session ended during the switch (its
+// shutdown Flush keeps held messages) and without a further message
+// arriving (a dmap server sends its result once). After a failed switch,
+// what a connection holds without a second acknowledgement is the
+// abandoned workload's (its session ended, or its rollback failed) and is
+// dropped instead (settleHold).
+//
+// What is held is not bounded by maxPendingBytes: waiting would block the
+// handler that must read the acknowledgements, and dropping lost rows of
+// a result the client keeps in memory anyway once merged. It is bounded by
+// what a server sends during one reload.
+//
+// The acknowledgement of a SESSION START holds too: a connection that
+// comes up during the reload starts with the reloaded spec (see
+// connectors.Connector.ReplaceStartSessionSpec). One whose start began
+// before the reload, with the previous spec, is updated by the reload
+// right after: the update's acknowledgement is then the second within the
+// switch and drops what the previous query sent in between, and a reload
+// failing before it was updated drops it at its end (usually nothing, a
+// server's first aggregates come an interval after its start); the two
+// starts can not be told apart here.
+//
+// Outside a switch (the initial SESSION START, a start's deferred
+// rollback) nothing is held; what a start that is rolled back later sends
+// until then is dropped instead (AbandonStartWorkload).
+//
+// It runs on the goroutine reading the connection's frames and waits for
+// the global group set's lock to merge what was queued before the
+// acknowledgement, so a result being rendered delays that connection's
+// frames for as long as the rendering takes. Nothing is logged with mu
+// held, here or in endHold: a paused client logger would block the end of
+// the reload behind it.
+func (a *Aggregate) SessionAcked() {
+	if a.session == nil {
+		return
+	}
+	a.withLock(func() {
+		a.acks++
+		pending := a.session.holdFor(a)
+		if pending != 0 && a.heldFor == pending {
+			a.reset()
+			a.rolledBack = true
+			return
+		}
+		// Queued before the acknowledgement (also what an ended switch
+		// still holds): the current generation's.
+		a.settleHold()
+		a.mergeLocked(true)
+		a.heldFor, a.rolledBack = pending, false
+	})
+}
+
+// AbandonStartWorkload tells the aggregate, with abandoned set, that the
+// workload the connection's initial SESSION START asked for is no longer
+// the client's: a :reload gave the connecting connection its spec, failed,
+// and its rollback could not wait for the start's acknowledgement, so the
+// start rolls its session back itself with a SESSION UPDATE right after it
+// (connectors.ErrSessionRollbackDeferred). Both acknowledgements then
+// arrive outside the reload's switch, where nothing is held, and the
+// aggregates the server sent in between, those of the reloaded query, were
+// merged into the result of the query the client kept (for a dmap server
+// reading a small file, its whole result). They are dropped now: every
+// message up to the connection's second acknowledgement, the rollback's,
+// after which the server runs the kept workload again. If the rollback is
+// not acknowledged the connection ends, so nothing of it is merged.
+//
+// The connection tells it before it defers the rollback, and takes it
+// back (abandoned false) if the start finished in that moment: the session
+// is then rolled back by an update within the switch, as any committed one
+// (SessionAcked).
+func (a *Aggregate) AbandonStartWorkload(abandoned bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.startAbandoned = abandoned
+}
+
+// withLock runs fn with mu held and logs the aggregation failures it
+// left (aggregateFields) after releasing mu: a logger that blocks (the
+// interactive client's while its output is paused) must not hold mu, for
+// which the end of a reload waits (endHold).
+func (a *Aggregate) withLock(fn func()) {
+	a.withLockLogging(a.logger, fn)
+}
+
+// withLockLogging is withLock logging the failures to logger.
+func (a *Aggregate) withLockLogging(logger logging.Logger, fn func()) {
+	a.mu.Lock()
+	fn()
+	failures := a.failures
+	a.failures = nil
+	a.mu.Unlock()
+	for _, err := range failures {
+		logger.Error(err)
+	}
+}
+
+// settleHold ends holding the queued messages if the switch they are held
+// for ended, and reports false while it is pending. After a committed
+// switch they belong to the generation that is current now, and so they
+// do after a failed one if a second acknowledgement brought the server
+// back to the previous workload (rolledBack); else they are the abandoned
+// workload's and are dropped. The caller holds mu.
+func (a *Aggregate) settleHold() bool {
+	if a.heldFor == 0 {
+		return true
+	}
+	pending, committed := a.session.switchOutcome(a.heldFor)
+	if pending {
+		return false
+	}
+	if !committed && !a.rolledBack {
+		a.reset()
+	}
+	a.heldFor, a.rolledBack = 0, false
+	a.generation = a.session.Generation()
+	return true
+}
+
+// endHold is called by the session state when a switch ended: it settles
+// what is held for it (settleHold) and merges what is queued into the
+// result that is current now, waiting for the global group set's lock.
+//
+// It runs on the goroutine that ends the switch, the interactive control
+// loop, which must not block in a paused client logger (it alone answers
+// the host key question that pauses it). So the failures are logged to the
+// session state's logger, which the client makes a non-blocking one, and
+// not to the connection's.
+func (a *Aggregate) endHold() {
+	a.withLockLogging(a.session.logger, func() {
+		if a.settleHold() {
+			a.mergeLocked(true)
+		}
+	})
 }
 
 // merge aggregates the queued messages into the global group set of the
 // current generation, waiting for its lock when block is set or too much is
 // queued. Queued messages of an earlier generation are dropped.
-func (a *Aggregate) merge(block bool) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+func (a *Aggregate) merge(block bool) {
+	a.withLock(func() { a.mergeLocked(block) })
+}
 
+// mergeLocked is merge with mu held. Messages held for a session switch
+// that is still pending stay queued (see SessionAcked).
+func (a *Aggregate) mergeLocked(block bool) {
 	// Add queues nothing without a session.
 	if len(a.messages) == 0 {
-		return nil
+		return
+	}
+	if !a.settleHold() {
+		return
 	}
 	snapshot := a.session.Snapshot()
 	if snapshot.Query == nil || snapshot.GlobalGroup == nil {
 		// No query is active: interactive dtail switched its session to a
-		// plain read (SessionState.ClearQuery), or not yet to the query
-		// whose first aggregates these are (the servers start the new
-		// workload before the client commits it). Neither has a result to
-		// add them to, so they are dropped, as aggregates of a replaced
-		// generation are.
+		// plain read (SessionState.ClearQuery). There is no result to add
+		// them to, so they are dropped, as aggregates of a replaced
+		// generation are. (The first aggregates of a query being switched
+		// to are held until it is committed, see SessionAcked.)
 		a.reset()
-		return nil
+		return
 	}
 	if snapshot.Generation != a.generation {
 		a.reset()
 		a.generation = snapshot.Generation
-		return nil
+		return
 	}
 
 	// The first merge of the generation from this server tells the reporter
@@ -198,13 +389,12 @@ func (a *Aggregate) merge(block bool) error {
 	}
 	if block || len(a.pending) >= maxPendingBytes {
 		snapshot.GlobalGroup.Update(apply)
-		return nil
+		return
 	}
 	if !snapshot.GlobalGroup.UpdateNoblock(apply) && !a.retrying {
 		a.retrying = true
 		go a.retryMerge()
 	}
-	return nil
 }
 
 // retryMerge merges the messages a Merge left queued because another
@@ -220,7 +410,7 @@ func (a *Aggregate) retryMerge() {
 	a.mu.Lock()
 	a.retrying = false
 	a.mu.Unlock()
-	_ = a.merge(false)
+	a.merge(false)
 }
 
 // aggregatePending aggregates every queued message, in order, into group and
@@ -265,7 +455,7 @@ func (a *Aggregate) preparePlan(query *mapr.Query) {
 
 // aggregateFields aggregates the selected fields of the message in a.fields
 // into set, the global set of its group. A field whose value cannot be
-// aggregated is logged and skipped; the message's samples are added when any
+// aggregated is skipped and its error kept for the log (failures); the message's samples are added when any
 // field was aggregated. The server already aggregated each value, so it is
 // added with clientAggregation, which adds it to set as merging a set that
 // holds only this message would (mapr.AggregateSet.Merge): a server's count
@@ -285,7 +475,10 @@ func (a *Aggregate) aggregateFields(set *mapr.AggregateSet, samples int) {
 			err = set.Aggregate(sc.FieldStorage, sc.Operation, val, true)
 		}
 		if err != nil {
-			a.logger.Error(err)
+			// Logged once mu is released (withLock).
+			if len(a.failures) < maxKeptFailures {
+				a.failures = append(a.failures, err)
+			}
 			continue
 		}
 		addedSamples = true

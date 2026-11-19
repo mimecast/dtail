@@ -137,7 +137,7 @@ readLoop:
 }
 
 // TestDTailShutdownAfter is a regression guard for the follow-client shutdown
-// bug (task 1v0): a `dtail --shutdownAfter N` follow session used to never
+// bug: a `dtail --shutdownAfter N` follow session used to never
 // return from client.Start, so the process hung until it was killed externally.
 // With the fix the shutdownAfter deadline cancels the client context, which the
 // reconnect and per-connection read loops honour, so the process exits shortly

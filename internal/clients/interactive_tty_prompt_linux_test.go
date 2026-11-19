@@ -43,7 +43,7 @@ func TestInteractiveEditorWhileHostKeyQuestionOnPTY(t *testing.T) {
 	t.Cleanup(cancel)
 	done := make(chan int, 1)
 	go func() {
-		_ = c.runInteractiveControl(ctx, cancel, slave, answers)
+		_ = c.runInteractiveControl(ctx, cancel, slave, answers, testEditorDeps())
 		done <- 0
 	}()
 	waitForPTYOutput(t, master, "Tab completes", done)

@@ -547,7 +547,7 @@ func (r *readCommand) read(ctx context.Context, ltx lcontext.LContext,
 	// or it is genuine cat/grep/tail output using the output direct-output writer;
 	// makeProcessor picks between the two. The former channel-based fallback
 	// (readViaChannels feeding the former aggregate implementation) was removed once
-	// serverless MapReduce migrated to the output aggregate (tasks sv0/hv0), so
+	// serverless MapReduce migrated to the output aggregate, so
 	// there is no non-output path left here.
 	r.logger.Debug(r.logContext, "Selecting read mode",
 		"mode", r.mode, "hasAggregate", r.aggregate != nil)

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -141,6 +143,69 @@ func requireReloadFiles(t *testing.T, line, want string) {
 	}
 	if value != want {
 		t.Fatalf("completed line %q parses to --files %q, want %q", line, value, want)
+	}
+}
+
+// TestCompleteFilesValueNotStarted covers Tab right after ":reload --files "
+// (no value started): a session that reads no files (no --files, or only
+// the "-" of serverless mode) has no current value to insert, so the value
+// is completed like a started empty one, from the listing of the working
+// directory, as the session's hint promises; a session that reads files
+// leaves the Tab to completeInteractive, which inserts them.
+func TestCompleteFilesValueNotStarted(t *testing.T) {
+	const line = ":reload --files "
+	now := time.Unix(1_000_000, 0)
+	catalogSource := func(names ...string) pathCompletionSource {
+		c := newFieldCatalog()
+		if len(names) > 0 {
+			c.storeListing("srv1", pathListingWorkingDir, listingAnswer(false, names...), now)
+		}
+		return pathCompletionSource{find: func(dir, base string) listingMatch {
+			return c.findListing(dir, base, now)
+		}}
+	}
+	one, several, uncached := catalogSource("local.log"), catalogSource("a.log", "b.log"), catalogSource()
+	tests := []struct {
+		name, what, line string
+		source           pathCompletionSource
+		wantOK           bool
+		wantLine         string
+		wantCandidates   []string
+		wantFetch        string
+	}{
+		{name: "no files, one name", line: line, source: one, wantOK: true, wantLine: line + "local.log"},
+		{name: "no files, names listed", line: line, source: several, wantOK: true,
+			wantLine: line, wantCandidates: []string{"a.log", "b.log"}},
+		{name: "no files, listing asked for", line: line, source: uncached, wantOK: true,
+			wantLine: line, wantFetch: pathListingWorkingDir},
+		{name: "stdin only", what: "-", line: line, source: one, wantOK: true, wantLine: line + "local.log"},
+		{name: "blank entries and stdin", what: " , - ,", line: line, source: one, wantOK: true,
+			wantLine: line + "local.log"},
+		{name: "single dash flag", line: ":reload -files ", source: one, wantOK: true,
+			wantLine: ":reload -files local.log"},
+		{name: "after another flag", line: ":reload --regex x --files ", source: one, wantOK: true,
+			wantLine: ":reload --regex x --files local.log"},
+		{name: "session reads files", what: "/var/log/app.log", line: line, source: one},
+		{name: "session reads stdin and a file", what: "-,/var/log/app.log", line: line, source: one},
+		{name: "other flag", line: ":reload --regex ", source: one},
+		{name: "no flag before", line: ":reload ", source: one},
+		{name: "escaped blank", line: `:reload --files \`, source: one},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := config.Args{Mode: omode.TailClient, What: tt.what}
+			got, ok := completeFilesValue(tt.line, len(tt.line), args, tt.source)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v (%+v)", ok, tt.wantOK, got)
+			}
+			if !ok {
+				return
+			}
+			if got.line != tt.wantLine || got.pos != len(got.line) ||
+				!reflect.DeepEqual(got.candidates, tt.wantCandidates) || got.fetch != tt.wantFetch {
+				t.Fatalf("got line %q pos %d candidates %q fetch %q", got.line, got.pos, got.candidates, got.fetch)
+			}
+		})
 	}
 }
 

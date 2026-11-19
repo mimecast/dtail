@@ -153,7 +153,7 @@ func TestTableProbeKeepsTheReadPermissionCheck(t *testing.T) {
 	denied := writeProbeTestFile(t, filepath.Join(dir, "secret"), "b.log", probeTestOrdersLine(2))
 	handler := newProbeTestHandler(t, []string{"readfiles:^" + filepath.Join(dir, "ok") + "/"}, nil)
 	var sampled []string
-	handler.probeSampler = func(ctx context.Context, target fs.ValidatedReadTarget, path string,
+	handler.probeOverrides.sampler = func(ctx context.Context, target fs.ValidatedReadTarget, path string,
 		options fs.SampleOptions) (fs.Sample, error) {
 		sampled = append(sampled, path)
 		return fs.SampleFile(ctx, target, path, options)
@@ -181,7 +181,7 @@ func TestTableProbeSampleBounds(t *testing.T) {
 	file := writeRareTableFile(t, t.TempDir(), 10, 5)
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
 	var got []fs.SampleOptions
-	handler.probeSampler = func(ctx context.Context, target fs.ValidatedReadTarget, path string,
+	handler.probeOverrides.sampler = func(ctx context.Context, target fs.ValidatedReadTarget, path string,
 		options fs.SampleOptions) (fs.Sample, error) {
 		got = append(got, options)
 		return fs.SampleFile(ctx, target, path, options)
@@ -216,7 +216,7 @@ func TestTableProbeRunsOneAtATime(t *testing.T) {
 	file := writeRareTableFile(t, t.TempDir(), 10, 5)
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
 	started, release := make(chan string, 4), make(chan struct{})
-	handler.probeSampler = blockingProbeSampler(started, release)
+	handler.probeOverrides.sampler = blockingProbeSampler(started, release)
 
 	handler.handleCommand(encodedTestCommand(probeCommandFor(t, protocol.ProbeRequest{ID: "plain", Files: []string{file}})))
 	waitForStarted(t, started)
@@ -229,7 +229,7 @@ func TestTableProbeRunsOneAtATime(t *testing.T) {
 	if plain, _ := readProbeAnswer(t, handler.serverMessages); plain.ID != "plain" {
 		t.Fatalf("answer = %+v, want the plain probe's", plain)
 	}
-	handler.probeSampler = nil
+	handler.probeOverrides.sampler = nil
 	answer, _ := runProbe(t, handler, probeCommandFor(t, targeted))
 	if answer.ID != "targeted" || answer.Table != "ORDERS" || answer.Formats["default"].Tables["ORDERS"] == nil {
 		t.Fatalf("targeted probe answer = %+v, want ORDERS", answer)
@@ -241,7 +241,7 @@ func TestTableProbeRunsOneAtATime(t *testing.T) {
 func TestTableProbeRejectsInvalidRequests(t *testing.T) {
 	file := writeRareTableFile(t, t.TempDir(), 10, 5)
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
-	handler.probeSampler = func(context.Context, fs.ValidatedReadTarget, string, fs.SampleOptions) (fs.Sample, error) {
+	handler.probeOverrides.sampler = func(context.Context, fs.ValidatedReadTarget, string, fs.SampleOptions) (fs.Sample, error) {
 		t.Error("an invalid request was sampled")
 		return fs.Sample{}, nil
 	}

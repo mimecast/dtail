@@ -293,3 +293,99 @@ func TestProbeLineTableMatcher(t *testing.T) {
 		t.Error("the matcher of no table must keep every line")
 	}
 }
+
+// TestProbeTableScannerMatcherCutName: the scanner lists a table name cut
+// to ProbeMaxNameBytes, which is the name a table-targeted probe then asks
+// for, so the matcher must compare the cut names too. A table whose name
+// differs within the first ProbeMaxNameBytes bytes is still dropped.
+func TestProbeTableScannerMatcherCutName(t *testing.T) {
+	const prefix = "INFO|1|1|x.go:1|8|13|7|0.21|1s|MAPREDUCE:"
+	long := strings.Repeat("T", ProbeMaxNameBytes) + "TAIL"
+	line := []byte(prefix + long + "|a=1")
+	scanner := NewProbeTableScanner([]string{"default"}, "h")
+	scanner.Scan(line)
+	listed := scanner.Tables("default")
+	if len(listed) != 1 || len(listed[0]) != ProbeMaxNameBytes {
+		t.Fatalf("tables = %v, want one name of %d bytes", listed, ProbeMaxNameBytes)
+	}
+	match := scanner.Matcher(listed[0])
+	if !match(line) {
+		t.Errorf("the matcher of the listed name %q drops the table's line", listed[0])
+	}
+	other := strings.Repeat("T", ProbeMaxNameBytes-1) + "XTAIL"
+	if match([]byte(prefix + other + "|a=1")) {
+		t.Error("the matcher keeps a table that differs before the cut")
+	}
+	if match([]byte(prefix + "ORDERS|note=" + listed[0])) {
+		t.Error("the matcher keeps a line of another table that names the table")
+	}
+}
+
+// TestProbeCollectorAddFieldsCapIsDeterministic: of a line with more fields
+// (and $variables) than a table keeps, the first ones in name order
+// survive, not a random set of the map's iteration order.
+func TestProbeCollectorAddFieldsCapIsDeterministic(t *testing.T) {
+	fields := make(map[string]string)
+	var wantFields, wantVariables []string
+	for i := 0; i < ProbeMaxFieldsPerTable+50; i++ {
+		field, variable := fmt.Sprintf("f%04d", i), fmt.Sprintf("$v%04d", i)
+		fields[field], fields[variable] = "1", "2"
+		if i < ProbeMaxFieldsPerTable {
+			wantFields, wantVariables = append(wantFields, field), append(wantVariables, variable)
+		}
+	}
+	fields["*"] = "x"
+	var collector probeCollector
+	collector.addFields("A", fields)
+	result := collector.result
+	if got := sortedKeys(result.Tables["A"]); !slices.Equal(got, wantFields) {
+		t.Errorf("fields kept differ from the first %d by name: %d kept", ProbeMaxFieldsPerTable, len(got))
+	}
+	if got := sortedKeys(result.Variables); !slices.Equal(got, wantVariables) {
+		t.Errorf("variables kept differ from the first %d by name: %d kept", ProbeMaxFieldsPerTable, len(got))
+	}
+	if got := sortedKeys(result.TableVariables["A"]); !slices.Equal(got, wantVariables) {
+		t.Errorf("table variables kept differ from the first %d by name: %d kept", ProbeMaxFieldsPerTable, len(got))
+	}
+}
+
+// TestProbeTableLineMatcherCutName: the word match, which serves the
+// formats without a ProbeTabler, keeps the lines of a table whose name is
+// longer than ProbeMaxNameBytes when asked for the name the probe lists
+// (cut), and only those: a shorter name still needs the whole word, and a
+// name that differs before the cut is another table.
+func TestProbeTableLineMatcherCutName(t *testing.T) {
+	listed := strings.Repeat("T", ProbeMaxNameBytes)
+	short := strings.Repeat("T", ProbeMaxNameBytes-1)
+	// The two bytes of the umlaut straddle the cut, so the listed name
+	// ends before it.
+	umlaut := short + "\u00c4TAIL"
+	tests := []struct {
+		table, line string
+		want        bool
+	}{
+		{listed, "table=" + listed + "TAIL a=1", true},
+		{listed, "table=" + listed + "_2 a=1", true},
+		{listed, "table=" + listed + " a=1", true},
+		{listed, listed, true},
+		{listed, "table=X" + listed + "TAIL a=1", false},
+		{listed, "table=" + short + "XTAIL a=1", false},
+		{short, "table=" + listed + " a=1", false},
+		{short, "table=" + short + "X a=1", false},
+		{short, "table=" + umlaut + " a=1", true},
+		{truncateUTF8(umlaut, ProbeMaxNameBytes), "table=" + umlaut + " a=1", true},
+		{"STATS", "table=STATSX and " + strings.Repeat("x", 2*ProbeMaxNameBytes), false},
+	}
+	for _, tt := range tests {
+		for name, match := range map[string]func([]byte) bool{
+			"ProbeTableLineMatcher":    ProbeTableLineMatcher(tt.table),
+			"nil scanner":              (*ProbeTableScanner)(nil).Matcher(tt.table),
+			"scanner, unclaimed line":  NewProbeTableScanner([]string{"default"}, "h").Matcher(tt.table),
+			"scanner without a tabler": NewProbeTableScanner([]string{"generic"}, "h").Matcher(tt.table),
+		} {
+			if got := match([]byte(tt.line)); got != tt.want {
+				t.Errorf("%s(%d bytes)(%q) = %v, want %v", name, len(tt.table), tt.line, got, tt.want)
+			}
+		}
+	}
+}

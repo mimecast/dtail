@@ -44,7 +44,7 @@ func (c *baseClient) runProbeCommand(tty io.Writer) error {
 }
 
 // writeFieldsCommand answers :fields [table] with the field catalog as of
-// now (fieldsText), or, for a session without files, whose catalog stays
+// now (fieldsLines), or, for a session without files, whose catalog stays
 // empty, with how to give it files.
 func (c *baseClient) writeFieldsCommand(tty io.Writer, table string) error {
 	if hint := c.prober.noFilesHint(completesPaths(tty)); hint != "" {
@@ -54,7 +54,7 @@ func (c *baseClient) writeFieldsCommand(tty io.Writer, table string) error {
 	if c.prober != nil {
 		now = c.prober.now
 	}
-	return writeControlLine(tty, styleOf(tty).fields(fieldsText(c.prober.catalogSnapshot(), table, now())))
+	return writeControlLine(tty, styleOf(tty).fields(fieldsLines(c.prober.catalogSnapshot(), table, now())))
 }
 
 // parseFieldsCommand parses ":fields" with an optional table name.
@@ -100,7 +100,68 @@ func probeResultMessage(result probeRoundResult, status probeWaitStatus) string 
 	return message
 }
 
-// fieldsText renders the field catalog for :fields: a header with the
+// fieldsLineKind is what a line of the :fields answer is, which decides
+// its style (interactiveStyle.fields).
+type fieldsLineKind int
+
+const (
+	// fieldsPlain is a line without a style of its own: a note, a table
+	// probed on its own, the cut-off remark.
+	fieldsPlain fieldsLineKind = iota
+	// fieldsHint is the answer without field data (fieldsEmptyMessage).
+	fieldsHint
+	// fieldsHeading is the header and a log format, table or $variables
+	// line.
+	fieldsHeading
+	// fieldsError is a probe error or a table that was not found.
+	fieldsError
+	// fieldsSample is a field or $variable with its sample values.
+	fieldsSample
+)
+
+// fieldsLine is one line of the :fields answer: what it is and its text.
+// The answer is built as such lines and painted from them, never by
+// reading its text again: names and notes come from the servers, so a
+// field named "a  e.g. b" or a note ending in ":" would be taken for
+// another kind of line.
+type fieldsLine struct {
+	kind fieldsLineKind
+	// text is the line; of a fieldsSample its indented name only.
+	text string
+	// pad and values are the blanks aligning the sample values of a
+	// fieldsSample line and those values; both empty for a name without
+	// values.
+	pad, values string
+}
+
+// String returns the line as plain text.
+func (l fieldsLine) String() string {
+	if l.values == "" {
+		return l.text
+	}
+	return l.text + l.pad + fieldsSamplesSeparator + l.values
+}
+
+// fieldsDoc collects the lines of the :fields answer.
+type fieldsDoc struct{ lines []fieldsLine }
+
+// add appends a line of kind with the formatted text.
+func (d *fieldsDoc) add(kind fieldsLineKind, format string, args ...any) {
+	d.lines = append(d.lines, fieldsLine{kind: kind, text: fmt.Sprintf(format, args...)})
+}
+
+// fieldsText renders the field catalog for :fields as plain text
+// (fieldsLines).
+func fieldsText(snap catalogSnapshot, table string, now time.Time) string {
+	lines := fieldsLines(snap, table, now)
+	texts := make([]string, len(lines))
+	for i, line := range lines {
+		texts[i] = line.String()
+	}
+	return strings.Join(texts, "\n")
+}
+
+// fieldsLines renders the field catalog for :fields: a header with the
 // servers, the age of the data and the default log format, then per log
 // format (the default first) its tables with their fields and sample values,
 // its $variables and the notes of its probe, then the servers' probe errors.
@@ -108,34 +169,37 @@ func probeResultMessage(result probeRoundResult, status probeWaitStatus) string 
 // query's from clause), with the $variables of their log formats. Every
 // name and value from a server is shown escaped where it is not plain
 // printable text, so that it cannot write control sequences to the terminal.
-func fieldsText(snap catalogSnapshot, table string, now time.Time) string {
+func fieldsLines(snap catalogSnapshot, table string, now time.Time) []fieldsLine {
+	doc := &fieldsDoc{}
 	if snap.empty() {
-		return fieldsEmptyMessage
+		doc.add(fieldsHint, "%s", fieldsEmptyMessage)
+		return doc.lines
 	}
-	var sb strings.Builder
-	sb.WriteString(fieldsHeader(snap, now))
+	doc.add(fieldsHeading, "%s", fieldsHeader(snap, now))
 	formats := fieldsFormatOrder(snap)
 	found := false
 	for _, name := range formats {
-		found = writeFieldsFormat(&sb, name, snap.Formats[name], table) || found
+		found = writeFieldsFormat(doc, name, snap.Formats[name], table) || found
 	}
 	switch {
 	case table != "" && !found:
-		fmt.Fprintf(&sb, "\nno table %s found; tables: %s", displayText(table), displayList(catalogTables(snap)))
+		doc.add(fieldsError, "no table %s found; tables: %s", displayText(table), displayList(catalogTables(snap)))
 	case len(formats) == 0:
-		sb.WriteString("\nno log format found fields in the sampled lines")
+		doc.add(fieldsPlain, "no log format found fields in the sampled lines")
 	}
-	writeTableProbes(&sb, snap, table)
+	writeTableProbes(doc, snap, table)
 	for _, probeErr := range snap.Errors {
-		fmt.Fprintf(&sb, "\nprobe error on %s: %s", displayText(probeErr.Server), displayText(probeErr.Error))
+		file := ""
 		if probeErr.File != "" {
-			fmt.Fprintf(&sb, " (%s)", displayText(probeErr.File))
+			file = fmt.Sprintf(" (%s)", displayText(probeErr.File))
 		}
+		doc.add(fieldsError, "probe error on %s: %s%s", displayText(probeErr.Server),
+			displayText(probeErr.Error), file)
 	}
 	if snap.Truncated {
-		sb.WriteString("\n(an answer was cut to the size limit: fields or sample values may be missing)")
+		doc.add(fieldsPlain, "(an answer was cut to the size limit: fields or sample values may be missing)")
 	}
-	return sb.String()
+	return doc.lines
 }
 
 // fieldsHeader is the first line of the :fields answer.
@@ -161,12 +225,12 @@ func fieldsFormatOrder(snap catalogSnapshot) []string {
 // writeTableProbes writes a line per table probed on its own
 // (catalogSnapshot.TableProbes) that matches table (any case; every one
 // without a table), with the lines its servers sampled.
-func writeTableProbes(sb *strings.Builder, snap catalogSnapshot, table string) {
+func writeTableProbes(doc *fieldsDoc, snap catalogSnapshot, table string) {
 	for _, probed := range slices.Sorted(maps.Keys(snap.TableProbes)) {
 		if table != "" && !strings.EqualFold(probed, table) {
 			continue
 		}
-		fmt.Fprintf(sb, "\ntable %s probed on its own: %d lines of it sampled", displayText(probed),
+		doc.add(fieldsPlain, "table %s probed on its own: %d lines of it sampled", displayText(probed),
 			snap.TableProbes[probed])
 	}
 }
@@ -175,26 +239,26 @@ func writeTableProbes(sb *strings.Builder, snap catalogSnapshot, table string) {
 // format, or only its tables matching table if one is given, each with the
 // $variables its lines filled (catalogFormat.variablesOf), and reports
 // whether it wrote anything.
-func writeFieldsFormat(sb *strings.Builder, name string, format catalogFormat, table string) bool {
+func writeFieldsFormat(doc *fieldsDoc, name string, format catalogFormat, table string) bool {
 	if table != "" {
-		return writeFieldsTables(sb, name, format, table)
+		return writeFieldsTables(doc, name, format, table)
 	}
-	fmt.Fprintf(sb, "\nlog format %s:", displayText(name))
+	doc.add(fieldsHeading, "log format %s:", displayText(name))
 	for _, t := range slices.Sorted(maps.Keys(format.Tables)) {
-		writeFieldsTable(sb, t, format.Tables[t])
+		writeFieldsTable(doc, t, format.Tables[t])
 	}
 	if len(format.Variables) > 0 {
-		sb.WriteString("\n  $variables:")
-		writeFieldsSamples(sb, format.Variables)
+		doc.add(fieldsHeading, "  $variables:")
+		writeFieldsSamples(doc, format.Variables)
 	}
-	writeFieldsNotes(sb, format)
+	writeFieldsNotes(doc, format)
 	return true
 }
 
 // writeFieldsTables writes the tables of one log format matching table
 // (any case, as a query's from clause), each followed by the $variables
 // its lines filled, and reports whether any matched.
-func writeFieldsTables(sb *strings.Builder, name string, format catalogFormat, table string) bool {
+func writeFieldsTables(doc *fieldsDoc, name string, format catalogFormat, table string) bool {
 	var tables []string
 	for _, t := range slices.Sorted(maps.Keys(format.Tables)) {
 		if strings.EqualFold(t, table) {
@@ -204,42 +268,42 @@ func writeFieldsTables(sb *strings.Builder, name string, format catalogFormat, t
 	if len(tables) == 0 {
 		return false
 	}
-	fmt.Fprintf(sb, "\nlog format %s:", displayText(name))
+	doc.add(fieldsHeading, "log format %s:", displayText(name))
 	for _, t := range tables {
-		writeFieldsTable(sb, t, format.Tables[t])
+		writeFieldsTable(doc, t, format.Tables[t])
 		if variables := format.variablesOf(t); len(variables) > 0 {
-			fmt.Fprintf(sb, "\n  $variables of table %s:", displayText(t))
-			writeFieldsSamples(sb, variables)
+			doc.add(fieldsHeading, "  $variables of table %s:", displayText(t))
+			writeFieldsSamples(doc, variables)
 		}
 	}
-	writeFieldsNotes(sb, format)
+	writeFieldsNotes(doc, format)
 	return true
 }
 
 // writeFieldsTable writes the heading and fields of one table.
-func writeFieldsTable(sb *strings.Builder, table string, fields map[string][]string) {
+func writeFieldsTable(doc *fieldsDoc, table string, fields map[string][]string) {
 	if table == "" {
-		sb.WriteString("\n  fields:")
+		doc.add(fieldsHeading, "  fields:")
 	} else {
-		fmt.Fprintf(sb, "\n  table %s:", displayText(table))
+		doc.add(fieldsHeading, "  table %s:", displayText(table))
 	}
-	writeFieldsSamples(sb, fields)
+	writeFieldsSamples(doc, fields)
 }
 
 // writeFieldsNotes writes the notes of the custom probes of a format.
-func writeFieldsNotes(sb *strings.Builder, format catalogFormat) {
+func writeFieldsNotes(doc *fieldsDoc, format catalogFormat) {
 	for _, note := range format.Notes {
-		fmt.Fprintf(sb, "\n  note: %s", displayText(note))
+		doc.add(fieldsPlain, "  note: %s", displayText(note))
 	}
 }
 
 // writeFieldsSamples writes one line per name, sorted, with its sample
 // values quoted, the values aligned in one column.
-func writeFieldsSamples(sb *strings.Builder, samples map[string][]string) {
+func writeFieldsSamples(doc *fieldsDoc, samples map[string][]string) {
 	names := slices.Sorted(maps.Keys(samples))
 	width := 0
 	for _, name := range names {
-		// %-*s pads by runes, so the width is counted in runes too.
+		// The names are padded by runes, so the width is counted in runes.
 		width = min(max(width, utf8.RuneCountInString(displayText(name))), fieldsMaxNameWidth)
 	}
 	for _, name := range names {
@@ -247,12 +311,13 @@ func writeFieldsSamples(sb *strings.Builder, samples map[string][]string) {
 		for i, value := range samples[name] {
 			values[i] = strconv.Quote(value)
 		}
-		line := fieldsSampleIndent + displayText(name)
+		shown := displayText(name)
+		line := fieldsLine{kind: fieldsSample, text: fieldsSampleIndent + shown}
 		if len(values) > 0 {
-			line = fmt.Sprintf("%s%-*s%s%s", fieldsSampleIndent, width, displayText(name),
-				fieldsSamplesSeparator, strings.Join(values, ", "))
+			line.pad = strings.Repeat(" ", max(width-utf8.RuneCountInString(shown), 0))
+			line.values = strings.Join(values, ", ")
 		}
-		sb.WriteString("\n" + line)
+		doc.lines = append(doc.lines, line)
 	}
 }
 

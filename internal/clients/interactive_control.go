@@ -87,7 +87,7 @@ func (c *baseClient) startInteractiveControl(ctx context.Context, statsCh <-chan
 	controlErrCh := make(chan error, 1)
 	go func() {
 		defer answers.close()
-		controlErrCh <- c.runInteractiveControl(runCtx, cancel, controlTTY, answers)
+		controlErrCh <- c.runInteractiveControl(runCtx, cancel, controlTTY, answers, processEditorDeps())
 	}()
 	return c.awaitInteractiveEnd(cancel, statusCh, controlErrCh)
 }
@@ -203,15 +203,17 @@ func (a *promptAnswers) close() {
 // terminal (Tab completion, history, pause while typing; see
 // interactiveEditor) or plain lines otherwise. Each line answers a pending
 // host key question, or is handled by handleInteractiveLine: an empty line
-// pauses or resumes the output, anything else is a control command.
+// pauses or resumes the output, anything else is a control command. deps
+// are the editor's process dependencies (processEditorDeps; tests pass
+// their own).
 func (c *baseClient) runInteractiveControl(ctx context.Context, cancel context.CancelFunc, tty *os.File,
-	answers *promptAnswers) error {
+	answers *promptAnswers, deps editorDeps) error {
 	// Output paused by an empty line or by typing is resumed whenever the
 	// loop ends, so that writers blocked by the pause can finish and the
 	// client shuts down.
 	pause := c.newInteractivePause()
 	defer pause.resume()
-	lines, closeLines := c.openControlLines(ctx, tty, pause, answers)
+	lines, closeLines := c.openControlLines(ctx, tty, pause, answers, deps)
 	defer closeLines()
 	// Written once the terminal mode is set, so that the user's first keys
 	// already reach the line editor.
@@ -256,9 +258,9 @@ func (c *baseClient) runInteractiveControl(ctx context.Context, cancel context.C
 // the line being edited, which the Terminal did not draw again, and its
 // cursor bookkeeping was off for the later edits.
 func (c *baseClient) openControlLines(ctx context.Context, tty *os.File, pause *interactivePause,
-	answers *promptAnswers) (controlLines, func()) {
+	answers *promptAnswers, deps editorDeps) (controlLines, func()) {
 
-	lines := c.newControlLines(tty, pause, answers)
+	lines := c.newControlLines(tty, pause, answers, deps)
 	_, editing := lines.(*interactiveEditor)
 	routeStats := editing && c.stats != nil
 	if routeStats {
@@ -348,7 +350,7 @@ func (c *baseClient) runInteractiveCommand(tty io.Writer, command interactiveCom
 	case "reload":
 		outcome, reloadErr := c.applyInteractiveReload(command.next, command.spec)
 		if reloadErr != nil {
-			return false, writeControlLine(tty, style.failure("reload failed: "+reloadErr.Error()))
+			return false, writeControlLine(tty, style.failure("reload failed: "+errorLines(reloadErr)))
 		}
 		return false, writeControlLine(tty, reloadAppliedMessage(style, command.spec.Query)+
 			outcome.message(style, c.profile.retry))
@@ -389,7 +391,13 @@ func reloadAppliedMessage(style *interactiveStyle, query string) string {
 // profile commit switches the client to the new generation (for dmap, the
 // query its aggregation runs): a connection still sending results of the
 // replaced workload after the commit would have them merged into the new
-// one. The reload holds the reload lock throughout, so a reconnect creates its
+// one. The other way round, a server starts the new workload as soon as it
+// acknowledged its update, before the commit: the profile is told that a
+// reload is in progress (clientProfile.reloading), so that a mapreduce
+// client keeps the new query's aggregates arriving meanwhile for the result
+// of the query it commits (see maprclient.Aggregate.SessionAcked); the end
+// of the reload merges them before this returns.
+// The reload holds the reload lock throughout, so a reconnect creates its
 // connection before or after it (see recreateConnection). A reload that was
 // applied asks the background prober for a new round
 // (interactiveProber.request).
@@ -407,6 +415,7 @@ func (c *baseClient) applyInteractiveReload(nextArgs config.Args, nextSpec Sessi
 	reloadMu := c.reloadLock()
 	reloadMu.Lock()
 	defer reloadMu.Unlock()
+	defer c.reloading()()
 
 	prevArgs, prevSpec, connections := c.snapshotMutableState()
 	if len(connections) == 0 {
@@ -420,7 +429,9 @@ func (c *baseClient) applyInteractiveReload(nextArgs config.Args, nextSpec Sessi
 		return reloadOutcome{}, err
 	}
 
-	run := &reloadRun{nextSpec: nextSpec, prevSpec: prevSpec, base: highestCommittedGeneration(active)}
+	base := c.reloadBase(active)
+	run := &reloadRun{nextSpec: nextSpec, prevSpec: prevSpec, base: base, sent: base}
+	defer func() { c.reloadSent = run.sent }()
 	for _, conn := range active {
 		if err := run.update(conn); err != nil {
 			return reloadOutcome{}, c.rollbackInteractiveReload(run, prevArgs, err)
@@ -444,6 +455,17 @@ func (c *baseClient) applyInteractiveReload(nextArgs config.Args, nextSpec Sessi
 	return outcome, nil
 }
 
+// reloading tells the profile, if it takes it, that a reload is in progress
+// and returns the function that tells it that the reload ended, whether it
+// was committed, rejected or rolled back.
+func (c *baseClient) reloading() func() {
+	if c.profile.reloading == nil {
+		return func() {}
+	}
+	c.profile.reloading(true)
+	return func() { c.profile.reloading(false) }
+}
+
 // checkReloadJournalCapability returns an error naming the servers among
 // connections without journal support, if nextSpec reads a journal target
 // (see connectors.CheckJournalCapability). Journal support is the only
@@ -465,6 +487,19 @@ func checkReloadJournalCapability(connections []connectors.Connector, nextSpec S
 	return nil
 }
 
+// reloadBase returns the generation a reload numbers its updates on top
+// of: the highest generation the active connections committed, or, if
+// higher, the highest an earlier reload or rollback numbered an update
+// with. The latter differ when updates were sent but not acknowledged (an
+// update and its rollback both timing out): numbered on top of the
+// committed generation alone, the next reload would reuse their numbers
+// and a late acknowledgement of one of them could answer it (see
+// sessionRequest.awaitAck in internal/clients/connectors). The caller
+// holds the reload lock.
+func (c *baseClient) reloadBase(active []connectors.Connector) uint64 {
+	return max(highestCommittedGeneration(active), c.reloadSent)
+}
+
 // reloadRun is one :reload in progress: the connections it updated
 // (applied, with what a rollback restores), the connecting ones whose start
 // spec it replaced (replaced), and the generation they all committed.
@@ -478,26 +513,31 @@ type reloadRun struct {
 	// generation is the generation the updated connections committed, 0
 	// before the first update.
 	generation uint64
-	applied    []interactiveReloadState
-	replaced   []connectors.Connector
+	// sent is the highest generation the run numbered an update with:
+	// base before any, base+1 for the reload's updates, base+2 for the
+	// rollback's (see baseClient.reloadBase).
+	sent     uint64
+	applied  []interactiveReloadState
+	replaced []connectors.Connector
 }
 
 // update updates conn, whose session is committed, to nextSpec on top of
 // base and records it for a rollback. It fails if the update failed or conn
 // committed another generation than the connections before it. A
 // connection whose update was sent but not acknowledged as expected is
-// rolled back too, on top of the reload's generation (or its own previous
-// one if it was the first), as the server may have applied it.
+// rolled back too, as the server may have applied it: on top of base+1, the
+// number the update was sent with (also for the first connection, whose
+// rollback was once numbered on top of its previous generation). The
+// rollback's update is so numbered above the failed one, and a late
+// acknowledgement of that one is not taken for the rollback's (see
+// sessionRequest.awaitAck in internal/clients/connectors).
 func (r *reloadRun) update(conn connectors.Connector) error {
 	prevSpec, prevGeneration, _ := conn.CommittedSession()
+	r.sent = max(r.sent, r.base+1)
 	if err := applyReloadSpec(conn, r.nextSpec, prevGeneration, r.base); err != nil {
 		if shouldRollbackFailedReload(err) {
-			rollbackGeneration := r.generation
-			if rollbackGeneration == 0 {
-				rollbackGeneration = prevGeneration
-			}
 			r.applied = append(r.applied, interactiveReloadState{conn: conn, spec: prevSpec,
-				rollbackGeneration: rollbackGeneration})
+				rollbackGeneration: r.base + 1})
 		}
 		return fmt.Errorf("%s: %w", conn.Server(), err)
 	}
@@ -572,6 +612,7 @@ func (r *reloadRun) rollback() error {
 	rollbackErr := restoreStartSpecs(r.replaced, r.prevSpec)
 	for i := len(r.applied) - 1; i >= 0; i-- {
 		state := r.applied[i]
+		r.sent = max(r.sent, state.rollbackGeneration+1)
 		if err := state.conn.ApplySessionSpecWithGeneration(state.spec, state.rollbackGeneration,
 			interactiveControlTimeout); err != nil {
 			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("%s: rollback session spec: %w", state.conn.Server(), err))

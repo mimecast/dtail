@@ -171,7 +171,7 @@ func TestMaprClientFinalIntervalEmptyAndGenerationPolicy(t *testing.T) {
 					if !appendMode {
 						want = "count(foo)\n"
 					}
-					if err := c.writeResultsToOutfile(retained, true); err != nil {
+					if err := c.writeResultsToOutfile(c.clientLogger(), retained, true); err != nil {
 						t.Fatal(err)
 					}
 				}

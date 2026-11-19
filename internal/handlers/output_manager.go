@@ -742,53 +742,9 @@ func (t *outputManager) tryRead(p []byte, user *user.User, shouldDropGeneration 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// Drain buffered remainder data first. On a generation change, complete
-	// only a protocol record whose prefix was already sent; later complete
-	// records in the same writer batch are stale and are discarded.
-	if len(t.buffer.payload) > 0 {
-		if shouldDropGeneration != nil && shouldDropGeneration(t.buffer.generation) {
-			if !t.buffer.mustFinishRecord {
-				t.releaseOutputLocked(len(t.buffer.payload), t.buffer.retainedBytes, true)
-				t.buffer = generatedOutput{}
-			} else if delimiter := bytes.IndexByte(t.buffer.payload, protocol.MessageDelimiter); delimiter >= 0 {
-				commitLength := delimiter + 1
-				n = copy(p, t.buffer.payload[:commitLength])
-				t.buffer.payload = t.buffer.payload[n:]
-				t.releaseOutputLocked(n, 0, false)
-				if n == commitLength {
-					t.releaseOutputLocked(len(t.buffer.payload), t.buffer.retainedBytes, true)
-					t.buffer = generatedOutput{}
-				}
-				return n, true
-			}
-		}
-
-		if len(t.buffer.payload) == 0 {
-			// A stale remainder was dropped at a record boundary. Continue so
-			// current-generation queued output can use this Read call.
-		} else {
-			if traceEnabled {
-				t.log().Trace(user, "baseHandler.Read", "using committed output remainder",
-					"generation", t.buffer.generation, "bufferedLen", len(t.buffer.payload))
-			}
-			n = copy(p, t.buffer.payload)
-			t.buffer.payload = t.buffer.payload[n:]
-			retainedBytes := 0
-			entryFinished := len(t.buffer.payload) == 0
-			if entryFinished {
-				retainedBytes = t.buffer.retainedBytes
-			}
-			t.releaseOutputLocked(n, retainedBytes, entryFinished)
-			if len(t.buffer.payload) == 0 {
-				t.buffer = generatedOutput{}
-			} else if n > 0 {
-				t.buffer.mustFinishRecord = p[n-1] != protocol.MessageDelimiter
-			}
-			if traceEnabled {
-				t.log().Trace(user, "baseHandler.Read", "after buffer read", "copied", n, "remaining", len(t.buffer.payload))
-			}
-			return n, true
-		}
+	// Drain buffered remainder data first.
+	if n, handled := t.readRemainderLocked(p, user, traceEnabled, shouldDropGeneration); handled {
+		return n, true
 	}
 
 	if !t.mode {
@@ -818,6 +774,79 @@ func (t *outputManager) tryRead(p []byte, user *user.User, shouldDropGeneration 
 		t.log().Trace(user, "baseHandler.Read", "no data in output buffer, falling through")
 	}
 	return 0, false
+}
+
+// readRemainderLocked serves the remainder of the entry a previous read
+// delivered only in part (t.buffer). On a generation change it completes
+// only a protocol record whose prefix was already sent
+// (finishStaleRemainderLocked). It returns handled=false when there is no
+// remainder, or a stale one was dropped at a record boundary, so that
+// current-generation queued output can use this Read call. The caller must
+// hold t.mu.
+func (t *outputManager) readRemainderLocked(p []byte, user *user.User, traceEnabled bool,
+	shouldDropGeneration func(uint64) bool) (n int, handled bool) {
+
+	if len(t.buffer.payload) == 0 {
+		return 0, false
+	}
+	if shouldDropGeneration != nil && shouldDropGeneration(t.buffer.generation) {
+		if n, handled = t.finishStaleRemainderLocked(p); handled {
+			return n, true
+		}
+		if len(t.buffer.payload) == 0 {
+			return 0, false
+		}
+	}
+	if traceEnabled {
+		t.log().Trace(user, "baseHandler.Read", "using committed output remainder",
+			"generation", t.buffer.generation, "bufferedLen", len(t.buffer.payload))
+	}
+	n = copy(p, t.buffer.payload)
+	t.buffer.payload = t.buffer.payload[n:]
+	retainedBytes := 0
+	entryFinished := len(t.buffer.payload) == 0
+	if entryFinished {
+		retainedBytes = t.buffer.retainedBytes
+	}
+	t.releaseOutputLocked(n, retainedBytes, entryFinished)
+	if len(t.buffer.payload) == 0 {
+		t.buffer = generatedOutput{}
+	} else if n > 0 {
+		t.buffer.mustFinishRecord = p[n-1] != protocol.MessageDelimiter
+	}
+	if traceEnabled {
+		t.log().Trace(user, "baseHandler.Read", "after buffer read", "copied", n, "remaining", len(t.buffer.payload))
+	}
+	return n, true
+}
+
+// finishStaleRemainderLocked handles a remainder of a replaced generation.
+// One that starts at a record boundary is dropped (handled=false, the
+// buffer empty). Of one that starts within a record whose prefix was
+// already sent, it copies the bytes up to the record's delimiter into p and
+// drops the later complete records of the same writer batch, which are
+// stale (handled=true). A remainder within a record without its delimiter
+// is left for the caller to deliver as it is (handled=false, the buffer
+// kept). The caller must hold t.mu.
+func (t *outputManager) finishStaleRemainderLocked(p []byte) (n int, handled bool) {
+	if !t.buffer.mustFinishRecord {
+		t.releaseOutputLocked(len(t.buffer.payload), t.buffer.retainedBytes, true)
+		t.buffer = generatedOutput{}
+		return 0, false
+	}
+	delimiter := bytes.IndexByte(t.buffer.payload, protocol.MessageDelimiter)
+	if delimiter < 0 {
+		return 0, false
+	}
+	commitLength := delimiter + 1
+	n = copy(p, t.buffer.payload[:commitLength])
+	t.buffer.payload = t.buffer.payload[n:]
+	t.releaseOutputLocked(n, 0, false)
+	if n == commitLength {
+		t.releaseOutputLocked(len(t.buffer.payload), t.buffer.retainedBytes, true)
+		t.buffer = generatedOutput{}
+	}
+	return n, true
 }
 
 // dequeueLocked removes the oldest descriptor and periodically compacts the

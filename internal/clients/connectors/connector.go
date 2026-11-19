@@ -41,7 +41,4 @@ type Connector interface {
 	// acknowledged within sessionUpdateAckMaxWait updates its session to
 	// spec right after it is: it returns ErrSessionRollbackDeferred then.
 	RestoreStartSessionSpec(spec sessionspec.Spec) (bool, error)
-	// RestoreCommittedSession resets the local committed session snapshot without
-	// advancing the generation.
-	RestoreCommittedSession(spec sessionspec.Spec, generation uint64, committed bool)
 }

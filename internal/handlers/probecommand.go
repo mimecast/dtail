@@ -111,15 +111,47 @@ func (h *ServerHandler) startProbe(ctx context.Context, request protocol.ProbeRe
 	}()
 }
 
-// takeProbeInFlight takes the session's probeInFlight token. It waits at
-// most probeInFlightWait (a test may set h.probeInFlightWait) and reports
-// false when that ran out or ctx ended first.
-func (h *ServerHandler) takeProbeInFlight(ctx context.Context) bool {
-	wait := h.probeInFlightWait
-	if wait <= 0 {
-		wait = probeInFlightWait
+// probeOverrides are the parts of the probe command a test of this package
+// replaces on a ServerHandler (ServerHandler.probeOverrides): one place for
+// what exists for the tests only, apart from the handler's own state. A
+// zero field means the production value; no code outside the tests sets
+// one.
+type probeOverrides struct {
+	// inFlightWait bounds the command input's wait for probeInFlight
+	// instead of the constant probeInFlightWait. Tests lower it, or raise
+	// it to keep a probe waiting.
+	inFlightWait time.Duration
+	// sampler samples a probed file instead of probe.Sample. Tests replace
+	// it to hold a probe while it runs, to count the samples or to fail
+	// one that must not be taken.
+	sampler probeSampler
+	// listLimits bounds a path listing; its zero fields mean the defaults
+	// (probeListLimits.withDefaults). Tests lower them.
+	listLimits probeListLimits
+}
+
+// inFlightWaitOrDefault returns how long the command input waits for the
+// probeInFlight token.
+func (o probeOverrides) inFlightWaitOrDefault() time.Duration {
+	if o.inFlightWait > 0 {
+		return o.inFlightWait
 	}
-	timer := time.NewTimer(wait)
+	return probeInFlightWait
+}
+
+// samplerOrDefault returns the sampler of probed files.
+func (o probeOverrides) samplerOrDefault() probeSampler {
+	if o.sampler != nil {
+		return o.sampler
+	}
+	return probe.Sample
+}
+
+// takeProbeInFlight takes the session's probeInFlight token. It waits at
+// most probeInFlightWait (probeOverrides.inFlightWaitOrDefault) and
+// reports false when that ran out or ctx ended first.
+func (h *ServerHandler) takeProbeInFlight(ctx context.Context) bool {
+	timer := time.NewTimer(h.probeOverrides.inFlightWaitOrDefault())
 	defer timer.Stop()
 	select {
 	case h.probeInFlight <- struct{}{}:
@@ -150,10 +182,6 @@ func (h *ServerHandler) decodeProbeRequest(argc int, args []string) (protocol.Pr
 // permission check (the quiet one, probeReadTarget), the server's limits
 // and default log format.
 func (h *ServerHandler) newProber() *prober {
-	sample := h.probeSampler
-	if sample == nil {
-		sample = probe.Sample
-	}
 	listUnits := h.probeUnitLister
 	if listUnits == nil {
 		listUnits = journal.ListUnits
@@ -163,9 +191,9 @@ func (h *ServerHandler) newProber() *prober {
 		pathRules: func() listPathRules {
 			return h.user.PathRules(readFilesPermission)
 		},
-		sample:           sample,
+		sample:           h.probeOverrides.samplerOrDefault(),
 		listUnits:        listUnits,
-		listLimits:       h.probeListLimits.withDefaults(),
+		listLimits:       h.probeOverrides.listLimits.withDefaults(),
 		listDisabled:     h.serverCfg.PathCompletionDisable,
 		journalSupported: h.journalSupported,
 		maxGlobTargets:   h.readTimings.maxGlobTargets,

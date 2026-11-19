@@ -239,7 +239,10 @@ cbreak mode that keeps ISIG/OPOST/ICRNL (`enterCbreakMode`,
 staircase the log output. Tab completion (`completeInteractive`,
 `interactive_complete.go`) offers commands, the mode's flags from
 `newInteractiveReloadFlagSet` (shared with the parser), the current
-`--grep/--regex/--query/--files` value, and inside a `--query` value the
+`--grep/--regex/--query/--files` value (not one holding a control or format
+character, which the `:reload` tokenizer can not escape and x/term would
+write raw: `currentValueCandidate` then gives `unprintableValueHint`
+instead), and inside a `--query` value the
 query language and field catalog (`completeQueryValue`,
 `interactive_complete_query.go`: `splitInteractiveArgsPartial` maps the
 decoded value back to raw offsets, `mapr.AnalyzePartial` says what is
@@ -247,7 +250,7 @@ expected, one candidate function per kind from the vocabulary tables and
 `interactiveProber.catalogSnapshot`, candidates escaped for the open quote
 with `escapeForQuote`; candidates holding a control or format character,
 i.e. log content with escape sequences, are dropped for every kind at once
-in `completeQueryWord` with `hasHiddenRune`, the path completion's rune
+in `queryCandidateSource.groups` with `hasHiddenRune`, the path completion's rune
 test; names are written as the tokenizer and parser need them,
 `interactive_complete_query_words.go`: a keyword or `by` in backticks,
 `order by` items with a blank in double quotes, and inside an open double
@@ -263,7 +266,11 @@ is the default on a terminal) says `the session reads no files: :reload
 --files PATH (Tab lists remote paths)` (`local paths` in serverless mode;
 Tab note only with the line editor) after the banner (`writeControlBanner`),
 on `:fields`, `:probe` and Tab after `:fields `, instead of waiting for
-field data; no default files are made up. The query
+field data; no default files are made up. In such a session (`--files`
+value empty or only `-`, `namesNoFile`) Tab right after `:reload --files `
+has no current value to insert and completes the value not yet started
+like an empty one, i.e. lists the working directory (`filesValueAt` in
+`interactive_complete_paths.go`). The query
 completion is guided (`interactive_complete_query_guide.go`): one step per
 Tab in the order from -> table -> select -> items -> where -> group by ->
 order by -> limit (`queryOutline.nextClauses`; a query begun with Tab
@@ -331,7 +338,14 @@ connection up (`interactiveProber.listPaths`, deduplicated, not bound to the
 Tab's wait, so a late answer is cached for the next Tab) and waited for at
 most `pathListingWait` (1 s) with the output running
 (`interactivePause.runOutput`; the edit line is taken off the screen and its
-rows restored by `editorScreen`), also in serverless mode, whose in-process
+rows restored by `editorScreen`, through `interactiveEditor.hideLine`/
+`showLine`: while it is `hidden` nothing may have the Terminal draw, whose
+cursor bookkeeping still describes the drawn line, so a SIGWINCH resize is
+deferred until `showLine` (`resizePending`) and control output of another
+goroutine, the Ctrl-C statistics, is written to the TTY as it is
+(`editorOutput`); `TestInteractiveEditorHiddenLineIsNotRedrawn`. The
+output is always paused at such a wait, as `editorKey` calls `startTyping`
+before it completes), also in serverless mode, whose in-process
 server logs to the paused output; on a timeout a hint is shown. A key that inserts text, Tab or a
 history recall pauses the output (`interactivePause.pauseTyping`; x/term only
 passes inserting and unbound keys to the callback, recalls are seen through
@@ -369,7 +383,19 @@ result table (`clientOutputFormatter.PaintMaprRawQuery`, on the
 `MaprTable.RawQuery*` colors as the base between tokens; only when stdout
 is a terminal and no payload goes to a log file, `rawQueryTokenColors`,
 else one single-color run so `grep` finds the query in piped output).
-`paint` paints a text of several lines line by line; the prompt is
+`paint` paints a text of several lines line by line;
+`interactiveStyle.failure` first escapes the message's control and format
+characters but the line feed (`terminalText`,
+`internal/clients/interactive_terminal_text.go`), with and without colors,
+as it can end in server text (the reason of a rejected update after `reload
+failed:`/`query failed:`/`tail failed:`); those three pass `errorLines(err)`,
+which gives every error of an `errors.Join` (also nested) a line of its own
+and escapes the line feeds inside each (`terminalLine`), so a server's
+reason can not forge a line of control output; `:fields` is built as typed lines
+(`fieldsLines`, `fieldsLineKind`) and painted from them
+(`interactiveStyle.fields`), never by reading its text again, while `:help`
+is painted by its text, which is all constants of dtail
+(`TestInteractiveHelpIsPaintedByKind`); the prompt is
 unpainted on a terminal narrower than the painted prompt has runes
 (`interactiveStyle.editorPrompt`: x/term cuts the prompt into rows by
 runes, escape sequences included, and miscounts the cursor). Alt-E and Alt-V (fish's `edit_command_buffer` keys) open the line in
@@ -385,8 +411,39 @@ redraws nothing, and a `close` (session end) leaves mode and cursor shape
 to the editor, `endEditing` then setting nothing), output paused for
 typing; its text (line breaks and control characters as blanks,
 `editedLine`) replaces the line, which runs only on Enter; a
-failing editor keeps the line. Tests take the editor from
-`baseClient.editorEnv`. `Client.EditMode` (`--edit-mode`, `emacs` default
+failing editor keeps the line. The editor's process dependencies (the
+forced-exit hook and the environment naming the external editor) are an
+`editorDeps` argument of `newInteractiveEditor`, passed down from
+`runInteractiveControl`: `processEditorDeps` for a client run, tests pass
+their own (`testEditorDeps`); `editorDeps.watchSignals` is the SIGCONT/
+SIGWINCH watcher (`watchTTYSignals`), which tests leave out unless they
+test the signals, as both go to the whole test process and would have
+every other editor write to its PTY; a nil dependency is the process's
+(`withDefaults`). The editor asks the terminal for bracketed
+paste (`interactiveEditor.setPasteMode`, DECSET 2004: on at the start and
+wherever cbreak mode is set again, i.e. after the external editor and
+SIGCONT; off for the external editor, on close and, best effort in a
+goroutine as a TTY write blocks on stopped output, on the forced exit;
+never while dtail is in the background, `ttyMode.foreground`). x/term then inserts pasted keys without the key callback
+(no Tab completion, a line break enters the line), so `editInput` does
+what the callback and x/term do not: control and format characters of a
+paste (`hiddenRune`, rune by rune, one cut by a read held back) but line
+breaks become blanks (`pasteBlank`; x/term would put a tab on the
+line raw and an ESC sequence as a private key code), a `Read` ends after
+the first line break (`chunk`) so every pasted line gets a `Read` of its
+own, and `onPaste` (`startTyping`) pauses the output before pasted text
+that stays on the line is returned (`announcePaste`; a pasted line ending
+in its line break runs at once and needs no pause). A paste marker cut by
+a read is held back (`holdsTail`: always inside a paste and when more
+than its ESC was read, else only when the read filled its buffer); a
+start marker cut right after its ESC by a short read is put together by
+x/term alone, without these three, and in vi mode that ESC is the Esc key,
+so the marker's rest and the paste are normal mode keys (accepted); pasted
+text holding the end marker ends the paste early. A blank line that was
+pasted as a whole (`term.ErrPasteIndicator`) is skipped by
+`interactiveEditor.readPastedOrTyped`, so it does not toggle the output
+pause. `TestEditInputBracketedPaste`,
+`TestInteractiveEditorBracketedPasteOnPTY`. `Client.EditMode` (`--edit-mode`, `emacs` default
 or `vi`; checked by the clients only, `initializer.applyEditMode` in
 `transformClient`, so a typo in a shared config stops no dserver) adds a vi layer
 (`viEditor`, `internal/clients/interactive_vi.go`, motions in
@@ -398,8 +455,15 @@ holds a trailing ESC or partial paste marker for the next, so a backlog
 cut by a read is not misread), and in normal mode `editorKey` hands every key but Tab to
 `viEditor.key`, which returns the changed line (motions with counts,
 d/c/y operators, x X D C s S Y, i a I A, r ~ p P, u/Ctrl-R per line, k/j
-history via `controlHistory`). Keys x/term handles itself (Enter,
-Backspace, arrows, Ctrl keys) never reach it. Mode changes set the cursor
+history via `controlHistory`). In vi mode `editInput` also turns Up and
+Down (`ESC [ A`/`B`, and Ctrl-P/Ctrl-N, which x/term reads as these
+arrows) into `viUpKey`/`viDownKey`, which `viEditor.arrowKey`
+handles in both modes, so the arrows and k/j move one history position
+(`viEditor.histIndex`; x/term's own never moves) and Down or j past the
+newest entry restores the line being typed
+(`TestViHistoryOnePosition`, through a real `term.Terminal`). The other
+keys x/term handles itself (Enter, Backspace, Left/Right, Ctrl keys) never
+reach it. Mode changes set the cursor
 shape (DECSCUSR, `viCursorShapes`; default shape back on close). SIGCONT re-applies cbreak (bash/zsh leave the TTY
 cooked after `fg`), SIGWINCH resizes; termios is only set while dtail is the
 terminal's foreground process group (a background `tcsetattr` would stop it
@@ -485,7 +549,8 @@ values and lines that are not valid UTF-8 are rejected. Full rules:
   ack ahead of all output of the workload it acknowledges (`sessionAckGate`,
   `internal/handlers/session_ack_gate.go`): before the dispatch the new
   generation is held, its payload stays queued and its server and MapReduce
-  messages are deferred until the ack, which has a queue of its own
+  messages and a flush error of its read batch
+  (`outputCoordinator.takeFlushError`) are deferred until the ack, which has a queue of its own
   (`sessionAcks`), went out; a workload that fails to start releases its
   hold on the input goroutine. The rest of a replaced generation is stale
   and dropped. So a slow link no longer makes an ack wait behind the
@@ -493,7 +558,10 @@ values and lines that are not valid UTF-8 are rejected. Full rules:
   the running workload floods it; failure reports of the workload follow
   the ack. Non-`SESSION` command streams hold nothing, and payload still
   goes before other server messages. The initial `SESSION START`
-  (connection goroutine) has no wall-clock cap; the session's end ends its wait. Everything the
+  (connection goroutine) has no wall-clock cap; the session's end ends its wait, and so does the
+  end of the connection's context (`:quit`, Ctrl-C;
+  `baseHandler.WaitForSessionAckContext`, without which a quit during an
+  unacknowledged start took 2 s of idle handler time). Everything the
   interactive control loop waits for is capped at 10 s wall clock
   (`sessionUpdateAckMaxWait` in `sessiontransport.go`): a `SESSION UPDATE`
   ack (`:reload`, `:query`, `:tail`, rollbacks) and the session lock a
@@ -504,7 +572,12 @@ values and lines that are not valid UTF-8 are rejected. Full rules:
   with every server stalling takes up to about 20 s per connection
   (documented bound; no concurrent apply or total budget, which would break
   the all-or-nothing rollback). `applyLock.Unlock` of an unlocked lock
-  panics like `sync.Mutex`.
+  panics like `sync.Mutex`. The rollback of an update that was sent but not
+  acknowledged is numbered above it (base+2, `reloadRun.update`), and a
+  wait skips ok acks of updates numbered below its own
+  (`sessionRequest.awaitAck`), so a late ack of the timed-out update is not
+  taken for the rollback's. Error acks carry no generation: a late
+  rejection fails the request waiting then.
 - A live `:reload` updates every active connection (session committed, its
   handler not done; `partitionReloadConnections` in
   `internal/clients/interactive_reload_inactive.go`) with `SESSION UPDATE`,
@@ -526,12 +599,43 @@ values and lines that are not valid UTF-8 are rejected. Full rules:
   that update finished `CommittedSession` reports the session as not
   committed, so a reload meanwhile takes the connecting path and waits for
   `applyMu` instead of recording the failed reload's spec for its own
-  rollback; output of the reloaded spec until the update's ack reaches the
-  client, as the client filters no output by generation);
+  rollback; lines of the reloaded spec until the update's ack reach the
+  client, as the client filters no output by generation, while its
+  aggregates, which arrive outside the reload's switch and so are not
+  held, are dropped up to that ack: the connection tells its handler
+  before it defers the rollback, `Aggregate.AbandonStartWorkload`);
   once the start began, a committed one is updated like an active one, on
   the same base generation and all or nothing). Every connection is changed
   before the profile commit (for dmap, `CommitQuery`), so no connection
-  sends results of the replaced query into the new generation. With no
+  sends results of the replaced query into the new generation. The other
+  way round, a server starts the reloaded query right after its ack, so its
+  first aggregates (a small file's whole result) can arrive before the
+  commit: during a reload (`clientProfile.reloading`,
+  `SessionState.Switching`) a connection's `Aggregate` merges what was
+  queued before the ack frame into the current result and holds what
+  follows (`Aggregate.SessionAcked`, called by `MaprHandler` in frame
+  order) until the reload ended; a second ack within the reload (the
+  rollback's) drops what was held. The reload's end
+  (`Switching(false)`) merges what every connection holds into the result
+  current by then itself, one holder after the other, each waiting for the
+  group set's lock (`Aggregate.endHold`), and returns only then; a session
+  that ended during the reload keeps its held messages through its
+  shutdown `Flush`, and `MaprClient.finish` waits for a reload in flight
+  (`awaitReload`), so the final result has them. After a failed reload,
+  what a connection holds without a second ack (its session ended, or its
+  rollback failed) is the abandoned query's and is dropped instead
+  (`Aggregate.settleHold`, `SessionState.switchOutcome`). The hold is not
+  capped: it is bounded by what a server sends during one reload, which
+  the client keeps in memory anyway once merged (dropping beyond 4 MiB
+  lost most rows of a large result). `Aggregate` logs nothing under its
+  lock (`withLock`), for which the reload's end waits. A `SESSION START` ack during the reload holds too (a connecting
+  server starts with the reloaded spec). Reloads number their updates on
+  top of the highest generation committed or ever sent by a reload or
+  rollback (`baseClient.reloadBase`), so unacknowledged numbers are not
+  reused. Before, those
+  aggregates went into the replaced query's result, or were dropped when
+  `dtail` switched from following lines, and were missing in the new
+  query's. With no
   active connection the reload is rejected (`no server has an active
   session`). A reload holds `baseClient.reloadMu` throughout and a `dtail`
   reconnect takes it to create and install its connection
@@ -601,7 +705,10 @@ values and lines that are not valid UTF-8 are rejected. Full rules:
   (`MaprClient.allLiveArrived`: the `Server()` of each connection whose
   handler is not done, matched by name with
   `SessionSnapshot.ArrivedFrom`, so one that sent and left does not count
-  for a missing one; liveness sampled at each arrival) sent its first
+  for a missing one; liveness sampled at each arrival and, while servers
+  are missing, every `firstReportSettle`, `firstReportWindow.postpone`, so
+  a missing server whose connection ends no longer holds the table until
+  the cap) sent its first
   aggregates, to
   `firstReportSettle` (1 s) after the last of them; while some are
   missing it waits for them, at most half an interval after the first
@@ -609,12 +716,51 @@ values and lines that are not valid UTF-8 are rejected. Full rules:
   session updates, were seen live; a server with no rows to send only
   costs that wait), and every wait capped at half the interval (`firstReportWindow`,
   `maprclient_report.go`; at `interval 1` a 1 s wait would land on the
-  next sends and mix two intervals in one table). A report that runs with
-  an arrival signaled but not yet taken ends the window, so no second
-  table follows it. The later reports follow once per interval from
-  there; dservers send their first aggregates one interval after the
+  next sends and mix two intervals in one table). A due report that finds
+  an arrival signaled but not yet taken (timer and arrival ready together)
+  takes it as an arrival and is put off by the settle time (`postpone`);
+  reporting at once put the later reports on the servers' send instants.
+  The later reports are planned once per interval from the instant the
+  previous one was planned for (`reportSchedule`, `nextReportDue`), not
+  from its end, so the time reports take does not add up; that normally
+  gives each table one send of every server, which is no guarantee, as the
+  servers send by their own clocks. dservers send their first aggregates one interval after the
   start, so the first table used to appear only after 1.5 intervals. Continuous jobs (`NonCumulativeMode`) keep the fixed
   cadence; scheduled jobs have no interim reports.
+- **Logging under the MapReduce state's locks** (`deferredLogger`,
+  `internal/clients/maprclient_log.go`): the client's `SessionState`, its
+  group sets and what the reporter logs inside
+  `SessionState.WithCurrentSnapshot` (`MaprClient.lockedLogger`) log through
+  a logger that queues (at most 256 diagnostics, the rest dropped and
+  counted in one WARN) and never blocks; a goroutine that runs only while
+  something is queued passes them on in order, and `MaprClient.finish`
+  flushes it. The client logger blocks while the output is paused, and the
+  one pause that can coincide with a `:reload` is the host key question of a
+  server still in its handshake, which only the control loop answers: the
+  reporter then waited in the paused logger (`Writing to outfile`) with the
+  session state's read lock and the global group set's lock held, the
+  reload's commit and end (`CommitQuery`, `Switching(false)`) waited for
+  those locks, bounded by none of the 10 s caps, and the question was never
+  answered (`TestMaprReportUnderPausedLoggerDoesNotBlockReload`).
+  The control loop itself must not wait for the paused logger either, lock
+  or not. Covered: what `commitSessionSpec` prints and logs on it goes
+  through the same logger (`MaprClient.controlLogger`), i.e. the last table
+  of a query that `:tail` or a reload ends (`dropQuery` ->
+  `reportResultsTo`: rendered at once, its `Raw` payload queued and never
+  dropped, printed in order once the logger runs again, so it can come
+  after followed lines that were printed directly meanwhile), the errors
+  of writing it, and of appending a replaced query's result
+  (`appendReplacedResult`); and the aggregation failures of what a
+  connection held through the reload, which `Aggregate.endHold` logs to
+  the session state's logger instead of the connection's
+  (`TestMaprTailSwitchUnderPausedLoggerDoesNotBlockControlLoop`,
+  `TestEndHoldLogsFailuresToTheSessionLogger`). Not deferred: the periodic
+  reporter and the final result of `finish` (synchronous, on goroutines
+  that hold no lock while printing; `finish` flushes the queue first),
+  `client.Aggregate`'s failures on the frame-reading goroutines (logged
+  after releasing its lock, `withLock`), and trace diagnostics. The reload
+  code outside the MapReduce client (`internal/clients/interactive_*.go`)
+  answers on the control TTY, not through the client logger.
 
 ### Auth-Key Fast Reconnect
 Auth-key fast reconnect is enabled by default. The client can register a public key with `dserver` over an already-authenticated session, and subsequent connections can use this in-memory key before falling back to normal SSH auth.
@@ -700,6 +846,14 @@ are split at commas with blanks around each entry trimmed (`splitFiles` in
 trailing blanks, cannot be read. The scheduler's job grouping parses the same
 comma lists, so this is not changed.
 
+**Newlines:** the read permission check denies every path holding a newline
+(`errNewlineInPath` in `sessionuser.User.iteratePaths`, the resolved path, so
+also through a symlink; `PathRules.MayReadBeneath` offers no such directory):
+`.` matches no newline and `$` only the end, so `!^/dir/.*$` did not match
+`/dir/a\nb` while an allow `^/dir/` did, a bypass of the documented deny
+form (`TestResolveReadTargetDeniesNewlinePaths`). The read reports `read: no
+permission to read file`. dserver's own jobs are not checked and read them.
+
 ### Journal Source Reads
 Journal targets use `journal:unit.service` syntax. Permission rules should match the full target, for example `Server.Permissions.Users[user]: ["readfiles:^journal:.*\\.service$"]`.
 
@@ -760,21 +914,39 @@ full description: `docs/dev/probe.md`.
   `ProbeTabler`), so the answer lists every table of the window (without
   fields, with an empty `tableVariables` entry, where none of its lines was
   kept). A panicking `ProbeTabler` is recovered and reported as `probe: log
-  format probe failed` for its format.
+  format probe failed` for its format. Only tables a query can name are
+  listed: `from stats` reads `STATS` (`mapr.TableName`) and lines are
+  matched by the exact name, so the default format's probe and
+  `ProbeLineTable` put a line whose table name holds lower-case letters
+  (`mapr.SelectableTable`; `MAPREDUCE:stats`) under the table-less entry
+  `""` (`ProbeAnyTable`): a query without a table (no `from`, `from .`)
+  reads it, so Tab offers its fields only while no table is typed and
+  `:fields` shows them as `fields:`; the probe's `note` names the first
+  such table of the kept lines and how to query them.
 - The `csv` format answers only for sources that look like csv files
   (`csvProbeSources`, `internal/mapr/logformat/csv_probe.go`: a first line of
-  at least two non-empty columns of at most 64 bytes, only those listed, and
-  at least half of the sampled rows of 2 up to the header's columns), so
-  other logs get no bogus csv field named after their first line. Heuristic:
-  single-column csv files are never probed; a free-text log whose lines hold
-  a comma still is.
+  at least two non-empty columns of at most 64 bytes, only those listed, at
+  least half of the sampled rows of 2 up to the header's columns, and no
+  more than half of them, once 3 rows were sampled (`csvProbeMinEchoRows`),
+  echoing the header, `csvProbeSource.echoesHeader`:
+  a value equal, but for the digits of its numbers, `csvSameShape`, to the
+  name of its column, for names with a letter), so other logs get no bogus
+  csv field named after their first line, also not a free-text log of lines
+  like `request 1 done, ok`. Heuristic: single-column csv files and
+  headerless csv files whose rows mostly repeat a value of the first are
+  never probed; a free-text log whose lines hold a comma still is when most
+  lines differ from the first by more than numbers on both sides of it.
+  All 21 multi-column csv fixtures of the integration tests stay probed
+  (`TestCSVProbeKeepsFixtureCorpus`).
 - Table-targeted probe (`{id, files, table}`, `internal/handlers/probe_table.go`):
   same checks, file cap, timeout, one-probe-per-session and no limiter slot
   as above, but it scans 4 MiB of each file (`probeTableScanBytes`;
   `ScanBytes` of a head sample, 5,000 `journalctl` entries), streamed, and
   keeps (500 lines / 256 KiB) only the lines of the table
   (`ProbeTableScanner.Matcher`: the table a format's `ProbeTabler` assigns,
-  else, for lines no `ProbeTabler` claims, the name as a word); the answer
+  else, for lines no `ProbeTabler` claims, the name as a word, or as the
+  first 64 bytes, `ProbeMaxNameBytes`, of a longer word, the name such a
+  table is listed under); the answer
   (`table` echoed) holds that table only, with its fields and
   `tableVariables`, no format-wide `variables`. An invalid table
   (`protocol.ValidProbeTable`: no blanks, control/format characters, `|`,
@@ -805,8 +977,12 @@ full description: `docs/dev/probe.md`.
   256 bytes), so denied or missing targets stay visible at the default log
   level without one line per glob match. A read command's check keeps its
   INFO lines.
+  A listing's directory that can not be opened or read (`Probe: unable to
+  list directory`) logs at DEBUG too, and a rule that does not compile is
+  logged at WARN by a user's first listing only (`User.PathRules`), as any
+  user starts listings with Tab.
   A user's permission regexes are compiled once per `User`
-  (`compiledPermissions`), not per check. Measured listing of a 500-file
+  (`compiledPermissions`), not per check or listing. Measured listing of a 500-file
   directory: 1000 INFO lines and 13 ms / 10.8 MB (1 rule), 83-171 ms /
   60 MB (5 rules) before; 0 per-file lines and about 6 ms / 1.7 MB after
   (`BenchmarkProbeList500`).
@@ -816,9 +992,22 @@ full description: `docs/dev/probe.md`.
   rest, sorted, at most 500, answer within 48 KiB). Files only if
   the read permission check allows them. Directories unless no allow rule can
   still match a path beneath their resolved path or one deny rule already
-  matches `<dir>/` itself (`$` counted as matched;
-  `sessionuser.PathRules.MayReadBeneath`, rules compiled once per listing,
-  an NFA run of each rule over the directory path). This is an
+  matches `<dir>/` itself: within it, or only at its end through an
+  assertion about what follows (`$`, `\b`) and then also the sample paths
+  `<dir>/x`, `<dir>/x/x`, `<dir>/.x`, `<dir>/y/y/y/y.y`, `<dir>/-` and
+  `<dir>/-/-` (`denySamples`), so `!^/var/log/secret/.*$` hides `secret` while
+  `!^/var/log/[^/]*$`, `!^/var/log/(old/.*)?$` and a rule of one and two
+  levels only (`!^/home/[^/]*/?[^/]*$`) keep their directory, whose
+  subdirectories hold readable files, offered (a rule that matches `<dir>/`
+  itself and everything beneath, `!^<dir>/` or `!^<dir>/.*$`, matches every
+  sample and always hides; `!^<dir>/.+$` does not match `<dir>/` and hides
+  nothing; `sessionuser.PathRules.MayReadBeneath`, rules compiled once per
+  `User`, an NFA run of each rule over the directory path; at its end the
+  assertions are tried per kind of next rune, word, non-word, end of text,
+  `endOfPrefix`, so contradictory ones such as `\b\B` keep no allow rule
+  alive; an unanchored allow rule that may start a match after the prefix,
+  e.g. at the end of a longer path, `$`, `\b$`, `(?m)$`, counts as alive
+  everywhere, `matchesLater`). This is an
   approximation that reveals some directory names: a directory denied only
   by what a deny rule requires after its `/` (`!^/var/log/private/.*\.log$`,
   `!^/data/x/[^/]`) or by several deny rules together is offered (only names
@@ -840,9 +1029,11 @@ full description: `docs/dev/probe.md`.
   successful list is reused for 60 s (`journal.DefaultUnitCacheTTL`;
   failures are not cached), concurrent listings share one `journalctl` run,
   which belongs to none of them, so the probe timeout does not bound it:
-  it stops once every listing waiting for it gave up, and at the latest
-  after 30 s (`unitFlightTimeout`), as overlapping listings could otherwise
-  keep a hung `journalctl` alive; a panic of the lister is recovered into
+  it goes on when every listing waiting for it gave up (until dserver
+  shuts down, `UnitCache.Close` in `Server.stopSharedWork`) and its result
+  is cached (a journal slower to list than a probe's 10 s was never cached
+  before), and it stops at the latest after 30 s (`unitFlightTimeout`),
+  which alone bounds a hung `journalctl`; a panic of the lister is recovered into
   the run's error (logged with its stack at WARN). The permission
   filtering stays per user and request. Serverless mode does not cache. `Server.PathCompletionDisable` answers `probe: path listing
   disabled`.
@@ -1520,7 +1711,8 @@ outfiles or reads, configured job order, waves of the same bound), and each
 wave shares its reads, so jobs that failed together read their files once for
 their final runs too. A final run logs `Starting final run of job <name> for
 outfile <path> after its TimeRange ended at <time>, ...`. If its only failures
-are file read failures, it writes what it could read (the pre-d9 behaviour)
+are file read failures, it writes what it could read (as every run did
+before runs within the TimeRange became strict)
 and the client logs `Writing partial mapreduce result after the job's
 TimeRange ended|<server>: <reason>; ...`; if every file could be read by then,
 it writes the complete result. A transport failure still writes nothing and

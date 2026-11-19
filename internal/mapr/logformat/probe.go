@@ -84,7 +84,9 @@ type ProbeResult struct {
 	// Probe adds the format's KnownVariables that the sample did not show,
 	// without values.
 	Variables map[string][]string `json:"variables,omitempty"`
-	// Note is an optional remark of a custom probe, shown with the fields.
+	// Note is an optional remark of a probe, shown with the fields: of a
+	// custom probe, or of the default format about lines whose table no
+	// query can name (unselectableTableNote).
 	Note string `json:"note,omitempty"`
 }
 

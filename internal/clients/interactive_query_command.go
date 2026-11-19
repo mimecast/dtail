@@ -131,7 +131,7 @@ func (c *baseClient) runQueryCommand(tty io.Writer, query string) error {
 	style := styleOf(tty)
 	outcome, err := c.applyQueryCommand(query)
 	if err != nil {
-		return writeControlLine(tty, style.failure("query failed: "+err.Error()))
+		return writeControlLine(tty, style.failure("query failed: "+errorLines(err)))
 	}
 	return writeControlLine(tty, style.success("query applied")+"\n"+style.hint("query: ")+
 		style.query(query)+outcome.message(style, c.profile.retry))
@@ -162,7 +162,7 @@ func (c *baseClient) runTailCommand(tty io.Writer, pattern string) error {
 	style := styleOf(tty)
 	outcome, err := c.switchToTail(pattern)
 	if err != nil {
-		return writeControlLine(tty, style.failure("tail failed: "+err.Error()))
+		return writeControlLine(tty, style.failure("tail failed: "+errorLines(err)))
 	}
 	args, _ := c.snapshotConnectionState()
 	message := style.success("following lines") + "\n" + style.hint("regex: ") + strconv.Quote(args.RegexStr)

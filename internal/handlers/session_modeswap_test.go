@@ -3,7 +3,7 @@ package handlers
 // Tests that one session switches between a plain tail read and a MapReduce
 // query with SESSION UPDATE, both ways, in server mode (dserver) and in the
 // serverless runtime. The interactive dtail client switches its running
-// session this way (task 0d4), so dserver and the serverless runtime must
+// session this way, so dserver and the serverless runtime must
 // accept a spec that gains or drops its query on update: session.Spec.Commands
 // builds the read commands of a plain read (readCommands) or the map command
 // and its reads (queryCommands) from the spec as it is, and

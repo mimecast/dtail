@@ -902,7 +902,7 @@ func (p *flushCountingProcessor) snapshot() []string {
 }
 
 // TestStartFollowFlushesEachLine is the regression guard for the
-// output batching fix (task 0t0). A follow read blocks in r.run until journalctl
+// output batching fix. A follow read blocks in r.run until journalctl
 // is stopped, so a batching output writer would hold live lines in its 64KB
 // buffer and the client would see nothing until the stream ends. The reader
 // must therefore flush the processor after every line while following. If the

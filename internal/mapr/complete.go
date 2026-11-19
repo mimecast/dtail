@@ -168,7 +168,8 @@ type Partial struct {
 // as a prefix allows. It never fails: a token the parser rejects on its own
 // (an unknown aggregation, operator or function, a malformed select item or
 // function call, a number out of range, a word before the first clause, an
-// extra table name) is of kind TokenUnknown, so a token of another kind is
+// extra table name, an outfile path starting with "append:") is of kind
+// TokenUnknown, so a token of another kind is
 // one the parser accepts at its place. Rules that span tokens or clauses are
 // not checked: a missing select clause, a where or set condition cut short,
 // or an order item that is not selected. An aggregation still being typed

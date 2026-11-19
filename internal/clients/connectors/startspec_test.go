@@ -1,6 +1,7 @@
 package connectors
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -36,7 +37,7 @@ func TestReplaceStartSessionSpecBeforeStart(t *testing.T) {
 	if replaced, err := conn.ReplaceStartSessionSpec(startSpecReloaded); !replaced || err != nil {
 		t.Fatalf("ReplaceStartSessionSpec() = %v, %v before the start, want true", replaced, err)
 	}
-	err := dispatchInitialCommands("srv1", mock, nil, true, startSpecInitial, &conn.sessionState, logging.NopLogger{})
+	err := dispatchInitialCommands(context.Background(), "srv1", mock, nil, true, startSpecInitial, &conn.sessionState, logging.NopLogger{})
 	if err != nil {
 		t.Fatalf("dispatchInitialCommands() error = %v", err)
 	}
@@ -58,7 +59,7 @@ func TestReplaceStartSessionSpecAfterStart(t *testing.T) {
 			mock.sessionAcks = []handlers.SessionAck{{Action: "start", Generation: 1}}
 		}
 		conn := &Serverless{handler: mock}
-		err := dispatchInitialCommands("srv1", mock, nil, true, startSpecInitial, &conn.sessionState, logging.NopLogger{})
+		err := dispatchInitialCommands(context.Background(), "srv1", mock, nil, true, startSpecInitial, &conn.sessionState, logging.NopLogger{})
 		if acked != (err == nil) || (!acked && !errors.Is(err, ErrSessionAckTimeout)) {
 			t.Fatalf("acked=%v: dispatchInitialCommands() error = %v", acked, err)
 		}

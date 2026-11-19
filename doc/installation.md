@@ -97,7 +97,8 @@ Older releases silently ignored words the query parser did not expect after the 
 * ``asc`` after ``order`` and ``desc`` after ``rorder``;
 * a bare ``by`` in a ``select`` or ``group by`` list (``select count(x) gropu by x``);
 * ``interval`` without a number;
-* an ``outfile`` path starting with ``append:`` (``outfile append:result.csv`` wrote a new file named ``append:result.csv`` instead of appending to ``result.csv``).
+* an ``outfile`` path starting with ``append:`` (``outfile append:result.csv`` wrote a new file named ``append:result.csv`` instead of appending to ``result.csv``);
+* a path after a quoted or escaped ``append`` (``outfile "append" result.csv``, read as ``outfile append result.csv`` before): only the bare word ``append`` is the append mode, a quoted or escaped one is a file name.
 
 Replacements: use ``rorder by x`` for ascending order (instead of ``order by x asc`` or ``reverse``), write a field named ``by`` as ``` `by` ```, remove the stray word (or add the missing interval), and write ``outfile append result.csv`` to append (or ``outfile ./append:result.csv`` for a file really named so).
 
@@ -108,6 +109,17 @@ dserver does not check the queries of the ``Schedule`` and ``Continuous`` jobs w
 ```
 
 (the ``log`` directory is dserver's ``Common.LogDir``), or check each job query with the new ``dmap --query '...'`` before upgrading dserver: it rejects such a query the same way before connecting.
+
+### Upgrade note: MapReduce table names are literal, ``from *`` reads every table
+
+The line filter of a MapReduce query is built by the client (``dmap``, ``dtail --query``, and dserver for its ``Schedule`` and ``Continuous`` jobs), so this takes effect with the upgraded client or scheduling dserver:
+
+* A table name is matched literally. It used to be put into a regular expression unescaped, which was never documented: ``from "(A|B)"`` read the tables ``A`` and ``B``, ``from STATS.*`` every table starting with ``STATS``, and ``from A.B`` also the table ``AXB``. Such a query now reads only the table of exactly that name (usually none). Use one query per table, or ``from *`` with a ``where`` condition.
+* ``from *`` reads every ``MAPREDUCE`` line, whatever its table, as documented. It used to read only the lines of a table without a name (``|MAPREDUCE:|``), so a query using it returns more rows than before.
+
+### Upgrade note: paths holding a newline are no longer readable
+
+dserver's read permission check now denies every path that holds a newline character, in the file name or in a directory name above it (after symlinks are resolved), for every user the ``Server.Permissions`` rules apply to. In a rule ``.`` matches no newline and ``$`` only the end of the path, so a deny rule such as ``!^/var/log/secret/.*$`` did not match such a path while an allow rule ``^/var/log/`` did, and the file was read past the deny rule. A read of such a path now fails with ``read: no permission to read file`` (``dcat`` and ``dgrep`` then exit ``2``, also when only one file a glob matched has such a name), and the path completion offers neither the file nor a directory with such a name. There is no option to turn this off; rename such files. dserver's own scheduled and continuous jobs, which the rules do not apply to, still read them.
 
 ### Upgrade note: ``outfile append`` appends the result once
 

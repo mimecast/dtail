@@ -244,8 +244,6 @@ func (*retryTestConnector) CommittedSession() (SessionSpec, uint64, bool) {
 func (*retryTestConnector) ReplaceStartSessionSpec(SessionSpec) (bool, error) { return false, nil }
 func (*retryTestConnector) RestoreStartSessionSpec(SessionSpec) (bool, error) { return false, nil }
 
-func (*retryTestConnector) RestoreCommittedSession(SessionSpec, uint64, bool) {}
-
 type retryTestHandler struct{}
 
 func (*retryTestHandler) Read([]byte) (int, error) { return 0, nil }

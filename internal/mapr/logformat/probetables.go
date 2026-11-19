@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // ProbeTabler is implemented by parsers whose lines belong to tables (the
@@ -86,9 +87,17 @@ func (s *ProbeTableScanner) Scan(line []byte) {
 // table as a word of its own (ProbeTableLineMatcher), for the formats that
 // name tables without implementing ProbeTabler (a custom Prober). Only lines
 // holding the name are looked at closer, so the filter is cheap for the
-// others. The matcher of the empty table keeps every line; a nil scanner's
-// matcher is the word match alone.
+// others. Table names are compared cut to ProbeMaxNameBytes, as Scan lists
+// and the probe result names them (probeCollector.ensureTable): the listed
+// name of a longer table is what a table-targeted probe asks for (a
+// request's table is no longer than that, protocol.ProbeMaxTableBytes), and
+// it must keep that table's lines (tables equal up to the cut are one table
+// to a probe). The word match of the unclaimed lines follows the same rule
+// (ProbeTableLineMatcher), so a format without ProbeTabler gets the lines
+// of a table with a longer name too. The matcher of the empty table keeps
+// every line; a nil scanner's matcher is the word match alone.
 func (s *ProbeTableScanner) Matcher(table string) func(line []byte) bool {
+	table = truncateUTF8(table, ProbeMaxNameBytes)
 	word := ProbeTableLineMatcher(table)
 	if s == nil || len(s.formats) == 0 || table == "" {
 		return word
@@ -102,7 +111,7 @@ func (s *ProbeTableScanner) Matcher(table string) func(line []byte) bool {
 		claimed := false
 		for i := range s.formats {
 			lineTable, ok := s.formats[i].lineTable(text)
-			if ok && lineTable == table {
+			if ok && truncateUTF8(lineTable, ProbeMaxNameBytes) == table {
 				return true
 			}
 			claimed = claimed || ok
@@ -183,10 +192,14 @@ func (f *probeTableFormat) lineTable(line string) (table string, ok bool) {
 // "MAPREDUCE:STATS|..." but not "MAPREDUCE:STATSX|..."). It may keep lines
 // of other tables that mention the name; the probe result is filtered by
 // table afterwards (ProbeResult.FilterTable). ProbeTableScanner.Matcher
-// uses it for the lines no ProbeTabler claims. The matcher of the empty
-// table keeps every line.
+// uses it for the lines no ProbeTabler claims. The name is compared cut to
+// ProbeMaxNameBytes, as a probe lists it: a word that goes on after table
+// is kept too when table is what that longer word is cut to
+// (probeWordCutsTo), so the listed name of a table over ProbeMaxNameBytes
+// keeps its lines; a shorter name still needs the whole word. The matcher
+// of the empty table keeps every line.
 func ProbeTableLineMatcher(table string) func(line []byte) bool {
-	word := []byte(table)
+	word := []byte(truncateUTF8(table, ProbeMaxNameBytes))
 	return func(line []byte) bool {
 		if len(word) == 0 {
 			return true
@@ -199,13 +212,28 @@ func ProbeTableLineMatcher(table string) func(line []byte) bool {
 			start := offset + i
 			end := start + len(word)
 			if (start == 0 || !isTableWordByte(line[start-1])) &&
-				(end == len(line) || !isTableWordByte(line[end])) {
+				(end == len(line) || !isTableWordByte(line[end]) || probeWordCutsTo(line[start:], len(word))) {
 				return true
 			}
 			offset = start + 1
 		}
 		return false
 	}
+}
+
+// probeWordCutsTo reports whether text, which starts with a table name
+// that goes on after its first length bytes, is cut to exactly those bytes
+// by the cut to ProbeMaxNameBytes at a UTF-8 character boundary
+// (truncateUTF8): the name a probe lists for it.
+func probeWordCutsTo(text []byte, length int) bool {
+	if len(text) <= ProbeMaxNameBytes {
+		return false
+	}
+	cut := ProbeMaxNameBytes
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return cut == length
 }
 
 // isTableWordByte reports whether c continues a table name word.

@@ -44,7 +44,8 @@ func TestInteractiveEditorAltEOnPTY(t *testing.T) {
 	c.Mode = omode.GrepClient
 	c.What = "/var/log/app.log"
 	c.RegexStr = "ERROR"
-	c.editorEnv = func(name string) string {
+	deps := testEditorDeps()
+	deps.getenv = func(name string) string {
 		if name == "EDITOR" {
 			return command.Load().(string)
 		}
@@ -54,7 +55,7 @@ func TestInteractiveEditorAltEOnPTY(t *testing.T) {
 	t.Cleanup(cancel)
 	done := make(chan int, 1)
 	go func() {
-		_ = c.runInteractiveControl(ctx, cancel, slave, nil)
+		_ = c.runInteractiveControl(ctx, cancel, slave, nil, deps)
 		done <- 0
 	}()
 	waitForPTYOutput(t, master, "Tab completes", done)
@@ -116,7 +117,7 @@ func TestInteractiveEditorViModeOnPTY(t *testing.T) {
 	t.Cleanup(cancel)
 	done := make(chan int, 1)
 	go func() {
-		_ = c.runInteractiveControl(ctx, cancel, slave, nil)
+		_ = c.runInteractiveControl(ctx, cancel, slave, nil, testEditorDeps())
 		done <- 0
 	}()
 	waitForPTYOutput(t, master, "Tab completes", done)

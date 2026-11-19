@@ -75,7 +75,7 @@ func Run() error {
 		// excluded because its follow client never returned from client.Start on
 		// -shutdownAfter/SIGINT/SIGTERM, so it never flushed a CPU profile (that
 		// is how the committed dtail.pprof came to be 0 bytes). That follow
-		// shutdown is now honoured (task 1v0): runDtailWorkload profiles a real
+		// shutdown is now honoured: runDtailWorkload profiles a real
 		// follow session bounded by -shutdownAfter, which returns and flushes.
 		// dtail (and dserver) run after the always-serverless dcat/dgrep/dmap so
 		// that a setup problem in the SSH-based workloads cannot abort the run
@@ -339,7 +339,7 @@ func runSingleWorkload(cfg *Config, command, binary string, testFiles map[string
 		// commands it needs a live server to connect to and a file that keeps
 		// growing during the capture. runDtailWorkload owns that lifecycle and
 		// bounds the session with -shutdownAfter so the client returns from
-		// client.Start and flushes its CPU profile (task 1v0).
+		// client.Start and flushes its CPU profile.
 		return runDtailWorkload(cfg, binary, iterProfileDir, profilePath)
 
 	case "dcat":
@@ -447,8 +447,8 @@ const (
 // profiles, dtail MUST complete a live SSH handshake before it can stream, so
 // the workload stands up a real dserver, sets up deterministic key-based auth
 // and keeps a file growing for the whole window. -shutdownAfter bounds the
-// session so the client returns from client.Start and flushes its CPU profile
-// (task 1v0). The client runs its production default read path so the
+// session so the client returns from client.Start and flushes its CPU
+// profile. The client runs its production default read path so the
 // profile reflects the real streaming path rather than the test path.
 const (
 	dtailSSHPort        = 12223
@@ -467,9 +467,9 @@ const (
 // handshake, so it needs a running server, working auth and a file that keeps
 // growing during the capture. The session is bounded with -shutdownAfter: once
 // that deadline cancels the client context the follow reconnect/read loops
-// return, client.Start returns and the CPU profile is flushed. Before task 1v0
-// the follow client never returned and this capture would have hung, which is
-// why dtail used to be excluded from PGO.
+// return, client.Start returns and the CPU profile is flushed. Before the
+// follow shutdown was fixed the follow client never returned and this capture
+// would have hung, which is why dtail used to be excluded from PGO.
 func runDtailWorkload(cfg *Config, binary, iterProfileDir, profilePath string) error {
 	fmt.Printf("  Executing dtail workload...\n")
 
@@ -687,7 +687,7 @@ func startFollowFileAppender(followFile string) (chan struct{}, *sync.WaitGroup,
 // host (no localhost ~/.ssh/authorized_keys) every load client failed SSH auth,
 // the server churned through the asymmetric SSH handshake, and the captured
 // profile was ~87% crypto (rsa.Sign / bigmod / tls) rather than the streaming
-// path we optimize for (found in the 1v0 review). Because the dserver capture
+// path we optimize for (seen in the first dserver captures). Because the dserver capture
 // is an HTTP /debug/pprof fetch that ALWAYS returns a file, that garbage shipped
 // silently -- unlike dtail, whose client Run() surfaces the auth error.
 //
@@ -927,7 +927,7 @@ func captureHTTPProfile(pprofAddr string, seconds int, outPath string) (retErr e
 // profile is dominated by file-read/decompress/channel-write work; a broken-
 // auth capture is dominated by the asymmetric SSH *handshake* (rsa.Sign,
 // math/big / bigmod, curve25519, tls, sha256), which was ~87% of the garbage
-// profile found in the 1v0 review. We deliberately do NOT flag the symmetric
+// profile of those first captures. We deliberately do NOT flag the symmetric
 // channel ciphers (aes/chacha20/poly1305): encrypting streamed data is exactly
 // the representative work we expect, so those count as stream frames. The
 // heuristic is intentionally conservative -- it must catch the ~87%-crypto case

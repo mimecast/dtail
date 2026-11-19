@@ -39,13 +39,15 @@ func childProcesses(t *testing.T) string {
 }
 
 // TestUnitCacheAbandonedRealRunReaped: with the real ListUnits and a hung
-// journalctl mock, runs whose requests all gave up are killed and reaped,
-// leaving neither child processes nor goroutines behind.
+// journalctl mock, runs whose requests all gave up go on, but are killed
+// and reaped at the flight timeout, leaving neither child processes nor
+// goroutines behind.
 func TestUnitCacheAbandonedRealRunReaped(t *testing.T) {
 	journaltest.InstallMock(t, journaltest.Scenario{Default: journaltest.Invocation{
 		Lines: []string{"a.service", "b.service"}, HoldOpen: true,
 	}})
 	cache := NewUnitCache(ListUnits, time.Minute)
+	cache.flightTimeout = 300 * time.Millisecond
 	before := runtime.NumGoroutine()
 	for round := range 3 {
 		var wg sync.WaitGroup

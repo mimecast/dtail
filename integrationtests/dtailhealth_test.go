@@ -242,7 +242,7 @@ func testDTailHealthCheck3WithServer(t *testing.T, logger *TestLogger) {
 // no invocation of dtailhealth leaks a Go panic/runtime-error trace to stderr
 // and that the exit code stays in the expected Nagios range (1 WARNING or
 // 2 CRITICAL) rather than becoming 2 from a runtime panic accident. A server
-// value naming no server (task 9e3) must fail construction as CRITICAL too.
+// value naming no server must fail construction as CRITICAL too.
 func TestDTailHealthNoPanicOnClientConstruction(t *testing.T) {
 	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
@@ -309,7 +309,8 @@ func TestDTailHealthNoPanicOnClientConstruction(t *testing.T) {
 	}
 }
 
-// TestDTailHealthWithAuthKey is the regression test of task 7c4: dtailhealth
+// TestDTailHealthWithAuthKey is the regression test of the health check
+// with an auth key: dtailhealth
 // run without --no-auth-key while the auth key's .pub file exists (the
 // suite's DTAIL_AUTH_KEY_PATH pair, prepared by TestMain) must report a
 // healthy dserver OK with exit status 0. It used to send AUTHKEY before its

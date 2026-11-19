@@ -91,6 +91,12 @@ type baseHandler struct {
 	capabilitiesOk sync.Once
 
 	sessionAcks chan SessionAck
+	// onSessionAcked, if set, is called when the server acknowledged a
+	// SESSION START or UPDATE (no rejection), on the goroutine handling the
+	// received frames and before the acknowledgement is queued for
+	// WaitForSessionAck: the frames after it belong to the acknowledged
+	// workload (see MaprHandler).
+	onSessionAcked func()
 	// busy measures the time Write spends handling received frames, during
 	// which no further frame, e.g. a session acknowledgement, is read (see
 	// WaitForSessionAck).
@@ -239,7 +245,7 @@ func (h *baseHandler) sendMessage(ctx context.Context, command string) error {
 	if redacted := config.RedactReadShare(command); redacted != command {
 		loggedCommand, loggedEncoded = redacted, "(redacted)"
 	}
-	h.log().Debug("Sending command", h.server, loggedCommand, loggedEncoded)
+	h.logSending(command, loggedCommand, loggedEncoded)
 
 	timer := time.NewTimer(5 * time.Second)
 	defer timer.Stop()
@@ -254,6 +260,24 @@ func (h *baseHandler) sendMessage(ctx context.Context, command string) error {
 	}
 
 	return nil
+}
+
+// sessionCommandPrefix starts the SESSION START and SESSION UPDATE commands
+// (session.Spec).
+const sessionCommandPrefix = "SESSION "
+
+// logSending logs a command about to be sent, at the debug level. A SESSION
+// command's line is not waited for: the interactive control loop sends its
+// SESSION UPDATEs here, and while a host key question pauses the client
+// logger (only at the debug log level does this line block) it is the only
+// goroutine that can answer the question. Every other command is logged in
+// order, as before.
+func (h *baseHandler) logSending(command, loggedCommand, loggedEncoded string) {
+	if strings.HasPrefix(command, sessionCommandPrefix) {
+		go h.log().Debug("Sending command", h.server, loggedCommand, loggedEncoded)
+		return
+	}
+	h.log().Debug("Sending command", h.server, loggedCommand, loggedEncoded)
 }
 
 // commandFrame frames a base64-encoded command for the server.
@@ -628,11 +652,24 @@ func (h *baseHandler) WaitForCapabilities(timeout time.Duration) bool {
 // output right after a SESSION START, for longer than the timeout, does not
 // fail the session start: its wait (maxWait 0) goes on until the output
 // resumes. A server that never answers times out after timeout of idle
-// handler time; the session's end ends the wait. A SESSION UPDATE runs on the interactive control loop,
+// handler time; the session's end ends the wait, and so does the end of the
+// connection's context for the start (WaitForSessionAckContext). A SESSION
+// UPDATE runs on the interactive control loop,
 // which must not wait without bound (e.g. for a host key prompt that only
 // the control loop answers while it pauses the output), so it passes a
 // maxWait (connectors.sessionUpdateAckMaxWait).
 func (h *baseHandler) WaitForSessionAck(timeout, maxWait time.Duration) (SessionAck, bool) {
+	return h.WaitForSessionAckContext(context.Background(), timeout, maxWait)
+}
+
+// WaitForSessionAckContext is WaitForSessionAck whose wait also ends once
+// ctx is done (a queued acknowledgement still wins). The initial SESSION
+// START passes its connection's context: its wait has no wall-clock cap, so
+// without it a :quit or Ctrl-C while the start was unacknowledged returned
+// only after timeout of idle handler time, or, with the output paused, not
+// before the output ran again.
+func (h *baseHandler) WaitForSessionAckContext(ctx context.Context,
+	timeout, maxWait time.Duration) (SessionAck, bool) {
 	if h.sessionAcks == nil {
 		return SessionAck{}, false
 	}
@@ -645,7 +682,7 @@ func (h *baseHandler) WaitForSessionAck(timeout, maxWait time.Duration) (Session
 	if timeout <= 0 {
 		return SessionAck{}, false
 	}
-	return h.waitForSessionAckIdle(timeout, maxWait)
+	return h.waitForSessionAckIdle(ctx, timeout, maxWait)
 }
 
 // minAckRecheck is the shortest time the acknowledgement wait's timer is
@@ -654,11 +691,12 @@ func (h *baseHandler) WaitForSessionAck(timeout, maxWait time.Duration) (Session
 const minAckRecheck = 10 * time.Millisecond
 
 // waitForSessionAckIdle waits for a session acknowledgement until the
-// handler was idle (not busy in Write) for timeout since the call, or
-// maxWait (if above 0) passed. When the timer fires early because of busy
-// time, it is armed again for the idle time still missing (at least
-// minAckRecheck), but not past maxWait.
-func (h *baseHandler) waitForSessionAckIdle(timeout, maxWait time.Duration) (SessionAck, bool) {
+// handler was idle (not busy in Write) for timeout since the call, maxWait
+// (if above 0) passed, the session ended or ctx is done. When the timer
+// fires early because of busy time, it is armed again for the idle time
+// still missing (at least minAckRecheck), but not past maxWait.
+func (h *baseHandler) waitForSessionAckIdle(ctx context.Context,
+	timeout, maxWait time.Duration) (SessionAck, bool) {
 	start := time.Now()
 	busyAtStart := h.busy.busy(start)
 	timer := time.NewTimer(min(timeout, remainingWait(maxWait, 0)))
@@ -669,7 +707,13 @@ func (h *baseHandler) waitForSessionAckIdle(timeout, maxWait time.Duration) (Ses
 		case ack := <-h.sessionAcks:
 			return ack, true
 		case <-h.Done():
-			return SessionAck{}, false
+			// An acknowledgement already queued still wins: select picks
+			// one of several ready cases at random, and a server may
+			// acknowledge and end its session in one write.
+			return h.WaitForSessionAck(0, 0)
+		case <-ctx.Done():
+			// As above: a queued acknowledgement still wins.
+			return h.WaitForSessionAck(0, 0)
 		case <-timer.C:
 			now := time.Now()
 			elapsed := now.Sub(start)
@@ -701,6 +745,9 @@ func (h *baseHandler) handleSessionAckMessage(message string) {
 	if !ok {
 		h.log().Warn(h.server, "Unable to parse session acknowledgement", message)
 		return
+	}
+	if ack.Error == "" && h.onSessionAcked != nil {
+		h.onSessionAcked()
 	}
 	if h.sessionAcks == nil {
 		return

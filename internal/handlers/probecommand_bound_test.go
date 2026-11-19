@@ -91,9 +91,9 @@ func readProbeAnswers(t *testing.T, handler *ServerHandler) map[string][]protoco
 func TestProbeAnswersUnreadBoundTheWork(t *testing.T) {
 	file := writeProbeTestFile(t, t.TempDir(), "app.log", probeTestStatsLine("n", "1"))
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
-	handler.probeInFlightWait = testProbeInFlightWait
+	handler.probeOverrides.inFlightWait = testProbeInFlightWait
 	var samples atomic.Int32
-	handler.probeSampler = countingProbeSampler(&samples)
+	handler.probeOverrides.sampler = countingProbeSampler(&samples)
 	fillServerMessages(handler)
 	probeCommand := func(id string) string {
 		return probeCommandFor(t, protocol.ProbeRequest{ID: id, Files: []string{file}})
@@ -136,7 +136,7 @@ func TestProbeBusyAnswerDoesNotBlockTheCommandInput(t *testing.T) {
 	file := writeProbeTestFile(t, t.TempDir(), "app.log", probeTestStatsLine("n", "1"))
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
 	started, release := make(chan string, 4), make(chan struct{})
-	handler.probeSampler = blockingProbeSampler(started, release)
+	handler.probeOverrides.sampler = blockingProbeSampler(started, release)
 	defer close(release)
 
 	handleCommandWithin(t, handler, probeCommandFor(t, protocol.ProbeRequest{ID: "running", Files: []string{file}}), time.Second)
@@ -172,9 +172,9 @@ func startProbeWithin(ctx context.Context, t *testing.T, handler *ServerHandler,
 // finishes its command and is answered busy without sampling.
 func TestProbeTokenWaitTimesOut(t *testing.T) {
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
-	handler.probeInFlightWait = testProbeInFlightWait
+	handler.probeOverrides.inFlightWait = testProbeInFlightWait
 	var samples atomic.Int32
-	handler.probeSampler = countingProbeSampler(&samples)
+	handler.probeOverrides.sampler = countingProbeSampler(&samples)
 	handler.probeInFlight <- struct{}{} // an earlier probe's answer waits
 	handler.probeRunning.Store(true)
 	finished := startProbeWithin(context.Background(), t, handler, "late", 5*time.Second)
@@ -193,9 +193,9 @@ func TestProbeTokenWaitTimesOut(t *testing.T) {
 // back, finishes its command, neither samples nor answers.
 func TestProbeTokenWaitEndsWithTheSession(t *testing.T) {
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
-	handler.probeInFlightWait = time.Minute
+	handler.probeOverrides.inFlightWait = time.Minute
 	var samples atomic.Int32
-	handler.probeSampler = countingProbeSampler(&samples)
+	handler.probeOverrides.sampler = countingProbeSampler(&samples)
 	handler.probeInFlight <- struct{}{}
 	handler.probeRunning.Store(true)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -218,9 +218,9 @@ func TestProbeTokenWaitEndsWithTheSession(t *testing.T) {
 func TestProbeSlotIsReleasedOnce(t *testing.T) {
 	file := writeProbeTestFile(t, t.TempDir(), "app.log", probeTestStatsLine("n", "1"))
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
-	handler.probeInFlightWait = time.Minute
+	handler.probeOverrides.inFlightWait = time.Minute
 	started, release := make(chan string, 4), make(chan struct{})
-	handler.probeSampler = tokenProbeSampler(started, release)
+	handler.probeOverrides.sampler = tokenProbeSampler(started, release)
 	request := func(id string) string {
 		return encodedTestCommand(probeCommandFor(t, protocol.ProbeRequest{ID: id, Files: []string{file}}))
 	}
@@ -326,7 +326,7 @@ func TestProbeFloodDoesNotStopTheCommandInput(t *testing.T) {
 	probed := writeProbeTestFile(t, dir, "app.log", probeTestStatsLine("n", "1"))
 	flood := writeFloodFile(t, dir, 32<<20)
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
-	handler.probeInFlightWait = testProbeInFlightWait
+	handler.probeOverrides.inFlightWait = testProbeInFlightWait
 	var read atomic.Int64
 	readerDone := startSlowReader(handler, &read)
 	defer func() {
@@ -347,5 +347,42 @@ func TestProbeFloodDoesNotStopTheCommandInput(t *testing.T) {
 	if len(handler.serverMessages) < cap(handler.serverMessages) {
 		t.Fatalf("server messages %d of %d: the flood did not leave the answers unread",
 			len(handler.serverMessages), cap(handler.serverMessages))
+	}
+}
+
+// TestProbeOverridesZeroValueIsProduction checks that a handler nothing was
+// overridden on, as every handler outside the tests, probes with the
+// production values, and that a set field replaces only its own value.
+func TestProbeOverridesZeroValueIsProduction(t *testing.T) {
+	var none probeOverrides
+	if got := none.inFlightWaitOrDefault(); got != probeInFlightWait {
+		t.Fatalf("in-flight wait = %v, want %v", got, probeInFlightWait)
+	}
+	if none.samplerOrDefault() == nil {
+		t.Fatal("no default sampler")
+	}
+	if got, want := none.listLimits.withDefaults(), (probeListLimits{}).withDefaults(); got != want {
+		t.Fatalf("list limits = %+v, want the defaults %+v", got, want)
+	}
+	if got := newSessionTestHandler("probe-overrides-user").probeOverrides; got.inFlightWait != 0 ||
+		got.sampler != nil || got.listLimits != (probeListLimits{}) {
+		t.Fatalf("a new handler has overrides set: %+v", got)
+	}
+
+	var samples atomic.Int32
+	set := probeOverrides{inFlightWait: time.Minute, sampler: func(context.Context, fs.ValidatedReadTarget,
+		string, fs.SampleOptions) (fs.Sample, error) {
+		samples.Add(1)
+		return fs.Sample{}, nil
+	}}
+	if got := set.inFlightWaitOrDefault(); got != time.Minute {
+		t.Fatalf("overridden in-flight wait = %v, want 1m", got)
+	}
+	_, err := set.samplerOrDefault()(context.Background(), fs.ValidatedReadTarget{}, "", fs.SampleOptions{})
+	if err != nil || samples.Load() != 1 {
+		t.Fatalf("overridden sampler not used: err %v, samples %d", err, samples.Load())
+	}
+	if (probeOverrides{inFlightWait: -time.Second}).inFlightWaitOrDefault() != probeInFlightWait {
+		t.Fatal("a negative in-flight wait is not replaced by the default")
 	}
 }

@@ -297,7 +297,7 @@ func TestProbeJournalTargets(t *testing.T) {
 	}
 
 	denied := newProbeTestHandler(t, []string{"readfiles:^/nothing/"}, nil, protocol.CapabilityJournalV1)
-	denied.probeSampler = failingProbeSampler(t)
+	denied.probeOverrides.sampler = failingProbeSampler(t)
 	answer, _ = probeFiles(t, denied, entry)
 	if answer.FilesSampled != 0 || !hasProbeError(answer, entry, protocol.CommandFailurePermission) {
 		t.Fatalf("denied journal target: %+v", answer)
@@ -311,7 +311,7 @@ func TestProbeJournalTargets(t *testing.T) {
 func TestProbeJournalTargetsNoDenyBypass(t *testing.T) {
 	permissions := []string{`readfiles:!^journal:sshd\.service$`, `readfiles:^journal:.*`}
 	handler := newProbeTestHandler(t, permissions, nil, protocol.CapabilityJournalV1)
-	handler.probeSampler = failingProbeSampler(t)
+	handler.probeOverrides.sampler = failingProbeSampler(t)
 	for _, entry := range []string{
 		"journal:ssh*.service", "journal:ssh[d].service", "journal:*.service",
 		"journal:sshd", "journal:system.slice",
@@ -357,7 +357,7 @@ func TestProbeLimitsFiles(t *testing.T) {
 func TestProbeReportsUnreadableEntries(t *testing.T) {
 	dir := t.TempDir()
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
-	handler.probeSampler = failingProbeSampler(t)
+	handler.probeOverrides.sampler = failingProbeSampler(t)
 	tests := map[string]string{
 		filepath.Join(dir, "missing.log"): protocol.CommandFailureNoFile,
 		dir:                               protocol.CommandFailureNoFile, // a directory only

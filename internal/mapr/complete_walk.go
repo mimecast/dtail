@@ -59,7 +59,7 @@ func (w *partialWalker) step(st scannedToken) {
 	case "from":
 		w.stepSingle(st, w.n == 0 && t.str != "", TokenTable)
 		if w.n == 1 && t.str != "" {
-			w.table = strings.ToUpper(t.str)
+			w.table = TableName(t.str)
 		}
 	case "logformat":
 		w.stepSingle(st, w.n == 0 && t.str != "", TokenLogFormat)
@@ -200,12 +200,13 @@ func (w *partialWalker) addSelectItem(st scannedToken, t token) {
 
 // stepLeadClause steps the clauses with an optional lead word: group and
 // (r)order (by, matched on the raw token before backticks are stripped and
-// ignoring case, as tokensConsumeOptional does) and outfile (append, case
-// sensitive, after stripping, as parseOutfileClause).
+// ignoring case, as tokensConsumeOptional does) and outfile (the bare lower
+// case word append, isAppendWord, as parseOutfileClause: a quoted or
+// escaped append is the path).
 func (w *partialWalker) stepLeadClause(st scannedToken, t token) {
 	isLead := strings.EqualFold(st.str, "by")
 	if w.clause == "outfile" {
-		isLead = t.str == "append"
+		isLead = isAppendWord(t)
 	}
 	switch {
 	case w.n == 0 && !w.lead && isLead:
@@ -226,7 +227,7 @@ func (w *partialWalker) stepLeadClause(st scannedToken, t token) {
 		// The parser rejects more tokens (strayWordError, orderWordError).
 		w.add(st.start, st.end, TokenUnknown)
 	case w.clause == "outfile":
-		w.add(st.start, st.end, stringKind(t.str))
+		w.add(st.start, st.end, outfilePathKind(t.str))
 	default:
 		w.addSelectItem(st, t)
 	}
@@ -424,9 +425,11 @@ func nameKind(name string) TokenKind {
 	}
 }
 
-// stringKind classifies an outfile path, which must not be empty.
-func stringKind(str string) TokenKind {
-	if str == "" {
+// outfilePathKind classifies an outfile path by the rules of
+// parseOutfileClause: it must not be empty and must not start with
+// "append:" (isAppendColonPath), with or without the append word before it.
+func outfilePathKind(path string) TokenKind {
+	if path == "" || isAppendColonPath(path) {
 		return TokenUnknown
 	}
 	return TokenString

@@ -430,3 +430,75 @@ func TestParseQueryPercentageAndPercentile(t *testing.T) {
 			q.OrderBy, queryStr, q)
 	}
 }
+
+// TestTableNameSelectable: a from clause upper-cases its table, quoted or
+// not, and only a name equal to its upper-cased form is one it can select.
+func TestTableNameSelectable(t *testing.T) {
+	for _, from := range []string{"stats", "Stats", `"stats"`, "`stats`", "STATS"} {
+		query, err := NewQuery("select count($line) from "+from, logging.NopLogger{})
+		if err != nil {
+			t.Fatalf("from %s: %v", from, err)
+		}
+		if query.Table != "STATS" || query.Table != TableName("stats") {
+			t.Errorf("from %s reads table %q, want STATS", from, query.Table)
+		}
+	}
+	for name, want := range map[string]bool{
+		"STATS": true, "": true, "A_1": true, "ÄB": true,
+		"stats": false, "Stats": false, "STATs": false, "äB": false,
+	} {
+		if got := SelectableTable(name); got != want {
+			t.Errorf("SelectableTable(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// TestOutfileAppendWordIsBareOnly: only the bare word append is the append
+// mode. A quoted or escaped append is a file name, in the parser and in
+// AnalyzePartial alike: alone it is the path, and a word after it is a
+// stray word, not the path of an append.
+func TestOutfileAppendWordIsBareOnly(t *testing.T) {
+	paths := []struct {
+		query      string
+		path       string
+		appendMode bool
+	}{
+		{"select foo outfile append x.csv", "x.csv", true},
+		{`select foo outfile append "append"`, "append", true},
+		{"select foo outfile append `append`", "append", true},
+		{"select foo outfile append append", "append", true},
+		{`select foo outfile "append"`, "append", false},
+		{"select foo outfile `append`", "append", false},
+		{"select foo outfile append", "append", false},
+		// Append mode is lower case only, as before.
+		{"select foo outfile APPEND", "APPEND", false},
+	}
+	for _, tc := range paths {
+		q, err := NewQuery(tc.query, logging.NopLogger{})
+		if err != nil {
+			t.Errorf("%s: %v", tc.query, err)
+			continue
+		}
+		if q.Outfile == nil || q.Outfile.FilePath != tc.path || q.Outfile.AppendMode != tc.appendMode {
+			t.Errorf("%s: outfile %+v, want path %q append %v", tc.query, q.Outfile, tc.path, tc.appendMode)
+		}
+	}
+	for _, query := range []string{
+		`select foo outfile "append" x.csv`,
+		"select foo outfile `append` x.csv",
+		"select foo outfile APPEND x.csv",
+	} {
+		_, err := NewQuery(query, logging.NopLogger{})
+		if err == nil || !strings.Contains(err.Error(), `"x.csv"`) {
+			t.Errorf("%s: error %v, want the stray word x.csv rejected", query, err)
+		}
+		tokens := AnalyzePartial(query + " ").Tokens
+		if len(tokens) != 5 || tokens[3].Kind != TokenString || tokens[4].Kind != TokenUnknown {
+			t.Errorf("AnalyzePartial(%q) tokens %v, want the path append and an unknown word", query, tokens)
+		}
+	}
+	bare := AnalyzePartial("select foo outfile append x.csv ").Tokens
+	if len(bare) != 5 || bare[3].Kind != TokenKeyword || bare[4].Kind != TokenString {
+		t.Errorf("bare append tokens %v, want a keyword and the path", bare)
+	}
+}

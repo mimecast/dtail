@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"regexp/syntax"
 	"strings"
 	"sync"
 
@@ -30,16 +31,40 @@ type User struct {
 	// permissions of a User never change.
 	compileOnce sync.Once
 	compiled    []compiledPermission
+	// invalidRulesWarned holds the permission types whose rules that do
+	// not compile PathRules logged already: once per User and type, so
+	// that the invalid rules of one type do not silence those of another.
+	invalidRulesMu     sync.Mutex
+	invalidRulesWarned map[string]struct{}
+}
+
+// firstInvalidRulesWarning reports whether the invalid rules of
+// permissionType were not logged for u yet, and records that they are now.
+func (u *User) firstInvalidRulesWarning(permissionType string) bool {
+	u.invalidRulesMu.Lock()
+	defer u.invalidRulesMu.Unlock()
+	if _, warned := u.invalidRulesWarned[permissionType]; warned {
+		return false
+	}
+	if u.invalidRulesWarned == nil {
+		u.invalidRulesWarned = make(map[string]struct{})
+	}
+	u.invalidRulesWarned[permissionType] = struct{}{}
+	return true
 }
 
 // compiledPermission is one permission rule "[<type>:][!]<regex>" in the
-// form iteratePaths matches paths with.
+// forms iteratePaths (re) and the path listing's PathRules (re and prog)
+// match paths with. It is immutable once compiled.
 type compiledPermission struct {
 	typeStr string
 	// rule is the rule without its type, as logged ("!" kept).
 	rule string
 	deny bool
 	re   *regexp.Regexp
+	// prog is the same regex as the program PathRules runs over a path
+	// prefix (pathRule.prefixState).
+	prog *syntax.Prog
 	// err is set when the regex does not compile; iteratePaths fails the
 	// check when it reaches the rule, as it did compiling it per check.
 	err error
@@ -87,6 +112,9 @@ func (u *User) HasFilePermission(filePath, permissionType string) bool {
 // ErrReadPermissionDenied is returned by ResolveReadTarget for a path the
 // user's read permissions deny.
 var ErrReadPermissionDenied = errors.New("no permission to read file")
+
+// errNewlineInPath is why iteratePaths permits no path holding a newline.
+var errNewlineInPath = errors.New("permission test failed, the path holds a newline")
 
 // ValidateReadTarget resolves and authorizes a file path for server-side reads.
 func (u *User) ValidateReadTarget(filePath, permissionType string) (fs.ValidatedReadTarget, bool) {
@@ -256,13 +284,7 @@ func (u *User) compiledPermissions() []compiledPermission {
 			typeStr, rule := splitPermissionType(permission)
 			compiled := compiledPermission{typeStr: typeStr, rule: rule}
 			compiled.deny = strings.HasPrefix(rule, "!")
-			regexStr := strings.TrimPrefix(rule, "!")
-			re, err := regexp.Compile(regexStr)
-			if err != nil {
-				compiled.err = fmt.Errorf("permission test failed, can't compile regex "+
-					"'%s': %w", regexStr, err)
-			}
-			compiled.re = re
+			compiled.re, compiled.prog, compiled.err = compilePermission(strings.TrimPrefix(rule, "!"))
 			u.compiled = append(u.compiled, compiled)
 		}
 	})
@@ -282,11 +304,24 @@ func (u *User) compiledPermissions() []compiledPermission {
 //   - If no rule matches at all, access is denied (deny-by-default).
 //   - A rule of the type whose regex does not compile fails the check with
 //     an error when the scan reaches it.
+//   - A path holding a newline is denied with errNewlineInPath before any
+//     rule is asked. In a rule "." matches no newline and "$" only the end
+//     of the path, so the documented deny form "!^/dir/.*$" does not match
+//     "/dir/a\nb" while an allow rule "^/dir/" does: whoever could create
+//     such a name beneath a denied directory (or a symlink to it) had the
+//     file read past the deny rule. Compiling the rules with "(?s)" would
+//     close that for "." only and change what written rules match; "(?m)"
+//     rules, classes and rules an operator writes later would still have
+//     to think of newlines. Denying the path outright needs no rule to.
+//     Log file names hold no newline, so nothing readable is lost.
 //
 // The rules are compiled once per User (compiledPermissions), not per check.
 func (u *User) iteratePaths(cleanPath, permissionType string, log checkLog) (bool, error) {
 	// Default: no permission until a matching allow rule is found.
 	hasPermission := false
+	if strings.ContainsRune(cleanPath, '\n') {
+		return false, errNewlineInPath
+	}
 
 	for _, permission := range u.compiledPermissions() {
 		if log.debugOn {

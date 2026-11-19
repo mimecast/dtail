@@ -149,7 +149,6 @@ func TestUnitCacheSharesConcurrentRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	gaveUp := make(chan error, 1)
 	go func() { _, _, err := cache.ListUnits(ctx, 10); gaveUp <- err }()
-	waitForWaiters(t, cache, requests+1)
 	cancel()
 	if err := <-gaveUp; !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled request: %v, want context.Canceled", err)
@@ -165,10 +164,13 @@ func TestUnitCacheSharesConcurrentRun(t *testing.T) {
 	}
 }
 
-// TestUnitCacheStopsAbandonedRun: when every request waiting for a run gave
-// up, the run is stopped, and the next request starts a new one instead of
-// joining the stopped one.
-func TestUnitCacheStopsAbandonedRun(t *testing.T) {
+// TestUnitCacheAbandonedRunGoesOnAndIsCached: when the only request waiting
+// for a run gives up (a slow journal against the 10 s probe timeout), the
+// run goes on. A request arriving meanwhile joins it instead of starting
+// journalctl again, and its result is cached, so the next request is
+// answered without a run. It used to be stopped, so a listing slower than
+// one probe's timeout was never cached and every Tab ran journalctl anew.
+func TestUnitCacheAbandonedRunGoesOnAndIsCached(t *testing.T) {
 	lister := newFakeUnitLister("a.service")
 	lister.gate = make(chan struct{})
 	cache, _ := newTestUnitCache(lister)
@@ -182,15 +184,75 @@ func TestUnitCacheStopsAbandonedRun(t *testing.T) {
 	}
 	select {
 	case <-lister.stopped:
-	case <-time.After(5 * time.Second):
-		t.Fatal("abandoned run was not stopped")
+		t.Fatal("the run was stopped when its only request gave up")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	joined := make(chan []string, 1)
+	go func() {
+		units, _, err := cache.ListUnits(context.Background(), 10)
+		if err != nil {
+			units = []string{err.Error()}
+		}
+		joined <- units
+	}()
+	select {
+	case <-lister.started:
+		t.Fatal("a request arriving during the abandoned run started a run of its own")
+	case <-time.After(50 * time.Millisecond):
 	}
 	close(lister.gate)
+	if units := <-joined; !slices.Equal(units, []string{"a.service"}) {
+		t.Fatalf("units %q of the request that joined the abandoned run", units)
+	}
 	if units, _ := mustListUnits(t, cache, 10); !slices.Equal(units, []string{"a.service"}) {
 		t.Fatalf("units %q after an abandoned run", units)
 	}
+	if runs := lister.runs.Load(); runs != 1 {
+		t.Fatalf("%d runs, want 1: the abandoned run's result is cached", runs)
+	}
+}
+
+// TestUnitCacheAbandonedRunResultIsCachedWithoutWaiter: the result of a run
+// nobody waited for at its end is cached all the same.
+func TestUnitCacheAbandonedRunResultIsCachedWithoutWaiter(t *testing.T) {
+	lister := newFakeUnitLister("a.service")
+	lister.gate = make(chan struct{})
+	cache, _ := newTestUnitCache(lister)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := cache.ListUnits(ctx, 10); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ListUnits: %v, want context.Canceled", err)
+	}
+	close(lister.gate)
+	waitForNoFlight(t, cache)
+	if units, _ := mustListUnits(t, cache, 10); !slices.Equal(units, []string{"a.service"}) {
+		t.Fatalf("units %q after an abandoned run", units)
+	}
+	if runs := lister.runs.Load(); runs != 1 {
+		t.Fatalf("%d runs, want 1", runs)
+	}
+}
+
+// TestUnitCacheAbandonedFailedRunIsNotCached: an abandoned run that fails
+// caches nothing (negative case); the next request runs again.
+func TestUnitCacheAbandonedFailedRunIsNotCached(t *testing.T) {
+	lister := newFakeUnitLister("a.service")
+	lister.gate = make(chan struct{})
+	lister.err = errors.New("journalctl failed")
+	cache, _ := newTestUnitCache(lister)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := cache.ListUnits(ctx, 10); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ListUnits: %v, want context.Canceled", err)
+	}
+	close(lister.gate)
+	waitForNoFlight(t, cache)
+	if _, _, err := cache.ListUnits(context.Background(), 10); !errors.Is(err, lister.err) {
+		t.Fatalf("ListUnits after a failed abandoned run: %v, want its own failure", err)
+	}
 	if runs := lister.runs.Load(); runs != 2 {
-		t.Fatalf("%d runs, want 2", runs)
+		t.Fatalf("%d runs, want 2: a failure is not cached", runs)
 	}
 }
 
@@ -223,89 +285,117 @@ func TestUnitCacheRecoversListerPanic(t *testing.T) {
 	}
 }
 
-// TestUnitCacheCapsHungRun: requests that keep arriving, each giving up
-// once the next one waits, keep the waiter count above zero; they still do
-// not keep a hung run alive beyond the flight timeout.
+// TestUnitCacheCapsHungRun: a hung run is stopped at the flight timeout,
+// whether a request still waits for it (and then fails) or its only
+// request gave up long before, and the next request starts a new run.
 func TestUnitCacheCapsHungRun(t *testing.T) {
-	stopped := make(chan struct{})
-	var runs atomic.Int32
-	list := func(ctx context.Context, _ int) ([]string, bool, error) {
-		<-ctx.Done()
-		if runs.Add(1) == 1 {
-			close(stopped)
-		}
-		return nil, false, ctx.Err()
-	}
-	cache := NewUnitCache(list, time.Minute)
-	cache.flightTimeout = 300 * time.Millisecond
-	var wg sync.WaitGroup
-	join := func() context.CancelFunc {
+	for _, abandoned := range []bool{false, true} {
+		lister := newFakeUnitLister("a.service")
+		lister.gate = make(chan struct{})
+		cache, _ := newTestUnitCache(lister)
+		cache.flightTimeout = 200 * time.Millisecond
 		ctx, cancel := context.WithCancel(context.Background())
-		wg.Go(func() { _, _, _ = cache.ListUnits(ctx, 10) })
-		return cancel
-	}
-	previous := join()
-	waitForWaiters(t, cache, 1)
-	deadline := time.After(5 * time.Second)
-	for {
-		select {
-		case <-stopped:
-			previous()
-			wg.Wait()
-			return
-		case <-deadline:
-			previous()
-			wg.Wait()
-			t.Fatal("hung run was not stopped although its waiters overlapped")
-		case <-time.After(20 * time.Millisecond):
+		if abandoned {
+			cancel()
 		}
-		next := join()
-		if !waitForFlightWaiters(cache, 2, stopped) {
-			next()
-			continue
+		_, _, err := cache.ListUnits(ctx, 10)
+		cancel()
+		want := context.DeadlineExceeded
+		if abandoned {
+			want = context.Canceled
 		}
-		previous()
-		previous = next
-	}
-}
-
-// waitForFlightWaiters waits until the running flight has n waiting
-// requests and reports false when stopped is closed first.
-func waitForFlightWaiters(cache *UnitCache, n int, stopped <-chan struct{}) bool {
-	for {
-		cache.mu.Lock()
-		waiters := 0
-		if cache.flight != nil {
-			waiters = cache.flight.waiters
-		}
-		cache.mu.Unlock()
-		if waiters == n {
-			return true
+		if !errors.Is(err, want) {
+			t.Fatalf("abandoned %v: ListUnits: %v, want %v", abandoned, err, want)
 		}
 		select {
-		case <-stopped:
-			return false
-		case <-time.After(time.Millisecond):
+		case <-lister.stopped:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("abandoned %v: hung run was not stopped at the flight timeout", abandoned)
+		}
+		waitForNoFlight(t, cache)
+		close(lister.gate)
+		if units, _ := mustListUnits(t, cache, 10); !slices.Equal(units, []string{"a.service"}) {
+			t.Fatalf("abandoned %v: units %q after a hung run", abandoned, units)
+		}
+		if runs := lister.runs.Load(); runs != 2 {
+			t.Fatalf("abandoned %v: %d runs, want 2", abandoned, runs)
 		}
 	}
 }
 
-// waitForWaiters waits until the running flight has n waiting requests.
-func waitForWaiters(t *testing.T, cache *UnitCache, n int) {
+// TestUnitCacheCloseStopsAbandonedRun: Close (dserver's shutdown) stops a
+// run no request waits for any more, well before the flight timeout,
+// caches nothing of it, and a listing afterwards fails with
+// ErrUnitCacheClosed without running the lister. Close on a nil cache and
+// a second Close do nothing.
+func TestUnitCacheCloseStopsAbandonedRun(t *testing.T) {
+	lister := newFakeUnitLister("a.service")
+	lister.gate = make(chan struct{})
+	defer close(lister.gate)
+	cache, _ := newTestUnitCache(lister)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := cache.ListUnits(ctx, 10); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ListUnits: %v, want context.Canceled", err)
+	}
+	<-lister.started
+	select {
+	case <-lister.stopped:
+		t.Fatal("the abandoned run stopped before Close")
+	case <-time.After(50 * time.Millisecond):
+	}
+	cache.Close()
+	select {
+	case <-lister.stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not stop the abandoned run")
+	}
+	waitForNoFlight(t, cache)
+	cache.Close()
+	if _, _, err := cache.ListUnits(context.Background(), 10); !errors.Is(err, ErrUnitCacheClosed) {
+		t.Fatalf("ListUnits after Close: %v, want ErrUnitCacheClosed", err)
+	}
+	if runs := lister.runs.Load(); runs != 1 {
+		t.Fatalf("%d runs, want 1: a closed cache runs no lister", runs)
+	}
+	var none *UnitCache
+	none.Close()
+}
+
+// TestUnitCacheCloseFailsWaitingRequest: a request waiting for the run
+// when the cache is closed gets the run's error instead of hanging.
+func TestUnitCacheCloseFailsWaitingRequest(t *testing.T) {
+	lister := newFakeUnitLister("a.service")
+	lister.gate = make(chan struct{})
+	defer close(lister.gate)
+	cache, _ := newTestUnitCache(lister)
+	done := make(chan error, 1)
+	go func() { _, _, err := cache.ListUnits(context.Background(), 10); done <- err }()
+	<-lister.started
+	cache.Close()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("waiting request: %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a waiting request hangs after Close")
+	}
+}
+
+// waitForNoFlight waits until no run is in flight.
+func waitForNoFlight(t *testing.T, cache *UnitCache) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		cache.mu.Lock()
-		waiters := 0
-		if cache.flight != nil {
-			waiters = cache.flight.waiters
-		}
+		flight := cache.flight
 		cache.mu.Unlock()
-		if waiters == n {
+		if flight == nil {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%d requests wait for the run, want %d", waiters, n)
+			t.Fatal("a run is still in flight")
 		}
 		time.Sleep(time.Millisecond)
 	}

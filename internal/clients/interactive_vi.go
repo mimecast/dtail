@@ -12,6 +12,19 @@ import (
 // no key a keyboard sends, and outside x/term's private key range.
 const viEscapeKey = utf8.MaxRune - 1
 
+// viUpKey and viDownKey are the keys the Terminal passes to the key
+// callback for the Up and Down arrows, and for Ctrl-P and Ctrl-N, which
+// x/term reads as these arrows, in the vi editing mode (editInput).
+// The Terminal would recall history itself, at a position of its own that
+// k and j could neither see nor move, so the vi layer takes the arrows and
+// keeps the one history position (viEditor.histIndex). Like viEscapeKey
+// they are valid UTF-8, no keys a keyboard sends, and outside x/term's
+// private key range.
+const (
+	viUpKey   = utf8.MaxRune - 2
+	viDownKey = utf8.MaxRune - 3
+)
+
 // viCtrlR is Ctrl-R (redo in normal mode); x/term does not bind it.
 const viCtrlR = 0x12
 
@@ -52,9 +65,13 @@ var viAliases = map[rune][2]rune{
 // key to key, which returns the changed line. Normal mode has the motions
 // h l w b e W B E 0 ^ $ f F t T ; , (with counts), the operators d c y with
 // a motion or doubled (dd cc yy), x X D C s S Y, i a I A, r ~ p P, u and
-// Ctrl-R (undo, redo) and k j (history). Keys the Terminal handles itself
-// never reach the callback and work in both modes as in insert mode:
-// Enter, Backspace, the arrows, Home/End and the Ctrl keys.
+// Ctrl-R (undo, redo) and k j (history). Up and Down, also typed as Ctrl-P
+// and Ctrl-N, reach it in both modes (viUpKey, viDownKey) and move the
+// same history position as k and j (histIndex), so each goes on from where the other left and Down or j
+// past the newest entry gives back the line that was being edited. The
+// other keys the Terminal handles itself never reach the callback and work
+// in both modes as in insert mode: Enter, Backspace, Left/Right, Home/End
+// and the other Ctrl keys.
 type viEditor struct {
 	mode viMode
 	// count is the count typed so far; op and opCount an operator waiting
@@ -76,8 +93,9 @@ type viEditor struct {
 	// insert mode changed it.
 	insertStart viSnapshot
 	history     viHistory
-	// histIndex is the history entry k/j recalled (-1: the line being
-	// edited, kept in histSaved meanwhile).
+	// histIndex is the history entry k/j or Up/Down (Ctrl-P/N) recalled
+	// (-1: the line being edited, kept in histSaved meanwhile). It is the editor's only
+	// history position: the Terminal's own never moves in vi mode.
 	histIndex int
 	histSaved []rune
 	// onMode is told every mode change (and the insert mode of every new
@@ -107,13 +125,17 @@ func (v *viEditor) setMode(mode viMode) {
 
 // key handles key on line at byte position pos and returns the changed
 // line and position and true, or false for a key the Terminal is to handle
-// (every key in insert mode but Esc; Tab, which completes, in both).
+// (every key in insert mode but Esc and the arrows Up and Down; Tab, which
+// completes, in both).
 func (v *viEditor) key(line string, pos int, key rune) (string, int, bool) {
 	if key == '\t' {
 		// Tab completes in both modes; it ends a count or operator typed
 		// before it.
 		v.cancel()
 		return "", 0, false
+	}
+	if key == viUpKey || key == viDownKey {
+		return v.arrowKey(line, pos, key == viUpKey)
 	}
 	if v.mode == viInsert && key != viEscapeKey {
 		return "", 0, false
@@ -128,6 +150,29 @@ func (v *viEditor) key(line string, pos int, key rune) (string, int, bool) {
 	}
 	if v.mode == viNormal {
 		rpos = viClamp(runes, rpos)
+	}
+	return string(runes), len(string(runes[:rpos])), true
+}
+
+// arrowKey recalls the next older (Up) or newer (Down) history entry in
+// either mode, the cursor at its end as the Terminal puts it for its own
+// recall (on its last character in normal mode). It ends a count, operator
+// or character wait typed before it, and in insert mode the recalled line
+// is where the insert starts over, so that undo never brings back text of
+// the line left behind. Without an entry to go to, the line stays as it
+// is; the key is consumed either way (the Terminal would insert it).
+func (v *viEditor) arrowKey(line string, pos int, older bool) (string, int, bool) {
+	v.cancel()
+	at := v.histIndex
+	runes, _ := v.recall([]rune(line), 0, older, 1)
+	if v.histIndex == at {
+		return line, pos, true
+	}
+	rpos := len(runes)
+	if v.mode == viNormal {
+		rpos = viClamp(runes, rpos)
+	} else {
+		v.insertStart = snapshot(runes, rpos)
 	}
 	return string(runes), len(string(runes[:rpos])), true
 }
@@ -171,8 +216,8 @@ func snapshot(line []rune, pos int) viSnapshot {
 
 // normalKey handles a key in normal mode.
 func (v *viEditor) normalKey(line []rune, pos int, key rune) ([]rune, int) {
-	// The Terminal moves the cursor itself for the keys it handles (Up,
-	// Down, End, Right), also past the line's end in normal mode.
+	// The Terminal moves the cursor itself for the keys it handles (End,
+	// Right), also past the line's end in normal mode.
 	pos = viClamp(line, pos)
 	if v.pending != 0 {
 		return v.pendingKey(line, pos, key)
@@ -435,28 +480,15 @@ func (v *viEditor) undoStep(line []rune, pos int, from, to *[]viSnapshot) ([]run
 	return last.line, last.pos
 }
 
-// recall puts an older (k) or newer (j) history entry on the line, the
-// cursor at its start; j past the newest entry gives back the line being
-// edited. The undo steps belong to the line left behind and are dropped.
+// recall puts an older (k, Up) or newer (j, Down) history entry on the
+// line, the cursor at its start (arrowKey moves it to the end); going
+// newer past the newest entry gives back the line being edited. The undo
+// steps belong to the line left behind and are dropped.
 func (v *viEditor) recall(line []rune, pos int, older bool, count int) ([]rune, int) {
 	if v.history == nil {
 		return line, pos
 	}
 	index := v.histIndex
-	if index == -1 {
-		// A line recalled with Up/Down (the Terminal's own history index,
-		// which k/j do not see) counts as that entry: k goes on from it.
-		for i := 0; i < v.history.Len(); i++ {
-			if v.history.At(i) == string(line) {
-				// j past the newest entry gives this line back, also
-				// one typed that equals an entry.
-				v.histSaved = append([]rune(nil), line...)
-				index = i
-				v.histIndex = i
-				break
-			}
-		}
-	}
 	for i := 0; i < count; i++ {
 		if older && index+1 < v.history.Len() {
 			index++

@@ -22,8 +22,8 @@ import (
 // START acknowledgement (defaultSessionAckTimeout) and does not count a
 // slow link as a paused output, so the acknowledgement must not queue
 // behind the session output buffer (2 MiB and more, about 5 s here):
-// dserver sends it ahead of the workload's payload (sessionAckGate, task
-// fd4). Before, the start failed with an acknowledgement timeout.
+// dserver sends it ahead of the workload's payload (sessionAckGate).
+// Before, the start failed with an acknowledgement timeout.
 func TestSessionStartCommitsOverSlowLink(t *testing.T) {
 	file := writeProbeTestLog(t, 60000)
 	cfg := config.RuntimeConfig{

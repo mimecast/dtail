@@ -260,7 +260,7 @@ func TestMaprClientOutfileEmptyIntervalPolicy(t *testing.T) {
 				if step.rowCount > 0 {
 					mergeOutfileTestRow(t, snapshot, step.rowCount)
 				}
-				if err := client.writeResultsToOutfile(snapshot, step.final); err != nil {
+				if err := client.writeResultsToOutfile(client.clientLogger(), snapshot, step.final); err != nil {
 					t.Fatalf("step %d writeResultsToOutfile() error = %v", i, err)
 				}
 				got, err := os.ReadFile(outfile)
@@ -284,14 +284,14 @@ func TestMaprClientFailedNonEmptyWriteDoesNotPreserveFollowingEmptyInterval(t *t
 
 	snapshot := client.session.Snapshot()
 	mergeOutfileTestRow(t, snapshot, 7)
-	if err := client.writeResultsToOutfile(snapshot, false); err == nil {
+	if err := client.writeResultsToOutfile(client.clientLogger(), snapshot, false); err == nil {
 		t.Fatal("writeResultsToOutfile() error = nil, want missing-directory error")
 	}
 	if err := os.Mkdir(outfileDir, 0o700); err != nil {
 		t.Fatalf("Mkdir() error = %v", err)
 	}
 
-	if err := client.writeResultsToOutfile(client.session.Snapshot(), false); err != nil {
+	if err := client.writeResultsToOutfile(client.clientLogger(), client.session.Snapshot(), false); err != nil {
 		t.Fatalf("empty writeResultsToOutfile() error = %v", err)
 	}
 	got, err := os.ReadFile(outfile)
@@ -315,11 +315,11 @@ func TestMaprClientRejectsRetainedSnapshotAfterNewGenerationPublication(t *testi
 	}
 	current := client.session.Snapshot()
 	mergeOutfileTestRow(t, current, 9)
-	if err := client.writeResultsToOutfile(current, false); err != nil {
+	if err := client.writeResultsToOutfile(client.clientLogger(), current, false); err != nil {
 		t.Fatalf("current writeResultsToOutfile() error = %v", err)
 	}
 
-	if err := client.writeResultsToOutfile(retained, false); err != nil {
+	if err := client.writeResultsToOutfile(client.clientLogger(), retained, false); err != nil {
 		t.Fatalf("stale writeResultsToOutfile() error = %v", err)
 	}
 	got, err := os.ReadFile(outfile)
@@ -385,7 +385,8 @@ func mustMaprClientQuery(t *testing.T, queryStr string) *mapr.Query {
 }
 
 // TestWarnUnknownQueryVariables verifies the plan-time diagnostic is written to
-// the client's stderr for an unknown $-variable (the ys0 footgun) and stays
+// the client's stderr for an unknown $-variable (which no parser fills, so
+// the query would silently aggregate nothing by it) and stays
 // silent for a valid query, so users are not trained to ignore warnings.
 func TestWarnUnknownQueryVariables(t *testing.T) {
 	tests := []struct {
@@ -394,7 +395,7 @@ func TestWarnUnknownQueryVariables(t *testing.T) {
 		wantSubst string // empty means: expect no output
 	}{
 		{
-			name:      "ys0 footgun warns",
+			name:      "unknown variable warns",
 			query:     "from STATS select $service,sum($bytes) group by $service",
 			wantSubst: "$service is not a known variable",
 		},

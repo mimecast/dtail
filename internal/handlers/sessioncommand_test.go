@@ -406,7 +406,7 @@ func TestHandleSessionCommandUpdateClearsAggregateStateBeforeDirectRead(t *testi
 	handler.commands = map[string]commandHandler{
 		"map": func(_ context.Context, _ lcontext.LContext, argc int, args []string, commandFinished func()) {
 			queryStr := strings.Join(args[1:], " ")
-			// Output is now the only aggregate (task hv0), so install a
+			// Output is now the only aggregate, so install a
 			// Aggregate as the real handleMapCommand does.
 			aggregate, err := newHandlerTestAggregate(queryStr, "")
 			if err != nil {

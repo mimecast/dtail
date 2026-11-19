@@ -34,7 +34,7 @@ func TestProbeSamplesWithinTheProbeTimeout(t *testing.T) {
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
 	var deadline time.Time
 	var hasDeadline bool
-	handler.probeSampler = func(ctx context.Context, _ fs.ValidatedReadTarget, _ string,
+	handler.probeOverrides.sampler = func(ctx context.Context, _ fs.ValidatedReadTarget, _ string,
 		_ fs.SampleOptions) (fs.Sample, error) {
 		deadline, hasDeadline = ctx.Deadline()
 		return fs.Sample{Lines: []string{"x"}}, nil
@@ -64,7 +64,7 @@ func TestProbeTimeoutStopsTheSampling(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var samples atomic.Int32
-	handler.probeSampler = func(ctx context.Context, _ fs.ValidatedReadTarget, _ string,
+	handler.probeOverrides.sampler = func(ctx context.Context, _ fs.ValidatedReadTarget, _ string,
 		_ fs.SampleOptions) (fs.Sample, error) {
 		samples.Add(1)
 		cancel() // the probe's time runs out during this sample
@@ -92,7 +92,7 @@ func TestProbeSampleErrorWithoutTimeout(t *testing.T) {
 	first := writeProbeTestFile(t, dir, "a.log", probeTestStatsLine("n", "1"))
 	second := writeProbeTestFile(t, dir, "b.log", probeTestStatsLine("n", "2"))
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
-	handler.probeSampler = func(ctx context.Context, _ fs.ValidatedReadTarget, path string,
+	handler.probeOverrides.sampler = func(ctx context.Context, _ fs.ValidatedReadTarget, path string,
 		_ fs.SampleOptions) (fs.Sample, error) {
 		if path == first {
 			return fs.Sample{}, fmt.Errorf("read sample: %w", context.DeadlineExceeded)
@@ -235,7 +235,7 @@ func TestProbeListSkipsNamesThatAreNoUTF8(t *testing.T) {
 	// A unit name that is no UTF-8 is no valid journal target either, so
 	// the permission check would refuse it too; it must not even take one
 	// of the listing's checks (probeListLimits.maxChecks) from a valid name.
-	handler.probeListLimits = probeListLimits{maxChecks: 1}
+	handler.probeOverrides.listLimits = probeListLimits{maxChecks: 1}
 	handler.probeUnitLister = func(context.Context, int) ([]string, bool, error) {
 		return []string{"a\xff.service", "b.service"}, false, nil
 	}
@@ -252,7 +252,7 @@ func TestProbeListSkipsNamesThatAreNoUTF8(t *testing.T) {
 func TestProbeLooksAtNoMoreEntriesThanItSamples(t *testing.T) {
 	dir := t.TempDir()
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
-	handler.probeSampler = failingProbeSampler(t)
+	handler.probeOverrides.sampler = failingProbeSampler(t)
 	var entries []string
 	for i := range protocol.ProbeMaxFiles + 4 {
 		entries = append(entries, filepath.Join(dir, fmt.Sprintf("missing%02d.log", i)))

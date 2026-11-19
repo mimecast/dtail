@@ -108,8 +108,11 @@ func (c *outputCoordinator) WaitForOutputEOFAck(ctx context.Context, timeout tim
 	return c.output.waitForEOFAck(ctx, timeout)
 }
 
+// next returns what the session output delivers next: an acknowledgement
+// that goes first, payload, a queued message, or what waitForOutput gets.
 func (c *outputCoordinator) next(p []byte) outputReadResult {
-	h := c.handler
+	// The wait state is taken before the queues are tried, so a change in
+	// between is not lost (outputManager.readWait).
 	outputChanged, eofWait := c.output.readWait()
 	if result, handled := c.tryReadSessionAckFirst(); handled {
 		return result
@@ -120,6 +123,16 @@ func (c *outputCoordinator) next(p []byte) outputReadResult {
 	if result, handled := c.tryReadQueued(); handled {
 		return result
 	}
+	return c.waitForOutput(p, outputChanged, eofWait)
+}
+
+// waitForOutput blocks until there is something to deliver or to retry
+// for: a message of one of the queues, the session's end (what is still
+// queued goes out before the EOF), a flush request, a change of the payload
+// output (outputChanged), the close synchronization, or eofWait (if
+// positive) running out.
+func (c *outputCoordinator) waitForOutput(p []byte, outputChanged <-chan struct{},
+	eofWait time.Duration) outputReadResult {
 
 	var eofTimer *time.Timer
 	var eofTimerC <-chan time.Time
@@ -131,7 +144,7 @@ func (c *outputCoordinator) next(p []byte) outputReadResult {
 	select {
 	case message := <-c.flushErrors:
 		stopOptionalTimer(eofTimer)
-		return outputReadResult{kind: outputReadServerMessage, message: message}
+		return c.takeFlushError(message)
 	case ack := <-c.sessionAcks:
 		stopOptionalTimer(eofTimer)
 		return c.deliverSessionAck(ack)
@@ -141,7 +154,7 @@ func (c *outputCoordinator) next(p []byte) outputReadResult {
 	case message := <-c.maprSource():
 		stopOptionalTimer(eofTimer)
 		return c.takeMaprMessage(message)
-	case <-h.done.Done():
+	case <-c.handler.done.Done():
 		stopOptionalTimer(eofTimer)
 		if result, handled := c.tryReadPayload(p); handled {
 			return result
@@ -191,7 +204,7 @@ func (c *outputCoordinator) tryReadQueued() (outputReadResult, bool) {
 	}
 	select {
 	case message := <-c.flushErrors:
-		return outputReadResult{kind: outputReadServerMessage, message: message}, true
+		return c.takeFlushError(message), true
 	default:
 	}
 	if c.hasDeferredServer {
@@ -287,15 +300,44 @@ func (c *outputCoordinator) tryReadQueuedMapr() (string, bool) {
 	}
 }
 
+// prioritizeFlushError returns the server message just taken, or, when a
+// flush error is queued, that one in its place, keeping the server message
+// for the next Read (deferredServer). A flush error held back for a SESSION
+// acknowledgement (takeFlushError) overtakes nothing: the server message
+// goes out now.
 func (c *outputCoordinator) prioritizeFlushError(message string) outputReadResult {
+	serverMessage := outputReadResult{kind: outputReadServerMessage, message: message}
 	select {
 	case flushError := <-c.flushErrors:
+		result := c.takeFlushError(flushError)
+		if result.kind != outputReadServerMessage {
+			return serverMessage
+		}
 		c.deferredServer = message
 		c.hasDeferredServer = true
-		return outputReadResult{kind: outputReadServerMessage, message: flushError}
+		return result
 	default:
-		return outputReadResult{kind: outputReadServerMessage, message: message}
+		return serverMessage
 	}
+}
+
+// takeFlushError returns a flush error the output goroutine took, or a
+// retry when it was deferred (sessionAckGate.deferIfHeld), like any other
+// server message. Only the flush error of a read batch carries a generation
+// (flushReadBatch); the session drain's carry none and are never held. A
+// held one needs the flush of a generation to fail before the output
+// goroutine took that generation's acknowledgement, which the input
+// goroutine queues right after the dispatch: e.g. a client that stops
+// reading with the acknowledgement queue full, so that the next SESSION
+// UPDATE waits to queue its acknowledgement for longer than the flush
+// timeout. Without the gate the flush error could then reach the client
+// ahead of the acknowledgement of the workload it belongs to.
+func (c *outputCoordinator) takeFlushError(message string) outputReadResult {
+	result := outputReadResult{kind: outputReadServerMessage, message: message}
+	if c.ackGate.deferIfHeld(result) {
+		return outputReadResult{kind: outputReadRetry}
+	}
+	return result
 }
 
 func (c *outputCoordinator) acknowledgeClose() {

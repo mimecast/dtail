@@ -43,6 +43,10 @@ func NewMaprHandler(server string, session *client.SessionState, logger clientlo
 	}
 	h.status.Store(-1) // No status yet.
 	h.expectCapabilities = true
+	// The aggregate frames after a session acknowledgement are those of
+	// the acknowledged workload, which the client may not have committed
+	// yet (see client.Aggregate.SessionAcked).
+	h.onSessionAcked = h.aggregate.SessionAcked
 	return h
 }
 
@@ -82,8 +86,14 @@ func (h *MaprHandler) Write(p []byte) (n int, err error) {
 // handleMaprFrame handles one received frame, still undecoded. While the
 // session expects aggregates (client.Aggregate.Expected), a frame that is
 // empty once its newlines are dropped is ignored, and only a payload frame
-// can be aggregate data, never a marked control frame. Otherwise the frame is
-// handled like any frame of a ClientHandler (baseHandler.handleFrame).
+// can be aggregate data, never a marked control frame: one starting with the
+// whole aggregate tag (protocol.CutAggregateContent), not just its first
+// byte 'A', so that payload such as a --plain log line "AUTHKEY OK" is not
+// handed to the aggregate parser, which would log a spurious "Unable to
+// aggregate data ... expected 3 parts". A tagged frame that is malformed is
+// reported as an error. Otherwise the frame is handled like any frame of a
+// ClientHandler (baseHandler.handleFrame), which prints unmarked ones as
+// payload.
 func (h *MaprHandler) handleMaprFrame(frame []byte) {
 	if !h.aggregate.Expected() {
 		// No query runs nor is being switched to (interactive dtail
@@ -132,21 +142,6 @@ func (h *MaprHandler) dropNewlines(frame []byte) []byte {
 	return stripped
 }
 
-// isAggregateMessage reports whether a wire message starts with a mapreduce
-// aggregate tag. Valid frames are handed to the aggregate parser; malformed
-// tagged frames are reported as protocol errors. Matching the full
-// AggregateMessageID field prefix, rather than just the first byte 'A', keeps
-// payload such as a --plain log line "AUTHKEY OK" out of the parser; it would
-// otherwise trigger a spurious "Unable to aggregate data ... expected 3
-// parts" error. Non-aggregate messages are routed to the base handler, which
-// prints unmarked ones as payload (real AUTHKEY acks are marked control
-// frames). handleMaprFrame classifies with the same
-// protocol.CutAggregateContent.
-func isAggregateMessage(message string) bool {
-	_, isAggregate, _ := protocol.CutAggregateContent([]byte(message))
-	return isAggregate
-}
-
 // handleAggregateMessage queues the content of an aggregate message for the
 // merge at the end of Write. message is the whole decoded frame, for the
 // error log.
@@ -158,6 +153,13 @@ func (h *MaprHandler) handleAggregateMessage(message, content []byte, decodeErr 
 	if err := h.aggregate.Add(content); err != nil {
 		h.log().Error("Unable to aggregate data", h.server, string(message), err)
 	}
+}
+
+// AbandonStartWorkload passes on to the aggregate that the workload of the
+// connection's initial SESSION START was rolled back before the start was
+// acknowledged (see client.Aggregate.AbandonStartWorkload).
+func (h *MaprHandler) AbandonStartWorkload(abandoned bool) {
+	h.aggregate.AbandonStartWorkload(abandoned)
 }
 
 // Shutdown flushes any pending aggregate state before marking the handler done.

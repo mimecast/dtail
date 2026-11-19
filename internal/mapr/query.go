@@ -245,11 +245,28 @@ func (q *Query) parseFromClause(tokens []token) ([]token, error) {
 		if found[0].str == "" {
 			return remaining, errors.New(invalidQuery + "expected table name after 'from'")
 		}
-		q.Table = strings.ToUpper(found[0].str)
+		q.Table = TableName(found[0].str)
 		return remaining, nil
 	default:
 		return remaining, strayWordError("from", found[1])
 	}
+}
+
+// TableName returns the table a from clause naming name selects: table
+// names are upper-cased, quoted or not (`from stats` and `from "stats"` read
+// STATS). The parser and AnalyzePartial share it.
+func TableName(name string) string {
+	return strings.ToUpper(name)
+}
+
+// SelectableTable reports whether a from clause can select, by name, the table name
+// of a log line: only a name that equals its upper-cased form (TableName),
+// as the lines of a table are matched by their exact name. A probe lists
+// only such tables (logformat's default format), so that every table it
+// lists, completes or probes is one a query can name; the lines of the
+// others are read by a query without a table only.
+func SelectableTable(name string) bool {
+	return TableName(name) == name
 }
 
 func (q *Query) parseWhereClause(tokens []token) ([]token, error) {
@@ -402,15 +419,16 @@ func (q *Query) parseLimitClause(tokens []token) ([]token, error) {
 	return remaining, nil
 }
 
-// parseOutfileClause parses "outfile [append] PATH". A lone append is the
-// path "append". A word after the path is rejected with its name, and so is
+// parseOutfileClause parses "outfile [append] PATH". Only the bare word
+// append is the append mode (isAppendWord); a lone append is the path
+// "append". A word after the path is rejected with its name, and so is
 // a path starting with "append:" (see rejectAppendColonPath).
 func (q *Query) parseOutfileClause(tokens []token) ([]token, error) {
 	remaining, found := tokensConsume(tokens)
 	if len(found) == 0 {
 		return remaining, errors.New(invalidQuery + "expected file path in 'outfile' clause")
 	}
-	appendMode := len(found) > 1 && found[0].str == "append"
+	appendMode := len(found) > 1 && isAppendWord(found[0])
 	if appendMode {
 		found = found[1:]
 	}
@@ -427,6 +445,18 @@ func (q *Query) parseOutfileClause(tokens []token) ([]token, error) {
 	return remaining, nil
 }
 
+// isAppendWord tells whether t is the append mode word of an outfile
+// clause: the bare, unescaped, lower case word. A quoted "append" or an
+// escaped `append` is a file name, as a quoted or escaped by or desc is a
+// field (isBareWord), so `outfile "append" x` is the path append followed
+// by a stray word, not append mode with the path x. Up to 6e4 the quoted
+// and the escaped word were append mode too; such a query now fails to
+// parse with the stray word named instead of silently changing where it
+// writes. The parser and AnalyzePartial share this rule.
+func isAppendWord(t token) bool {
+	return t.isBareword && !t.quotesStripped && t.str == "append"
+}
+
 // appendColonPrefix starts an outfile path that looks like an append mode.
 const appendColonPrefix = "append:"
 
@@ -436,12 +466,20 @@ const appendColonPrefix = "append:"
 // a new file literally named "append:PATH" on every run and never appended
 // to PATH. A file really named so is still written as "./append:PATH".
 func rejectAppendColonPath(path string) error {
-	if !strings.HasPrefix(path, appendColonPrefix) {
+	if !isAppendColonPath(path) {
 		return nil
 	}
 	return fmt.Errorf("%soutfile path %q starts with %q: to append to a file write "+
 		"'outfile append PATH', for a file named so write './%s'",
 		invalidQuery, path, appendColonPrefix, path)
+}
+
+// isAppendColonPath reports whether an outfile path starts with "append:".
+// It is the one rule of the parser (rejectAppendColonPath) and of the
+// partial analysis (outfilePathKind), so that highlighting cannot call a
+// path valid that the parser rejects.
+func isAppendColonPath(path string) bool {
+	return strings.HasPrefix(path, appendColonPrefix)
 }
 
 func (q *Query) parseLogFormatClause(tokens []token) ([]token, error) {

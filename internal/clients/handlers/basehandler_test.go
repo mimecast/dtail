@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal"
+	"github.com/mimecast/dtail/internal/clients/clientlog"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -392,5 +393,53 @@ func TestBaseHandlerReadDrainsRemainderBeforeNextCommand(t *testing.T) {
 	if string(got) != first+second {
 		t.Fatalf("commands interleaved or corrupted:\ngot  %q\nwant %q",
 			got, first+second)
+	}
+}
+
+// debugBlockingLogger blocks every Debug call until released, like the
+// client logger at the debug level while a host key question pauses it.
+type debugBlockingLogger struct {
+	clientlog.NopLogger
+	release chan struct{}
+	logged  chan struct{}
+}
+
+func (l *debugBlockingLogger) Debug(...interface{}) string {
+	<-l.release
+	l.logged <- struct{}{}
+	return ""
+}
+
+// TestSendMessageDoesNotWaitForAPausedDebugLogger is the regression test of
+// the interactive control loop hanging in a reload at the debug log level:
+// it sends its SESSION UPDATE through sendMessage, whose debug line blocked
+// in the logger a host key question had paused, and nobody else can answer
+// that question. The command must go out while the logger is paused, and
+// the line is still logged once it runs again.
+func TestSendMessageDoesNotWaitForAPausedDebugLogger(t *testing.T) {
+	logger := &debugBlockingLogger{release: make(chan struct{}), logged: make(chan struct{}, 1)}
+	handler := baseHandler{
+		done:     internal.NewDone(),
+		commands: make(chan string, 1),
+		logger:   logger,
+	}
+	sent := make(chan error, 1)
+	go func() { sent <- handler.SendMessage("SESSION UPDATE x") }()
+	select {
+	case err := <-sent:
+		if err != nil {
+			t.Fatalf("SendMessage() error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("SendMessage waits for the paused debug logger")
+	}
+	if got := <-handler.commands; !strings.Contains(got, "base64") {
+		t.Fatalf("command frame %q", got)
+	}
+	close(logger.release)
+	select {
+	case <-logger.logged:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the debug line was not logged after the logger ran again")
 	}
 }

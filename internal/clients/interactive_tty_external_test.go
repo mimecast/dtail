@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -22,8 +23,8 @@ func TestEditInputTranslatesAltEAndAltV(t *testing.T) {
 		{"ss3 untouched", "\x1bOe", "\x1bOe"},
 		{"esc at the end kept", "abc\x1b", "abc\x1b"},
 		{"capital E untouched", "\x1bE", "\x1bE"},
-		{"bracketed paste untouched", "\x1b[200~a\x1beb\x1b[201~\x1be",
-			"\x1b[200~a\x1beb\x1b[201~" + key},
+		{"no edit key in a bracketed paste, its ESC a blank", "\x1b[200~a\x1beb\x1b[201~\x1be",
+			"\x1b[200~a eb\x1b[201~" + key},
 		{"plain text", "hello", "hello"},
 	}
 	for _, tt := range tests {
@@ -108,7 +109,13 @@ func TestExternalEditorCommand(t *testing.T) {
 }
 
 // recordingMode records the terminal mode changes of the line editor.
-type recordingMode struct{ calls []string }
+type recordingMode struct {
+	calls []string
+	// background has the mode report that dtail runs in the background.
+	background bool
+}
+
+func (m *recordingMode) foreground() bool { return !m.background }
 
 func (m *recordingMode) reapply() error { m.calls = append(m.calls, "cbreak"); return nil }
 func (m *recordingMode) restore() error { m.calls = append(m.calls, "cooked"); return nil }
@@ -127,10 +134,10 @@ func newLifecycleTestEditor(out *bytes.Buffer) (*interactiveEditor, *recordingMo
 }
 
 // TestExternalEditorTerminalLifecycle checks the terminal around the
-// external editor: cooked mode for the editor, cbreak and the window size
-// taken over after it; when the session ends while the editor runs, dtail
-// leaves mode and cursor shape to the editor and sets nothing afterwards,
-// and a later Alt-E runs no editor.
+// external editor: cooked mode without bracketed paste for the editor,
+// cbreak, bracketed paste and the window size taken over after it; when the
+// session ends while the editor runs, dtail leaves mode and cursor shape to
+// the editor and sets nothing afterwards, and a later Alt-E runs no editor.
 func TestExternalEditorTerminalLifecycle(t *testing.T) {
 	var out bytes.Buffer
 	e, mode, resized := newLifecycleTestEditor(&out)
@@ -147,6 +154,9 @@ func TestExternalEditorTerminalLifecycle(t *testing.T) {
 	if got := strings.Join(mode.calls, ","); got != "cooked,cbreak" || *resized != 1 {
 		t.Fatalf("modes %q, resized %d times; want cooked,cbreak and one resize after", got, *resized)
 	}
+	if got := out.String(); got != pasteModeOff+pasteModeOn {
+		t.Fatalf("wrote %q around the editor, want bracketed paste off and on again", got)
+	}
 
 	out.Reset()
 	e, mode, resized = newLifecycleTestEditor(&out)
@@ -157,9 +167,9 @@ func TestExternalEditorTerminalLifecycle(t *testing.T) {
 	if _, err := e.runExternalEditor(":sh"); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(mode.calls, ","); got != "cooked" || *resized != 0 || out.Len() != 0 {
-		t.Fatalf("closed while editing: modes %q, %d resizes, wrote %q; want only cooked for the editor",
-			got, *resized, out.String())
+	if got := strings.Join(mode.calls, ","); got != "cooked" || *resized != 0 || out.String() != pasteModeOff {
+		t.Fatalf("closed while editing: modes %q, %d resizes, wrote %q; want only cooked and bracketed "+
+			"paste off for the editor", got, *resized, out.String())
 	}
 	e.runEditor = func(string) error {
 		t.Error("an editor ran after the session ended")
@@ -167,5 +177,102 @@ func TestExternalEditorTerminalLifecycle(t *testing.T) {
 	}
 	if _, err := e.runExternalEditor(":sh"); !errors.Is(err, errEditorSessionEnded) {
 		t.Fatalf("Alt-E after the end: %v, want %v", err, errEditorSessionEnded)
+	}
+}
+
+// TestEditInputBracketedPaste reads pastes as the Terminal does (one chunk
+// per write of the terminal, chunkReader): every
+// pasted line comes with a Read of its own, control characters of a paste
+// are blanks (and only there), a paste marker cut by a read is put together
+// before the Terminal sees it, and onPaste is called exactly for pasted
+// text that stays on the line.
+func TestEditInputBracketedPaste(t *testing.T) {
+	tests := []struct {
+		name   string
+		chunks []string
+		size   int
+		want   []string
+		pastes int
+	}{
+		{name: "lines of a paste one per read, none stays on the line",
+			chunks: []string{"\x1b[200~:show\n:quit\n\x1b[201~"},
+			want:   []string{"\x1b[200~:show\n", ":quit\n", "\x1b[201~"}},
+		{name: "control characters of a paste are blanks",
+			chunks: []string{"\x1b[200~ab\tc\x03\x7f\x1b[201~"},
+			want:   []string{"\x1b[200~ab c  \x1b[201~"}, pastes: 1},
+		{name: "end marker cut by a short read, control keys typed after it kept",
+			chunks: []string{"\x1b[200~abc\x1b[20", "1~", "\x01\t"},
+			want:   []string{"\x1b[200~abc", "\x1b[201~", "\x01\t"}, pastes: 1},
+		{name: "start marker cut after more than its ESC",
+			chunks: []string{"\x1b[2", "00~a\x1b[201~"},
+			want:   []string{"\x1b[200~a\x1b[201~"}, pastes: 1},
+		{name: "a lone ESC ending a short read is the Esc key",
+			chunks: []string{"\x1b", "x"},
+			want:   []string{"\x1b", "x"}},
+		{name: "an ESC ending a read inside a paste is no end marker",
+			chunks: []string{"\x1b[200~a\x1b", "b\x1b[201~"},
+			want:   []string{"\x1b[200~a", " b\x1b[201~"}, pastes: 2},
+		{name: "CR LF is one line break, the rest stays on the line",
+			chunks: []string{"\x1b[200~a\r\nb\x1b[201~"},
+			want:   []string{"\x1b[200~a\r\n", "b\x1b[201~"}, pastes: 1},
+		{name: "a small buffer cuts no marker (text read along with a paste announces it too)",
+			chunks: []string{"ab\x1b[200~c\x1b[201~"}, size: 7,
+			want: []string{"ab", "\x1b[200~c", "\x1b[201~"}, pastes: 2},
+		{name: "C1 controls and format characters of a paste are blanks, text is kept",
+			chunks: []string{"\x1b[200~a\u0085b\u202ec\u2028d\u00e9\u20ac\x1b[201~\u202e"},
+			want:   []string{"\x1b[200~a b c d\u00e9\u20ac\x1b[201~\u202e"}, pastes: 1},
+		{name: "a format character cut by a read is still a blank",
+			chunks: []string{"\x1b[200~a\xe2\x80", "\xaeb\x1b[201~"},
+			want:   []string{"\x1b[200~a", " b\x1b[201~"}, pastes: 2},
+		{name: "an invalid byte of a paste is passed on",
+			chunks: []string{"\x1b[200~a\xffb\x1b[201~"},
+			want:   []string{"\x1b[200~a\xffb\x1b[201~"}, pastes: 1},
+		{name: "typed text announces no paste",
+			chunks: []string{":show", "\n"},
+			want:   []string{":show", "\n"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pastes := 0
+			in := &editInput{r: &chunkReader{chunks: tt.chunks}, onPaste: func() { pastes++ }}
+			size := tt.size
+			if size == 0 {
+				size = 256
+			}
+			buf := make([]byte, size)
+			var got []string
+			for {
+				n, err := in.Read(buf)
+				if n > 0 {
+					got = append(got, string(buf[:n]))
+				}
+				if err != nil {
+					break
+				}
+			}
+			if !slices.Equal(got, tt.want) || pastes != tt.pastes {
+				t.Fatalf("reads %q with %d pastes announced, want %q with %d", got, pastes, tt.want, tt.pastes)
+			}
+		})
+	}
+}
+
+// TestPasteModeLeftAloneInBackground: like the terminal mode, bracketed
+// paste is not changed while dtail runs in the background, where the
+// terminal is the shell's (the SIGCONT of "bg" must not switch it on).
+func TestPasteModeLeftAloneInBackground(t *testing.T) {
+	var out bytes.Buffer
+	e, mode, _ := newLifecycleTestEditor(&out)
+	mode.background = true
+	e.setPasteMode(true)
+	e.setPasteMode(false)
+	if out.Len() != 0 {
+		t.Fatalf("in the background the editor wrote %q, want nothing", out.String())
+	}
+	mode.background = false
+	e.setPasteMode(true)
+	e.setPasteMode(false)
+	if got := out.String(); got != pasteModeOn+pasteModeOff {
+		t.Fatalf("in the foreground the editor wrote %q, want bracketed paste on and off", got)
 	}
 }

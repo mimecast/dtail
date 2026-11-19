@@ -22,10 +22,12 @@ import (
 // was printed through Raw, and the numbers of its rows.
 type tableCaptureLogger struct {
 	clientlog.NopLogger
-	start  time.Time
-	mu     sync.Mutex
-	at     []time.Duration
-	values [][]float64
+	start time.Time
+	// printTime is how long printing a table takes.
+	printTime time.Duration
+	mu        sync.Mutex
+	at        []time.Duration
+	values    [][]float64
 }
 
 func (l *tableCaptureLogger) Raw(message string) string {
@@ -39,9 +41,10 @@ func (l *tableCaptureLogger) Raw(message string) string {
 		}
 	}
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	l.at = append(l.at, time.Since(l.start))
 	l.values = append(l.values, values)
+	l.mu.Unlock()
+	time.Sleep(l.printTime)
 	return ""
 }
 
@@ -91,6 +94,20 @@ func sendReportTestAggregate(t *testing.T, c *MaprClient, server string, count i
 	if err := aggregate.Flush(); err != nil {
 		t.Fatalf("Flush() error = %v", err)
 	}
+}
+
+// setReportTestServers gives the client one connection per server and
+// returns the channels that end them (a closed one is a server whose
+// session ended): the first report waits for the servers whose connection
+// is up (liveServerNames).
+func setReportTestServers(c *MaprClient, servers ...string) map[string]chan struct{} {
+	ends := make(map[string]chan struct{}, len(servers))
+	for _, server := range servers {
+		ends[server] = make(chan struct{})
+		c.connections = append(c.connections,
+			&probeTestConnector{server: server, handler: doneOnlyHandler{done: ends[server]}})
+	}
+	return ends
 }
 
 // runReportTestReporter runs the reporter until the returned stop is called.
@@ -298,29 +315,73 @@ func TestMaprReporterContinuousJobKeepsItsCadence(t *testing.T) {
 	})
 }
 
-// TestFirstReportWindowEndsOnReportWithPendingArrival covers the timer and an
-// arrival being ready together: the report that runs first already holds
-// the arrived aggregates, so the window ends and no settled report follows.
-// A report before any arrival leaves the window open. It also checks the
-// window's bounds and that continuous jobs get none.
-func TestFirstReportWindowEndsOnReportWithPendingArrival(t *testing.T) {
+// TestFirstReportWindowPostpone covers what the window does with a report
+// that is due. An arrival that is ready together with the timer, which
+// won, is taken as an arrival: the report is put off by the settle time
+// (it used to run at once, which put every later report on the servers'
+// send instants). A report before any arrival runs and leaves the window
+// open; the settled one runs and ends it. While live servers are missing
+// the report is put off wait by wait until they all arrived (e.g. their
+// connections ended) or the window's end.
+func TestFirstReportWindowPostpone(t *testing.T) {
 	arrived := make(chan struct{}, 1)
-	window := &firstReportWindow{arrived: arrived, wait: time.Second, limit: 2 * time.Second}
+	now := time.Now()
+	never := func() bool { t.Fatal("liveness sampled without need"); return false }
+	window := &firstReportWindow{arrived: arrived, wait: time.Second, limit: 5 * time.Second}
+	if wait, ok := window.postpone(now, never); ok {
+		t.Fatalf("a report without any arrival was put off by %v", wait)
+	}
 	window.reporting()
 	if window.arrived == nil {
 		t.Fatal("a report without any arrival ended the window")
 	}
+
 	arrived <- struct{}{}
+	if wait, ok := window.postpone(now, func() bool { return true }); !ok || wait != time.Second {
+		t.Fatalf("postpone with a pending arrival = %v, %v, want the settle time", wait, ok)
+	}
+	if wait, ok := window.postpone(now.Add(time.Second), never); ok {
+		t.Fatalf("the settled report was put off by %v", wait)
+	}
 	window.reporting()
 	if window.arrived != nil {
-		t.Fatal("a report with a pending arrival left the window open")
+		t.Fatal("the settled report left the window open")
+	}
+	if _, ok := window.postpone(now.Add(2*time.Second), never); ok {
+		t.Fatal("a report after the window ended was put off")
 	}
 
+	// One live server is missing: looked at again every wait.
+	all := false
+	live := func() bool { return all }
+	window = &firstReportWindow{arrived: arrived, wait: time.Second, limit: 5 * time.Second}
+	if got := window.settle(now, false); got != time.Second {
+		t.Fatalf("settle with a missing server = %v, want a look after 1s", got)
+	}
+	if wait, ok := window.postpone(now.Add(time.Second), live); !ok || wait != time.Second {
+		t.Fatalf("postpone with a missing server = %v, %v, want 1s", wait, ok)
+	}
+	if wait, ok := window.postpone(now.Add(4500*time.Millisecond), live); !ok || wait != 500*time.Millisecond {
+		t.Fatalf("postpone near the window's end = %v, %v, want the rest of 500ms", wait, ok)
+	}
+	if _, ok := window.postpone(now.Add(5*time.Second), live); ok {
+		t.Fatal("the report at the window's end was put off")
+	}
+	all = true // the missing server's connection ended
+	if _, ok := window.postpone(now.Add(2*time.Second), live); ok {
+		t.Fatal("the report was put off although every live server's aggregates arrived")
+	}
+}
+
+// TestFirstReportWindowBounds checks the window's bounds and that
+// continuous jobs get none.
+func TestFirstReportWindowBounds(t *testing.T) {
+	arrived := make(chan struct{}, 1)
 	snapshot := maprclient.SessionSnapshot{AggregatesArrived: arrived}
 	if disabled := (&MaprClient{mode: NonCumulativeMode}).newFirstReportWindow(snapshot, time.Second); disabled.arrived != nil {
 		t.Fatal("continuous jobs got an early first report")
 	}
-	window = (&MaprClient{}).newFirstReportWindow(snapshot, time.Second)
+	window := (&MaprClient{}).newFirstReportWindow(snapshot, time.Second)
 	now := time.Now()
 	if got := window.settle(now, true); got != 500*time.Millisecond {
 		t.Fatalf("settle at interval 1 = %v, want 500ms", got)
@@ -330,6 +391,94 @@ func TestFirstReportWindowEndsOnReportWithPendingArrival(t *testing.T) {
 	}
 	if got := window.settle(now.Add(time.Second), true); got != 0 {
 		t.Fatalf("settle past the window's end = %v, want 0", got)
+	}
+}
+
+// TestNextReportDue: reports are planned one interval after the instant
+// the previous one was planned for, whatever the report took; one that
+// took longer than an interval skips the missed instants and keeps the
+// phase.
+func TestNextReportDue(t *testing.T) {
+	due := time.Unix(1000, 0)
+	const interval = 20 * time.Second
+	tests := []struct {
+		name     string
+		took     time.Duration
+		interval time.Duration
+		want     time.Duration
+	}{
+		{"instant report", 0, interval, 20 * time.Second},
+		{"slow report", 3 * time.Second, interval, 20 * time.Second},
+		{"a whole interval", 20 * time.Second, interval, 40 * time.Second},
+		{"longer than two intervals", 47 * time.Second, interval, 60 * time.Second},
+		{"no interval", time.Second, 0, time.Second},
+	}
+	for _, tt := range tests {
+		if got := nextReportDue(due, due.Add(tt.took), tt.interval).Sub(due); got != tt.want {
+			t.Errorf("%s: next report %v after the planned instant, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+// TestMaprReporterCadenceIgnoresReportTime: printing a table takes 300 ms
+// here. The reports used to follow one interval after the end of the
+// previous one, so every table came 300 ms later within its interval and
+// the cadence drifted onto the servers' sends. Now each is planned one
+// interval after the previous planned instant.
+func TestMaprReporterCadenceIgnoresReportTime(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, logger := newReportTestClient(t, DefaultMode, omode.TailClient, 20)
+		logger.printTime = 300 * time.Millisecond
+		stop := runReportTestReporter(c)
+		defer stop()
+
+		time.Sleep(20 * time.Second)
+		for round := 1; round <= 3; round++ {
+			sendReportTestAggregate(t, c, "srv1", round)
+			time.Sleep(20 * time.Second)
+		}
+		synctest.Wait()
+		if got := logger.tables(); len(got) != 3 {
+			t.Fatalf("tables printed at %v, want three", got)
+		}
+		for i, want := range []time.Duration{21 * time.Second, 41 * time.Second, 61 * time.Second} {
+			assertTable(t, logger, i, want, float64(i+1))
+		}
+	})
+}
+
+// TestMaprReporterArrivalTogetherWithTheTimer: the servers' first
+// aggregates arrive at the very instant a periodic report is due (30 s
+// here). Whichever the reporter takes first, the later tables follow the
+// settle time after the servers' sends (51 s), not at their instants. When
+// the timer won against the signaled arrival, the reporter used to report
+// at once and then every interval from there: at 50 s, the instant of the
+// next send, whose table then came at 50 s or, when the report ran first,
+// not before 70 s. The first table itself comes at 31 s, or at 30 s when
+// the aggregates were merged after the due report looked for an arrival
+// and before it rendered.
+func TestMaprReporterArrivalTogetherWithTheTimer(t *testing.T) {
+	for range 50 {
+		synctest.Test(t, func(t *testing.T) {
+			c, logger := newReportTestClient(t, DefaultMode, omode.TailClient, 20)
+			stop := runReportTestReporter(c)
+			defer stop()
+
+			time.Sleep(30 * time.Second)
+			sendReportTestAggregate(t, c, "srv1", 1)
+			time.Sleep(20 * time.Second)
+			sendReportTestAggregate(t, c, "srv1", 2)
+			time.Sleep(5 * time.Second)
+			synctest.Wait()
+			if got := logger.tables(); len(got) != 2 {
+				t.Fatalf("tables printed at %v, want two", got)
+			}
+			if at, values := logger.table(0); (at != 30*time.Second && at != 31*time.Second) ||
+				len(values) != 1 || values[0] != 1 {
+				t.Errorf("table 0 at %v with %v, want at 30s or 31s with count 1", at, values)
+			}
+			assertTable(t, logger, 1, 51*time.Second, 2)
+		})
 	}
 }
 
@@ -344,7 +493,7 @@ func TestMaprReporterFirstTableWaitsForEveryLiveServer(t *testing.T) {
 	t.Run("all four", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			c, logger := newReportTestClient(t, DefaultMode, omode.TailClient, 20)
-			c.liveServers = func() []string { return []string{"pi0", "pi1", "pi2", "pi3"} }
+			setReportTestServers(c, "pi0", "pi1", "pi2", "pi3")
 			stop := runReportTestReporter(c)
 			defer stop()
 
@@ -375,7 +524,7 @@ func TestMaprReporterFirstTableWaitsForEveryLiveServer(t *testing.T) {
 	t.Run("one sent and left, one missing", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			c, logger := newReportTestClient(t, DefaultMode, omode.TailClient, 20)
-			c.liveServers = func() []string { return []string{"pi1", "pi2", "pi3"} }
+			close(setReportTestServers(c, "pi0", "pi1", "pi2", "pi3")["pi0"])
 			stop := runReportTestReporter(c)
 			defer stop()
 
@@ -391,10 +540,34 @@ func TestMaprReporterFirstTableWaitsForEveryLiveServer(t *testing.T) {
 			assertTable(t, logger, 0, 30*time.Second, 3)
 		})
 	})
+	// pi3 is live and missing when the others' aggregates arrive, but its
+	// connection ends 3.2 s later: the table no longer waits for it until
+	// the window's cap (30 s), only until the next look at the servers.
+	t.Run("the missing one's connection ends", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			c, logger := newReportTestClient(t, DefaultMode, omode.TailClient, 20)
+			ends := setReportTestServers(c, "pi0", "pi1", "pi2", "pi3")
+			stop := runReportTestReporter(c)
+			defer stop()
+
+			time.Sleep(20 * time.Second)
+			for _, server := range []string{"pi0", "pi1", "pi2"} {
+				sendReportTestAggregate(t, c, server, 1)
+			}
+			time.Sleep(3200 * time.Millisecond)
+			close(ends["pi3"])
+			time.Sleep(10 * time.Second)
+			synctest.Wait()
+			if got := logger.tables(); len(got) != 1 {
+				t.Fatalf("tables printed at %v, want one", got)
+			}
+			assertTable(t, logger, 0, 24*time.Second, 3)
+		})
+	})
 	t.Run("one never sends", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			c, logger := newReportTestClient(t, DefaultMode, omode.TailClient, 20)
-			c.liveServers = func() []string { return []string{"pi0", "pi1", "pi2", "pi3"} }
+			setReportTestServers(c, "pi0", "pi1", "pi2", "pi3")
 			stop := runReportTestReporter(c)
 			defer stop()
 

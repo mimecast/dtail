@@ -2,6 +2,7 @@ package connectors
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"strings"
@@ -82,18 +83,10 @@ func decodeCommandFrame(frame string) string {
 	return string(command)
 }
 
-// shortenUpdateAckMaxWait sets sessionUpdateAckMaxWait to d for the test.
-func shortenUpdateAckMaxWait(t *testing.T, d time.Duration) {
-	t.Helper()
-	saved := sessionUpdateAckMaxWait
-	sessionUpdateAckMaxWait = d
-	t.Cleanup(func() { sessionUpdateAckMaxWait = saved })
-}
-
 // TestSessionStartAckBehindPausedPayload: the server's SESSION START
 // acknowledgement is queued behind a payload frame, and the output is
 // paused for longer than defaultSessionAckTimeout and the control loop's
-// cap (sessionUpdateAckMaxWait, shortened), so the real client handler
+// cap (committedSessionState.updateAckMaxWait, shortened), so the real client handler
 // does not read it meanwhile. The initial start, which has no wall-clock
 // cap, must wait for it rather than fail with ErrSessionAckTimeout, and
 // commit the session. A :reload replacing the start spec meanwhile does
@@ -101,17 +94,16 @@ func shortenUpdateAckMaxWait(t *testing.T, d time.Duration) {
 // after the cap.
 func TestSessionStartAckBehindPausedPayload(t *testing.T) {
 	const maxWait = 300 * time.Millisecond
-	shortenUpdateAckMaxWait(t, maxWait)
 	logger := newPausedOutputLogger()
 	handler := handlers.NewClientHandler("srv1", logger)
 	defer handler.Shutdown()
 	served := serveSession(t, handler, "SESSION START ", protocol.HiddenSessionStartOKPrefix+" 1")
 	logger.releaseAfter(defaultSessionAckTimeout + time.Second)
 
-	var state committedSessionState
+	state := committedSessionState{updateAckMaxWait: maxWait}
 	startErr := make(chan error, 1)
 	go func() {
-		startErr <- startInitialSession("srv1", handler, &state, startSpecInitial, logging.NopLogger{})
+		startErr <- startInitialSession(context.Background(), "srv1", handler, &state, startSpecInitial, logging.NopLogger{})
 	}()
 	<-logger.started
 	begin := time.Now()
@@ -162,11 +154,10 @@ func TestSessionUnansweredTimesOut(t *testing.T) {
 // acknowledgement the handler never reads, as its payload write stays
 // blocked (a host key prompt pausing the output, which only the control
 // loop running the reload would answer), ends with ErrSessionAckTimeout
-// after sessionUpdateAckMaxWait (shortened) instead of waiting forever.
+// after the cap (updateAckMaxWait, shortened) instead of waiting forever.
 // The committed session is left as it was.
 func TestSessionUpdateAckCappedWhileBlocked(t *testing.T) {
 	const maxWait = 300 * time.Millisecond
-	shortenUpdateAckMaxWait(t, maxWait)
 	logger := newPausedOutputLogger()
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(logger.release) }) }
@@ -175,7 +166,7 @@ func TestSessionUpdateAckCappedWhileBlocked(t *testing.T) {
 	defer handler.Shutdown()
 	served := serveSession(t, handler, "SESSION UPDATE 2 ", protocol.HiddenSessionUpdateOKPrefix+" 2")
 
-	var state committedSessionState
+	state := committedSessionState{updateAckMaxWait: maxWait}
 	state.commit(startSpecInitial, 1)
 	start := time.Now()
 	err := applySessionSpec("srv1", handler, &state, startSpecReloaded, 100*time.Millisecond, logging.NopLogger{})

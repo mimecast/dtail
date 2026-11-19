@@ -141,7 +141,12 @@ denied files or none; at most 8 entries, the entry cut to 256 bytes), so
 these stay visible at the default log level, with the number of matches
 instead of one line per glob match. A read command's own check keeps its info lines (`User with OS
 file system permissions to path`, `Permission test passed partially`, ...).
-The permission regexes are compiled once per session user, not per check.
+A listing logs a directory it can not open or read (`Probe: unable to list
+directory`) at debug level too, and a rule that does not compile at WARN
+only in the session user's first listing, as any user starts listings with
+Tab.
+The permission regexes are compiled once per session user, not per check
+or listing.
 Listing a directory of 500 permitted files used to log 1000 info lines and
 take about 13 ms and 10.8 MB of allocations with one rule (83-171 ms and
 60 MB with five); it logs none per file and takes about 6 ms and 1.7 MB
@@ -162,7 +167,12 @@ and every line of it, also those the 500-line limit evicts, is passed to
 the formats' table scanners (`fs.SampleOptions.Observe`,
 `logformat.ProbeTableScanner` over parsers implementing
 `logformat.ProbeTabler`: the default format names the `MAPREDUCE:<TABLE>`
-of a line without parsing its fields). The answer lists every table of the
+of a line without parsing its fields; a line of a table no table name
+can select, i.e. a name with lower-case letters, as a query's table name is
+upper-cased, `mapr.SelectableTable`, counts for the table-less entry `""`,
+where the format's probe lists its fields and `$variables`, as only a
+query without a table reads it; the `note` names the first such table of
+the kept lines). The answer lists every table of the
 window so (without fields, and with an empty `tableVariables` entry, when
 none of its lines was kept), so the table list is as complete as the window
 allows and the client can target a table probe at a table it found. A
@@ -210,7 +220,12 @@ window for the lines of that table only and answers that table only
   word of its own (not next to an ASCII letter, digit or `_`,
   `logformat.ProbeTableLineMatcher`), for formats that name tables without
   implementing `ProbeTabler`. Only lines containing the name are looked at
-  closer. A panicking `ProbeTabler` is handled as in a plain probe.
+  closer. Table names are compared cut to 64 bytes
+  (`logformat.ProbeMaxNameBytes`), as a probe lists them, also by the word
+  match (a word that goes on after the name is kept when the name is what
+  that word is cut to), so the listed
+  name of a longer table probes that table (tables equal up to the cut are
+  one table to a probe). A panicking `ProbeTabler` is handled as in a plain probe.
 - The answer holds, per log format, the requested table only
   (`logformat.ProbeResult.FilterTable`): its fields and its `tableVariables`
   (only what its lines filled; the format-wide ones only for a format
@@ -292,19 +307,50 @@ may offer the names of some directories beneath which nothing is readable
   never offered.
 - A directory is offered unless the rules show that nothing beneath its
   resolved path is readable (`sessionuser.PathRules.MayReadBeneath`, the
-  user's rules compiled once per listing): it is hidden when no allow rule
+  user's rules, compiled once per session user): it is hidden when no allow rule
   can still match a path starting with `<dir>/`, or when one deny rule
-  already matches `<dir>/` itself, with `$` counted as matched at its end.
+  already matches `<dir>/` itself. A deny rule that matches within
+  `<dir>/` matches every path beneath it. One that matches only at its end,
+  through an assertion about what follows (`$`, `\b`), may deny only some
+  paths beneath (or `<dir>/` alone), so it hides the directory only if it
+  also matches the sample paths `<dir>/x`, `<dir>/x/x`, `<dir>/.x`,
+  `<dir>/y/y/y/y.y`, `<dir>/-` and `<dir>/-/-` (`denySamples`, matched
+  with the regexp of the read check; the last two hold no word character,
+  for rules such as `!^/d/(?s).+\b`). At the end of the directory path the rune that follows is
+  unknown, so assertions are tried once per kind of next rune (a word rune,
+  another rune, the end of the text; `endOfPrefix`), each on its own:
+  contradictory assertions (`\b\B`) keep no allow rule alive. A newline is
+  no such kind, as no path holding one is readable. An allow rule also
+  counts as alive when, being unanchored, it may start a match somewhere
+  after the directory path (`matchesLater`: tried with a word or other
+  rune before and a word rune, another rune or the end of the text after
+  that position), so `$`, `\z`, `\b$`, `(?m)$` or `\Bfoo`, which permit
+  files in any directory, offer every directory.
   Each rule's regex runs as an NFA over the directory path
   (`regexp/syntax`). So `^/var/log/app/` offers `/`, `/var`, `/var/log`
   and `app`, but not `/var/log/secret`; `!^/var/log/private/` and
-  `!^/var/log/secret/.*$` hide `private` and `secret` (and, erring towards
-  hiding, `!^/x/$` hides `x`). This is an approximation, and directory names
-  are revealed by it: a directory denied only by what a deny rule requires
-  after its `/`, or only by several deny rules together, is offered
-  although nothing beneath it is readable. For example `^/var/log/.*\.log$`
-  with `!^/var/log/private/.*\.log$` offers `private`, and `^/data/` with
-  `!^/data/x/[^/]` offers `x`. Such a name is always one an allow rule
+  `!^/var/log/secret/.*$` hide `private` and `secret`, while
+  `!^/var/log/[^/]*$` (the files right in `/var/log`),
+  `!^/var/log/(old/.*)?$` and `!^/x/$` leave `/var/log` and `x` offered: a
+  subdirectory may hold readable files, and hiding its parent made them
+  unreachable by completion. A deny rule that matches `<dir>/` itself and
+  everything beneath it (`!^<dir>/`, `!^<dir>/.*$`) matches every sample
+  and always hides the directory. A rule denying only the first two levels
+  beneath (`!^/d/[^/]*(/[^/]*)?$`, `!^/home/[^/]*/?[^/]*$`) keeps `d`
+  offered, as the deepest sample is four levels down; one denying exactly
+  four levels still hides it, as the samples reach no deeper. This is an
+  approximation, towards offering, and directory names are revealed by it.
+  A directory is offered although nothing beneath it is readable when a
+  deny rule denies everything beneath it without matching `<dir>/` itself
+  (`!^/var/log/secret/.+$`: write `.*$`, or `!^/var/log/secret/`), when it
+  is denied only by what a deny rule requires after its `/`, when a deny
+  rule matches `<dir>/` at its end but not the samples while it denies all
+  the allow rules cover, or only by several deny rules together. For
+  example `^/var/log/.*\.log$` with `!^/var/log/private/.*\.log$` or with
+  `!^/var/log/private/(.*\.log)?$` offers `private`, `^/srv/app/[^/]+/logs/`
+  with `!^/srv/app/secret/(logs/.*)?$` offers `secret`, and `^/data/` with
+  `!^/data/x/[^/]` offers `x` (pinned as known approximations in
+  `TestMayReadBeneath`). Such a name is always one an allow rule
   covers, and a glob read's `no permission` versus `no file` answers reveal
   as much; to hide a directory reliably, deny the directory path itself
   (`!^/var/log/private/`). An unanchored allow rule (e.g. `\.log$`) makes
@@ -368,11 +414,17 @@ a successful list is reused for 60 s (`journal.DefaultUnitCacheTTL`), so a
 unit that appears later is offered after at most a minute; a failed run is
 not cached. Listings that arrive while `journalctl` runs wait for that run
 instead of starting their own; the run belongs to none of them, so no
-probe's 10 s timeout bounds it. It is stopped once every listing waiting
-for it gave up (its probe timed out or its session ended), so one
-session's timeout fails no other, and at the latest after 30 s
-(`unitFlightTimeout`), so listings that keep arriving while earlier ones
-time out can not keep a hung `journalctl` alive. A panic of the lister is
+probe's 10 s timeout bounds it. A listing that gives up (its probe timed
+out or its session ended) fails alone; the run goes on, also when no
+listing waits for it any more, and its result is cached, so on a host
+whose journal takes longer than a probe's 10 s to list, the Tab after the
+timed-out one is answered from the cache (it used to be stopped with its
+last listing, so such a host never got a list and ran `journalctl` on
+every Tab). A run ends at the latest after 30 s (`unitFlightTimeout`),
+which bounds a hung `journalctl`, or when dserver shuts down
+(`UnitCache.Close`, called by `Server.stopSharedWork`; a listing through
+a closed cache fails); at most one runs at a time. A
+panic of the lister is
 recovered into the run's error, which the waiting listings log with its
 stack at WARN and answer `probe: unable to list`. The cache
 holds the units only, at most 10,000 names; every listing filters them by

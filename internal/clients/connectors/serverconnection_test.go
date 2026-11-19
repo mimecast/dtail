@@ -22,8 +22,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// TestResolveAuthKeyPathNoLiteralPath is a regression test for the bug
-// described in task l6: when authKeyPath is empty and HOME is also unset,
+// TestResolveAuthKeyPathNoLiteralPath is a regression test of a mangled
+// default auth key path: when authKeyPath is empty and HOME is also unset,
 // resolveAuthKeyPath must return "" instead of a mangled path like
 // "/.ssh/id_rsa" or the literal "~/.ssh/id_rsa" that the SSH stack cannot use.
 func TestResolveAuthKeyPathNoLiteralPath(t *testing.T) {
@@ -440,7 +440,7 @@ func TestDispatchInitialCommandsDoesNotFallBackToCommandStream(t *testing.T) {
 	}
 	state := &committedSessionState{}
 
-	err = dispatchInitialCommands("srv1", mock, commands, true, spec, state, logging.NopLogger{})
+	err = dispatchInitialCommands(context.Background(), "srv1", mock, commands, true, spec, state, logging.NopLogger{})
 	if !errors.Is(err, ErrSessionAckTimeout) {
 		t.Fatalf("expected ErrSessionAckTimeout, got %v", err)
 	}
@@ -532,7 +532,7 @@ func TestDispatchInitialCommandsRejectsJournalWithoutCapability(t *testing.T) {
 		Files: []string{"journal:ssh.service"},
 	}
 
-	err := dispatchInitialCommands("srv1", handler, []string{"cat: journal:ssh.service ."}, false,
+	err := dispatchInitialCommands(context.Background(), "srv1", handler, []string{"cat: journal:ssh.service ."}, false,
 		spec, &committedSessionState{}, logging.NopLogger{})
 	if !errors.Is(err, ErrJournalUnsupported) {
 		t.Fatalf("expected ErrJournalUnsupported, got %v", err)
@@ -555,7 +555,7 @@ func TestDispatchInitialCommandsRejectsInteractiveJournalWithoutCapability(t *te
 		Files: []string{"journal:ssh.service"},
 	}
 
-	err := dispatchInitialCommands("srv1", handler, []string{"tail: journal:ssh.service ."}, true,
+	err := dispatchInitialCommands(context.Background(), "srv1", handler, []string{"tail: journal:ssh.service ."}, true,
 		spec, &committedSessionState{}, logging.NopLogger{})
 	if !errors.Is(err, ErrJournalUnsupported) {
 		t.Fatalf("expected ErrJournalUnsupported, got %v", err)
@@ -666,7 +666,7 @@ func TestApplySessionSpecSerializesConcurrentBootstrapAndReload(t *testing.T) {
 
 	initialErrCh := make(chan error, 1)
 	go func() {
-		initialErrCh <- dispatchInitialCommands("srv1", handler, nil, true, initialSpec, state, logging.NopLogger{})
+		initialErrCh <- dispatchInitialCommands(context.Background(), "srv1", handler, nil, true, initialSpec, state, logging.NopLogger{})
 	}()
 
 	firstCommand := <-handler.commandsCh
@@ -1037,7 +1037,7 @@ func TestServerConnectionStartDoesNotDuplicateJournalCapabilityError(t *testing.
 		hostKeyCallback: testHostKeyCallback{},
 	}
 	conn.dialFn = func(context.Context, context.CancelFunc, chan struct{}, chan struct{}) error {
-		return dispatchInitialCommands(conn.server, handler, nil, false, spec,
+		return dispatchInitialCommands(context.Background(), conn.server, handler, nil, false, spec,
 			&conn.sessionState, logging.NopLogger{})
 	}
 

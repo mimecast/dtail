@@ -642,10 +642,6 @@ func TestApplyInteractiveReloadRollsBackLateAckFailureWithRealServerConnection(t
 	connB := newInteractiveReloadServerConnection(t, "srv2", handlerB, oldSpec)
 	connC := newInteractiveReloadServerConnection(t, "srv3", handlerC, oldSpec)
 
-	for _, conn := range []*connectors.ServerConnection{connA, connB, connC} {
-		conn.RestoreCommittedSession(oldSpec, 4, true)
-	}
-
 	client := &baseClient{
 		mu:          newBaseClientMu(),
 		Args:        oldArgs,
@@ -882,6 +878,9 @@ type interactiveReloadSessionHandler struct {
 	capabilities        map[string]bool
 	sessionAcks         []handlers.SessionAck
 	waitForCapabilities bool
+	// missAcks is the number of acknowledgement waits that time out before
+	// sessionAcks are handed out, as when the acknowledgements arrive late.
+	missAcks int
 }
 
 var _ handlers.Handler = (*interactiveReloadSessionHandler)(nil)
@@ -934,6 +933,10 @@ func (h *interactiveReloadSessionHandler) WaitForSessionAck(timeout, _ time.Dura
 	if timeout <= 0 {
 		return handlers.SessionAck{}, false
 	}
+	if h.missAcks > 0 {
+		h.missAcks--
+		return handlers.SessionAck{}, false
+	}
 	if len(h.sessionAcks) == 0 {
 		return handlers.SessionAck{}, false
 	}
@@ -961,7 +964,13 @@ func (interactiveReloadHostKeyCallback) Untrusted(string) bool { return false }
 
 func (interactiveReloadHostKeyCallback) PromptAddHosts(context.Context) {}
 
-func newInteractiveReloadServerConnection(t *testing.T, server string, handler handlers.Handler, spec SessionSpec) *connectors.ServerConnection {
+// newInteractiveReloadServerConnection returns a real ServerConnection of
+// handler whose session is committed with spec at generation 4: it sends
+// SESSION START, which handler acknowledges with that generation, before
+// the acknowledgements the handler was created with. The start is not
+// kept in handler.commands.
+func newInteractiveReloadServerConnection(t *testing.T, server string,
+	handler *interactiveReloadSessionHandler, spec SessionSpec) *connectors.ServerConnection {
 	t.Helper()
 
 	conn, err := connectors.NewServerConnection(
@@ -981,7 +990,14 @@ func newInteractiveReloadServerConnection(t *testing.T, server string, handler h
 	if err != nil {
 		t.Fatalf("NewServerConnection: %v", err)
 	}
-	conn.RestoreCommittedSession(spec, 4, true)
+	handler.sessionAcks = append([]handlers.SessionAck{{Action: "start", Generation: 4}}, handler.sessionAcks...)
+	if err := conn.ApplySessionSpec(spec, 0); err != nil {
+		t.Fatalf("start the session of %s: %v", server, err)
+	}
+	if _, generation, ok := conn.CommittedSession(); !ok || generation != 4 {
+		t.Fatalf("session of %s committed at %d (%v), want 4", server, generation, ok)
+	}
+	handler.commands = nil
 	return conn
 }
 
@@ -1053,12 +1069,6 @@ func (c *interactiveReloadConnector) replaceStartSpec(spec sessionspec.Spec) (bo
 	}
 	c.startSpecs = append(c.startSpecs, spec)
 	return true, nil
-}
-
-func (c *interactiveReloadConnector) RestoreCommittedSession(spec sessionspec.Spec, generation uint64, committed bool) {
-	c.liveSpec = spec
-	c.committedSpec = spec
-	c.generation = generation
 }
 
 type interactiveReloadRecorder struct {

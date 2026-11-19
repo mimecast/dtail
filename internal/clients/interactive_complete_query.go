@@ -146,7 +146,7 @@ func completeFromFirst(partial mapr.Partial, own queryCompletion, tail string,
 // value such as eq md5sum($x)) as Tab after the blank that would follow
 // it: it lists the next step of the guided order with its hint (a comma
 // adds another item), even a single next clause, and inserts the blank
-// when the item ends the query (afterItem, blankFirst), so that Tab right
+// when the item ends the query (afterItem, lead), so that Tab right
 // after the ")" it inserted continues the query. With text after the
 // cursor (a blank, a comma, the rest of a word) nothing is inserted, also
 // when nothing comes next, so that no blank is doubled (order by
@@ -538,8 +538,9 @@ func queryTableCandidates(s queryCandidateSource) []string {
 // queryValueCandidates lists the sample values of the where condition's
 // field: double-quoted after a string operator (quotedValueWord; values
 // containing a double quote, which the query language can not quote, or a
-// line break are left out, as completeQueryWord leaves out every value with
-// another control or format character), plain decimal numbers after a
+// line break are left out, as queryCandidateSource.groups leaves out every
+// value with another control or format character), plain decimal numbers
+// after a
 // numeric one. A sample of the probe's
 // full value length may have been cut (logformat.ProbeMaxValueBytes), so it
 // is only offered for operators that compare a prefix or a part.

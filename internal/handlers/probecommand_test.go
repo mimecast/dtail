@@ -65,7 +65,7 @@ func TestProbeRunsOneAtATime(t *testing.T) {
 	file := writeProbeTestFile(t, t.TempDir(), "app.log", probeTestStatsLine("n", "1"))
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
 	started, release := make(chan string, 4), make(chan struct{})
-	handler.probeSampler = blockingProbeSampler(started, release)
+	handler.probeOverrides.sampler = blockingProbeSampler(started, release)
 
 	handler.handleCommand(encodedTestCommand(probeCommandFor(t, protocol.ProbeRequest{ID: "first", Files: []string{file}})))
 	waitForStarted(t, started)
@@ -193,7 +193,7 @@ func TestProbeEndsTheSessionWhenOtherWorkFinishedMeanwhile(t *testing.T) {
 	file := writeProbeTestFile(t, t.TempDir(), "app.log", probeTestStatsLine("probed", "1"))
 	handler := newProbeTestHandler(t, []string{"readfiles:.*"}, nil)
 	started, release := make(chan string, 4), make(chan struct{})
-	handler.probeSampler = blockingProbeSampler(started, release)
+	handler.probeOverrides.sampler = blockingProbeSampler(started, release)
 	s := startProbeSession(handler)
 
 	s.send(t, probeCommandFor(t, protocol.ProbeRequest{ID: "slow", Files: []string{file}}))

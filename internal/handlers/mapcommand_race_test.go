@@ -5,7 +5,7 @@ package handlers
 // Shutdown reading that same pointer concurrently. Running this test with -race
 // detects unsynchronized access before the atomic.Pointer fix is applied, and
 // passes cleanly after. The regular-aggregate counterpart was removed with the
-// regular mapaggregate.Aggregate itself (task hv0); output is now the only mapaggregate.
+// regular mapaggregate.Aggregate itself; output is now the only mapaggregate.
 //
 // The test does not set up a real MapReduce query; instead it injects a real
 // output aggregate via the atomic accessors so the test is self-contained.

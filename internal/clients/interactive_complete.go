@@ -2,6 +2,7 @@ package clients
 
 import (
 	"flag"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -134,11 +135,13 @@ func completePlainWord(unchanged completion, before, after string, args config.A
 	if strings.TrimSpace(prefix) == "" {
 		return applyCompletion(unchanged, prefix, word, after, matching(interactiveCommandsFor(args), word))
 	}
-	candidates, ok := reloadWordCandidates(prefix, word, args)
+	candidates, hint, ok := reloadWordCandidates(prefix, word, args)
 	if !ok {
 		return unchanged
 	}
-	return applyCompletion(unchanged, prefix, word, after, candidates)
+	result := applyCompletion(unchanged, prefix, word, after, candidates)
+	result.hint = hint
+	return result
 }
 
 // reloadWordCandidates returns the candidates for word after the earlier
@@ -146,29 +149,55 @@ func completePlainWord(unchanged completion, before, after string, args config.A
 // for an empty word right after a flag that takes a value its current
 // value (--grep, --regex, --query, --files) if it has one, otherwise
 // nothing (a number is expected, or an empty value would be rejected);
-// the flags for any other empty word. It reports false for a line that is no :reload or
-// whose earlier words do not tokenize.
-func reloadWordCandidates(prefix, word string, args config.Args) ([]string, bool) {
+// the flags for any other empty word. A current value that can not be put
+// on the edit line (unprintableValueHint) gives no candidate but that hint.
+// It reports false for a line that is no :reload or whose earlier words do
+// not tokenize.
+func reloadWordCandidates(prefix, word string, args config.Args) (candidates []string, hint string, ok bool) {
 	rest, ok := strings.CutPrefix(strings.TrimLeft(prefix, " \t"), ":reload")
 	if !ok || (rest != "" && rest[0] != ' ' && rest[0] != '\t') {
-		return nil, false
+		return nil, "", false
 	}
 	tokens, err := splitInteractiveArgs(rest)
 	if err != nil {
-		return nil, false
+		return nil, "", false
 	}
 	switch {
 	case strings.HasPrefix(word, "-"):
-		return matching(interactiveReloadFlags(args), "--"+strings.TrimLeft(word, "-")), true
+		return matching(interactiveReloadFlags(args), "--"+strings.TrimLeft(word, "-")), "", true
 	case word != "":
-		return nil, true
+		return nil, "", true
 	case len(tokens) > 0 && flagTakesValue(tokens[len(tokens)-1], args):
-		if value, ok := interactiveFlagValue(tokens[len(tokens)-1], args); ok && value != "" {
-			return []string{quoteInteractiveArg(value)}, true
-		}
-		return nil, true
+		candidates, hint = currentValueCandidate(tokens[len(tokens)-1], args)
+		return candidates, hint, true
 	}
-	return interactiveReloadFlags(args), true
+	return interactiveReloadFlags(args), "", true
+}
+
+// unprintableValueHint is shown instead of the current value of a :reload
+// flag when that value holds a control or format character (e.g. a tab or
+// line break from `--regex $'a\tb'` on the command line).
+const unprintableValueHint = "(the current %s value holds a control or format character, " +
+	"which the edit line can not show: type the new value)"
+
+// currentValueCandidate returns the current value of the value flag token
+// names, quoted for the :reload tokenizer (quoteInteractiveArg), as the one
+// candidate; none for a flag without a value to insert. A value holding a
+// control or format character (hasHiddenRune) is not inserted: the :reload
+// tokenizer has no escape for it, so it could only go on the line raw,
+// where the Terminal writes it as it is (a tab moves the cursor to the next
+// tab stop, a line feed to the next row) and counts one column for it, so
+// that every later cursor move and redraw of the line is off. The hint
+// says so instead.
+func currentValueCandidate(token string, args config.Args) (candidates []string, hint string) {
+	value, ok := interactiveFlagValue(token, args)
+	if !ok || value == "" {
+		return nil, ""
+	}
+	if hasHiddenRune(value) {
+		return nil, fmt.Sprintf(unprintableValueHint, "--"+strings.TrimLeft(token, "-"))
+	}
+	return []string{quoteInteractiveArg(value)}, ""
 }
 
 // applyCompletion replaces word by the only candidate or by the common
@@ -265,7 +294,10 @@ func escapedAt(s string, i int) bool {
 // unchanged as one argument: as is when it consists of characters the
 // tokenizer never treats specially, otherwise in single quotes, an
 // embedded single quote closing the quotes, adding a backslash-escaped quote
-// and opening them again (POSIX shell style).
+// and opening them again (POSIX shell style). Control characters are kept
+// raw inside the quotes (the tokenizer has no escape for them), so a caller
+// that puts the result on the edit line must not pass a value holding one
+// (currentValueCandidate).
 func quoteInteractiveArg(value string) string {
 	if value != "" && strings.Trim(value,
 		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./,:@%+=-") == "" {

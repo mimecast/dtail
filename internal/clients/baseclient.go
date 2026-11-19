@@ -36,13 +36,6 @@ type baseClient struct {
 	runtime   *clientRuntimeBoundary
 	colorizer *brush.Brush
 	loggers   LoggerDependencies
-	// setForceExitHook registers the interactive line editor's terminal
-	// restore with the forced exit; nil means signal.SetBeforeForceExit.
-	// Tests replace it per client.
-	setForceExitHook func(func())
-	// editorEnv looks up VISUAL and EDITOR for the line editor's external
-	// editor (Alt-E/Alt-V); nil means os.Getenv. Tests replace it per client.
-	editorEnv func(string) string
 	// To display client side stats
 	stats *stats
 	// We have one connection per remote server.
@@ -74,6 +67,10 @@ type baseClient struct {
 	// a reconnect while it creates and installs its new connection (see
 	// reloadLock and recreateConnection).
 	reloadMu *sync.Mutex
+	// reloadSent is the highest generation a :reload or its rollback
+	// numbered a SESSION UPDATE with, acknowledged or not; guarded by
+	// reloadMu (see reloadBase).
+	reloadSent uint64
 	// Client-specific connection behavior.
 	profile clientProfile
 	// Optional factory override for retry/reconnect tests.

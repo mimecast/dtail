@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -74,7 +75,6 @@ func (a *aggregateArrival) has(server string) bool {
 }
 
 // channel returns the channel mark signals, nil for a nil arrival.
-
 func (a *aggregateArrival) channel() <-chan struct{} {
 	if a == nil {
 		return nil
@@ -102,6 +102,18 @@ type SessionState struct {
 	// aggregate frames (AggregatesExpected); read without mu, once per
 	// frame.
 	aggregatesExpected atomic.Bool
+	// pendingSwitch numbers the switch of the session to another workload
+	// that is in progress (Switching), 0 while none is; switches counts
+	// them. holders are the connections' aggregates holding messages for
+	// it (holdFor), in the order they began to.
+	pendingSwitch uint64
+	switches      uint64
+	holders       []*Aggregate
+	// switchCommitted is set once the pending switch committed a workload
+	// (CommitQuery, ClearQuery); endedCommitted keeps it for the switch
+	// that ended last (switchOutcome).
+	switchCommitted bool
+	endedCommitted  bool
 }
 
 // NewSessionState returns a new shared mapreduce session state. A nil query
@@ -143,6 +155,84 @@ func (s *SessionState) ExpectAggregates(pending bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.aggregatesExpected.Store(pending || s.query != nil)
+}
+
+// Switching is called with true before the client updates the sessions of
+// its connections to another workload (an interactive reload) and with
+// false once that ended, committed (CommitQuery, ClearQuery) or rolled
+// back. While it is pending, a connection's Aggregate holds the aggregates
+// its server sends after it acknowledged the update. At the end they are
+// merged into the result that is current then, or, after a switch that
+// committed nothing, dropped unless the server was rolled back (see
+// Aggregate.SessionAcked and settleHold).
+//
+// Switching(false) returns only after every one of them settled what it
+// held, each waiting for the global group set's lock in turn: whoever
+// reads the result after the reload (the next report, the final result
+// of a client whose sessions ended meanwhile) finds it complete, and the
+// holders do not all retry for the lock at once. mu is not held while
+// they merge, as a merge takes a Snapshot.
+func (s *SessionState) Switching(pending bool) {
+	if pending {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.pendingSwitch == 0 {
+			s.switches++
+			s.pendingSwitch = s.switches
+		}
+		return
+	}
+	for _, holder := range s.endSwitch() {
+		holder.endHold()
+	}
+}
+
+// endSwitch ends the pending switch, if any, remembers whether it
+// committed a workload, and returns the aggregates that hold messages for
+// it.
+func (s *SessionState) endSwitch() []*Aggregate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	holders := s.holders
+	if s.pendingSwitch != 0 {
+		s.endedCommitted = s.switchCommitted
+	}
+	s.pendingSwitch, s.holders, s.switchCommitted = 0, nil, false
+	return holders
+}
+
+// switchOutcome reports whether the switch numbered id is still pending
+// and, if it ended, whether it committed a workload (false for one that
+// was rejected or rolled back). Every holder of a switch is settled at
+// its end, before the next one begins, so an ended id is that of the
+// switch that ended last.
+func (s *SessionState) switchOutcome(id uint64) (pending, committed bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if id == s.pendingSwitch {
+		return true, false
+	}
+	return false, s.endedCommitted
+}
+
+// switchPending returns the number of the pending switch (Switching), 0
+// when none is pending.
+func (s *SessionState) switchPending() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.pendingSwitch
+}
+
+// holdFor registers holder as holding messages for the pending switch,
+// whose end then makes it merge them (Aggregate.endHold), and returns the
+// switch's number; 0, registering nothing, when no switch is pending.
+func (s *SessionState) holdFor(holder *Aggregate) uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pendingSwitch != 0 && !slices.Contains(s.holders, holder) {
+		s.holders = append(s.holders, holder)
+	}
+	return s.pendingSwitch
 }
 
 // Snapshot returns a point-in-time copy of the shared mapreduce state.
@@ -200,6 +290,7 @@ func (s *SessionState) CommitQuery(rawQuery string, generation uint64) (*mapr.Qu
 	s.lastResult = ""
 	s.arrival = newAggregateArrival()
 	s.aggregatesExpected.Store(true)
+	s.switchCommitted = s.pendingSwitch != 0
 	s.mu.Unlock()
 
 	s.notifyChange()
@@ -222,6 +313,7 @@ func (s *SessionState) ClearQuery(generation uint64) {
 	s.lastResult = ""
 	s.arrival = nil
 	s.aggregatesExpected.Store(false)
+	s.switchCommitted = s.pendingSwitch != 0
 	s.mu.Unlock()
 
 	s.notifyChange()

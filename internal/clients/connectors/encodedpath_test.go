@@ -35,7 +35,7 @@ func TestDispatchInitialCommandsSendsSpacedPathWithoutCapability(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := dispatchInitialCommands("srv1", handler, commands, interactive,
+		if err := dispatchInitialCommands(context.Background(), "srv1", handler, commands, interactive,
 			spec, &committedSessionState{}, logging.NopLogger{}); err != nil {
 			t.Fatalf("interactive=%v: dispatchInitialCommands() error = %v", interactive, err)
 		}

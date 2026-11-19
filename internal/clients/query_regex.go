@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/logging"
@@ -24,6 +25,21 @@ const ignoredInvertWarning = "WARN: Ignoring --invert: " + queryInvertReason
 // workload keeps running, as for any other rejected reload.
 var errReloadQueryInvert = errors.New("--invert is not supported: " + queryInvertReason)
 
+// maprRegexForQuery returns the line filter of query, which alone selects
+// the lines of the query's table: dserver's aggregation takes every line
+// the filter passes and its log format parses (the default format only
+// requires a MAPREDUCE:<TABLE> token, whatever the table).
+//   - no query, no table or the table "." match every line;
+//   - "*" matches every MAPREDUCE line, whatever its table (also one
+//     without a name). It used to be `\|MAPREDUCE:\|`, which matched only
+//     the lines of the table without a name;
+//   - any other table matches the lines of exactly that table: the name is
+//     a literal everywhere else (the parser, the probes, the completion),
+//     so it is quoted here. Unquoted, a table A+B, which Tab offers,
+//     matched no line of its own, and A.B also matched the table AXB.
+//
+// Every filter is a literal pattern (regex.Regex.IsLiteral), matched by a
+// substring search: the hot path of every dmap run.
 func maprRegexForQuery(query *mapr.Query) string {
 	if query == nil {
 		return "."
@@ -33,9 +49,9 @@ func maprRegexForQuery(query *mapr.Query) string {
 	case "", ".":
 		return "."
 	case "*":
-		return "\\|MAPREDUCE:\\|"
+		return `\|MAPREDUCE:`
 	default:
-		return fmt.Sprintf("\\|MAPREDUCE:%s\\|", query.Table)
+		return `\|MAPREDUCE:` + regexp.QuoteMeta(query.Table) + `\|`
 	}
 }
 

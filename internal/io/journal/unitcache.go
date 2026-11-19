@@ -18,10 +18,12 @@ const DefaultUnitCacheTTL = 60 * time.Second
 
 // unitFlightTimeout bounds one shared run of the unit lister. The run
 // belongs to no single request, so the probe timeout of the requests does
-// not bound it: requests arriving one after another, each giving up after
-// its own timeout, would otherwise keep a hung journalctl alive for as long
-// as they keep coming.
+// not bound it, and it goes on when all of them gave up: only this timeout
+// stops a hung journalctl.
 const unitFlightTimeout = 30 * time.Second
+
+// ErrUnitCacheClosed is the error of a listing through a closed UnitCache.
+var ErrUnitCacheClosed = errors.New("journal unit cache closed")
 
 // errUnitListerPanic reports a unit lister that panicked; the error carries
 // the panic value and the stack, which the probe logs.
@@ -37,12 +39,16 @@ type UnitLister func(ctx context.Context, maxUnits int) ([]string, bool, error)
 //     same maxUnits; failures are not cached, the next request runs again.
 //   - Concurrent requests share one run (single flight) instead of each
 //     starting journalctl. The run does not belong to the request that
-//     started it: it ends early when every request waiting for it gave up
-//     (its context ended), so one session's timeout does not fail the
-//     others, and a run nobody waits for any more is stopped. It ends at
-//     the latest after unitFlightTimeout. A panic of the lister is
-//     recovered and is the run's error (errUnitListerPanic), so it fails
-//     the waiting requests, not dserver.
+//     started it: a request that gives up (its context ended) fails alone,
+//     and the run goes on also when no request waits for it any more, up
+//     to unitFlightTimeout or Close, and its result is cached. It used to be
+//     stopped then, so on a host whose journal takes longer to list than
+//     one probe waits (10 s) no listing was ever cached: every Tab ran
+//     journalctl again, to no avail. A run without a waiter costs at most
+//     one journalctl of unitFlightTimeout at a time, as a request arriving
+//     meanwhile joins it. A panic of the lister is recovered and is the
+//     run's error (errUnitListerPanic), so it fails the waiting requests,
+//     not dserver.
 //   - A request with another maxUnits than the cached list starts a shared
 //     run of its own, whose list then replaces the cached one; only while
 //     a run of another maxUnits is in flight does it run on its own,
@@ -59,6 +65,12 @@ type UnitCache struct {
 	now  func() time.Time
 	// flightTimeout bounds a run (unitFlightTimeout; tests lower it).
 	flightTimeout time.Duration
+
+	// base is the context every run derives from; Close cancels it, so
+	// that a run nobody waits for does not outlive dserver's shutdown by
+	// up to flightTimeout.
+	base   context.Context
+	cancel context.CancelFunc
 
 	mu     sync.Mutex
 	cached *cachedUnits
@@ -81,21 +93,34 @@ type unitFlight struct {
 	units     []string
 	truncated bool
 	err       error
-	// waiters counts the requests waiting for done (guarded by
-	// UnitCache.mu); cancel stops the run when the last one gave up.
-	waiters int
-	cancel  context.CancelFunc
+	// cancel releases the run's context once it ended.
+	cancel context.CancelFunc
 }
 
 // NewUnitCache returns a cache of the units list lists, each list reused
 // for ttl.
 func NewUnitCache(list UnitLister, ttl time.Duration) *UnitCache {
-	return &UnitCache{list: list, ttl: ttl, now: time.Now, flightTimeout: unitFlightTimeout}
+	base, cancel := context.WithCancel(context.Background())
+	return &UnitCache{list: list, ttl: ttl, now: time.Now, flightTimeout: unitFlightTimeout,
+		base: base, cancel: cancel}
+}
+
+// Close stops the run in flight, also one no request waits for, and makes
+// every later ListUnits fail with ErrUnitCacheClosed without running the
+// lister. dserver calls it when it shuts down. It may be called more than
+// once, and on a nil cache.
+func (c *UnitCache) Close() {
+	if c != nil {
+		c.cancel()
+	}
 }
 
 // ListUnits returns the cached unit list, the result of the running list,
 // or of a new one (see UnitCache). It has the signature of ListUnits.
 func (c *UnitCache) ListUnits(ctx context.Context, maxUnits int) ([]string, bool, error) {
+	if c.base.Err() != nil {
+		return nil, false, ErrUnitCacheClosed
+	}
 	cached, flight := c.join(maxUnits)
 	switch {
 	case cached != nil:
@@ -107,7 +132,7 @@ func (c *UnitCache) ListUnits(ctx context.Context, maxUnits int) ([]string, bool
 	case <-flight.done:
 		return flight.units, flight.truncated, flight.err
 	case <-ctx.Done():
-		c.leave(flight)
+		// The run goes on for the requests after this one (UnitCache).
 		return nil, false, fmt.Errorf("list journal units: %w", ctx.Err())
 	}
 }
@@ -126,11 +151,10 @@ func (c *UnitCache) join(maxUnits int) (*cachedUnits, *unitFlight) {
 		if flight.maxUnits != maxUnits {
 			return nil, nil
 		}
-		flight.waiters++
 		return nil, flight
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), c.flightTimeout)
-	flight := &unitFlight{maxUnits: maxUnits, done: make(chan struct{}), waiters: 1, cancel: cancel}
+	ctx, cancel := context.WithTimeout(c.base, c.flightTimeout)
+	flight := &unitFlight{maxUnits: maxUnits, done: make(chan struct{}), cancel: cancel}
 	c.flight = flight
 	go c.run(ctx, flight)
 	return nil, flight
@@ -167,19 +191,4 @@ func (c *UnitCache) listRecovered(ctx context.Context, maxUnits int) (units []st
 		}
 	}()
 	return c.list(ctx, maxUnits)
-}
-
-// leave removes a request that gave up from flight; the last one stops the
-// run and lets the next request start a new one instead of joining it.
-func (c *UnitCache) leave(flight *unitFlight) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	flight.waiters--
-	if flight.waiters > 0 {
-		return
-	}
-	flight.cancel()
-	if c.flight == flight {
-		c.flight = nil
-	}
 }

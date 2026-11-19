@@ -110,7 +110,7 @@ func TestEnableProfilingRatesSetsMutexFraction(t *testing.T) {
 	}
 }
 
-// TestProfilingRateConstants pins the ss0-validated values so a change is a
+// TestProfilingRateConstants pins the measured values (see pprof.go) so a change is a
 // conscious decision rather than an accident.
 func TestProfilingRateConstants(t *testing.T) {
 	if mutexProfileFraction != 5 {

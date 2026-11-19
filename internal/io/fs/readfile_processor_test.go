@@ -194,7 +194,7 @@ func (p *signalingPipeProcessor) Flush() error {
 func (*signalingPipeProcessor) Close() error { return nil }
 
 // TestReadWithProcessorOptimizedDetectsTruncation proves that after the
-// per-line time.Since truncate gate was removed (task 2t0), the non-follow
+// per-line time.Since truncate gate was removed, the non-follow
 // read loop still detects truncation: when the periodicTruncateCheck goroutine
 // signals on the truncate channel, the loop re-stats the file and returns the
 // truncation error. The reader (line source) is decoupled from the fd (stat

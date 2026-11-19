@@ -24,7 +24,7 @@ import (
 // (a field named from, order, ...) or by (the optional first word of group
 // by) is written in backticks, which the parser strips, unless the word is
 // already inside backticks. Names with a control or format character are
-// dropped later for every candidate kind (completeQueryWord).
+// dropped later for every candidate kind (queryCandidateSource.groups).
 func queryFieldWords(names []string, inBacktick bool) []string {
 	var words []string
 	for _, name := range names {

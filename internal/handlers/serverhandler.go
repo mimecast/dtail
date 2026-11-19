@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/mimecast/dtail/internal/authkey"
 	"github.com/mimecast/dtail/internal/config"
@@ -60,20 +59,15 @@ type ServerHandler struct {
 	// queued (or the session ends), so that at most one probe answer waits
 	// to be queued (startProbe).
 	probeInFlight chan struct{}
-	// probeInFlightWait bounds the command input's wait for probeInFlight;
-	// zero means the constant probeInFlightWait. Tests lower it.
-	probeInFlightWait time.Duration
-	// probeSampler samples a probed file; nil means probe.Sample. Tests
-	// replace it to hold a probe while it runs.
-	probeSampler probeSampler
+	// probeOverrides replaces parts of the probe command in tests; its
+	// zero value, which every handler outside the tests has, changes
+	// nothing.
+	probeOverrides probeOverrides
 	// probeUnitLister lists the journal units for a path listing: the
 	// dserver's shared cache (Dependencies.JournalUnits) when there is one,
 	// nil (journal.ListUnits, a journalctl run per listing) otherwise, as
 	// in serverless mode. Tests replace it.
 	probeUnitLister probeUnitLister
-	// probeListLimits bounds a path listing; zero fields mean the
-	// defaults (probeListLimits.withDefaults). Tests lower them.
-	probeListLimits probeListLimits
 	// journalSupported is set when the session advertised
 	// protocol.CapabilityJournalV1, which probes of journal targets need.
 	journalSupported bool
@@ -108,27 +102,10 @@ var _ Handler = (*ServerHandler)(nil)
 
 // NewServerHandler returns the server handler.
 func NewServerHandler(ctx context.Context, user *user.User, dependencies Dependencies) (*ServerHandler, error) {
-
 	serverCfg := dependencies.ServerConfig
-	loggers := dependencies.Loggers
-	loggers = loggers.normalized()
+	loggers := dependencies.Loggers.normalized()
 	loggers.Diagnostics.Debug(user, "Creating new server handler")
-	if user == nil {
-		return nil, fmt.Errorf("create server handler: user must not be nil")
-	}
-	if ctx == nil {
-		return nil, fmt.Errorf("create server handler: context must not be nil")
-	}
-	if serverCfg == nil {
-		return nil, fmt.Errorf("create server handler: server config must not be nil")
-	}
-
-	if dependencies.AuthKeyStore == nil {
-		return nil, fmt.Errorf("create server handler: auth-key store must not be nil")
-	}
-	// dserver checks this once at startup already (server.New); the check
-	// stays here for every other runtime that builds a handler.
-	if err := ValidateOutputBufferConfig(serverCfg); err != nil {
+	if err := checkServerHandlerInputs(ctx, user, dependencies); err != nil {
 		return nil, fmt.Errorf("create server handler: %w", err)
 	}
 
@@ -158,13 +135,7 @@ func NewServerHandler(ctx context.Context, user *user.User, dependencies Depende
 	if dependencies.JournalUnits != nil {
 		h.probeUnitLister = dependencies.JournalUnits.ListUnits
 	}
-	h.handleCommandCb = h.handleUserCommand
-	h.prepareCommandContextCb = h.prepareCommandContext
-	h.commandRejectedCb = h.commandRejected
-	h.frameRejectedCb = h.frameRejected
-	h.versionRejectedCb = h.versionRejected
-	h.sessionClosingCb = h.idleShutdownStarted.Load
-	h.commands = h.newCommandRegistry()
+	h.bindCallbacks()
 	h.output.configure(h.outputManagerConfig(), loggers.Diagnostics)
 	h.activeGeneration = h.sessionState.currentGeneration
 
@@ -178,6 +149,37 @@ func NewServerHandler(ctx context.Context, user *user.User, dependencies Depende
 	h.queueFirstFrame(protocol.HiddenCapabilitiesPrefix + strings.Join(dependencies.Capabilities, " "))
 
 	return &h, nil
+}
+
+// bindCallbacks gives the base handler the server handler's command
+// handling: the callbacks it calls for commands and rejected frames, and
+// the command registry.
+func (h *ServerHandler) bindCallbacks() {
+	h.handleCommandCb = h.handleUserCommand
+	h.prepareCommandContextCb = h.prepareCommandContext
+	h.commandRejectedCb = h.commandRejected
+	h.frameRejectedCb = h.frameRejected
+	h.versionRejectedCb = h.versionRejected
+	h.sessionClosingCb = h.idleShutdownStarted.Load
+	h.commands = h.newCommandRegistry()
+}
+
+// checkServerHandlerInputs reports what NewServerHandler can not build a
+// handler without, or with.
+func checkServerHandlerInputs(ctx context.Context, user *user.User, dependencies Dependencies) error {
+	switch {
+	case user == nil:
+		return errors.New("user must not be nil")
+	case ctx == nil:
+		return errors.New("context must not be nil")
+	case dependencies.ServerConfig == nil:
+		return errors.New("server config must not be nil")
+	case dependencies.AuthKeyStore == nil:
+		return errors.New("auth-key store must not be nil")
+	}
+	// dserver checks this once at startup already (server.New); the check
+	// stays here for every other runtime that builds a handler.
+	return ValidateOutputBufferConfig(dependencies.ServerConfig)
 }
 
 // ValidateOutputBufferConfig checks that OutputBufferMaxBytes leaves room for

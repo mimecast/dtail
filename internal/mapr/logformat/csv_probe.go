@@ -1,40 +1,114 @@
 package logformat
 
+import (
+	"strings"
+	"unicode"
+)
+
 // csvProbeMinColumns is the number of columns a csv probe needs: in a header
 // row (counting only the columns csvProbeColumn takes) and in a data row. One
 // column means no separator at all, which any line of another format has.
 const csvProbeMinColumns = 2
 
+// csvProbeMinEchoRows is the number of sampled data rows the echo rule of
+// csvProbeSource.plausible needs before it rejects a source: one or two
+// rows that repeat a column name are no evidence (a csv file of the header
+// name,enabled and the single row foo,enabled).
+const csvProbeMinEchoRows = 3
+
 // csvProbeSource is what the csv probe knows of one source of a sample: the
 // columns of its header row (the first line) the probe lists, nil when that
-// is no plausible csv header, the header's full width (all its columns), and
-// how many of its data rows were sampled and how many of them parse as the
-// parser reads them.
+// is no plausible csv header, the header row itself (all its columns, whose
+// number is the header's width), and how many of its data rows were
+// sampled, how many of them parse as the parser reads them and how many of
+// those echo the header (echoesHeader).
 type csvProbeSource struct {
 	columns  []string
-	width    int
+	header   []string
 	rows     int
 	matching int
+	echoing  int
 }
 
 // plausible tells whether the source looks like a csv file: a plausible
 // header and, if data rows were sampled, at least half of them of
 // csvProbeMinColumns up to the header's width (the parser takes rows with
-// fewer columns than the header and rejects only wider ones). A file of
-// another format whose first line happens to hold a comma (e.g. a message of
-// dserver's `|`-separated log) fails here, as its other lines mostly hold
-// none.
+// fewer columns than the header and rejects only wider ones), and, once
+// csvProbeMinEchoRows rows were sampled, no more than half of them echoing
+// the header. A file of another format whose
+// first line happens to hold a comma (e.g. a message of dserver's
+// `|`-separated log) fails the first, as its other lines mostly hold none;
+// a free-text log whose lines hold as many commas as its first line fails
+// the second when its lines repeat a part of the first one: that first line
+// is a line like the others, where a header row names its columns and so
+// differs from its data ("request 1 done, ok" before "request 2 done, ok").
 func (s *csvProbeSource) plausible() bool {
-	return s.columns != nil && 2*s.matching >= s.rows
+	if s.columns == nil || 2*s.matching < s.rows {
+		return false
+	}
+	return s.rows < csvProbeMinEchoRows || 2*s.echoing <= s.rows
 }
 
 // add counts the data row line of the source.
 func (s *csvProbeSource) add(line string) {
 	s.rows++
 	record, err := parseCSVRecord(line)
-	if err == nil && len(record) >= csvProbeMinColumns && len(record) <= s.width {
-		s.matching++
+	if err != nil || len(record) < csvProbeMinColumns || len(record) > len(s.header) {
+		return
 	}
+	s.matching++
+	if s.echoesHeader(record) {
+		s.echoing++
+	}
+}
+
+// echoesHeader tells whether a data row repeats a column of the header row
+// at the same position: a value of the same shape as the column's name
+// (csvSameShape, equal but for the digits of its numbers). Only names with a
+// letter are compared: an empty column is no name, and a name of digits and
+// punctuation only (the years of "2021,2022", "1.5") has the shape of any
+// such value of a real csv file. The record is no wider than the header.
+func (s *csvProbeSource) echoesHeader(record []string) bool {
+	for i, value := range record {
+		if name := s.header[i]; csvHasLetter(name) && csvSameShape(name, value) {
+			return true
+		}
+	}
+	return false
+}
+
+// csvHasLetter tells whether text holds a letter.
+func csvHasLetter(text string) bool {
+	return strings.IndexFunc(text, unicode.IsLetter) >= 0
+}
+
+// csvSameShape tells whether a and b are equal once every run of ASCII
+// digits counts as one and the same number, so "request 1 done" has the
+// shape of "request 22 done".
+func csvSameShape(a, b string) bool {
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		if isASCIIDigit(a[i]) && isASCIIDigit(b[j]) {
+			for i < len(a) && isASCIIDigit(a[i]) {
+				i++
+			}
+			for j < len(b) && isASCIIDigit(b[j]) {
+				j++
+			}
+			continue
+		}
+		if a[i] != b[j] {
+			return false
+		}
+		i++
+		j++
+	}
+	return i == len(a) && j == len(b)
+}
+
+// isASCIIDigit tells whether c is an ASCII digit.
+func isASCIIDigit(c byte) bool {
+	return c >= '0' && c <= '9'
 }
 
 // Probe is the csv format's own probe: the generic probe, plus the columns of
@@ -47,10 +121,15 @@ func (s *csvProbeSource) add(line string) {
 // its first line taken as a header of one column named after that whole line
 // and its other lines as values of it, e.g. in `:fields` and the Tab
 // completion of a dserver log. A sample with no csv source yields an empty
-// result, so the csv format is left out. This is a heuristic with two
+// result, so the csv format is left out. This is a heuristic with three
 // limits: a csv file of a single column is never probed (dmap still queries
-// it), and a free-text log most of whose lines hold one comma (or a few, no
-// more than its first line) is probed as csv all the same.
+// it); neither is a csv file without a header row most of whose rows repeat
+// a value of the first one (its columns would be named after that row's
+// values); and a free-text log most of whose lines hold one comma (or a
+// few, no more than its first line) is probed as csv all the same when, in
+// at least half of its lines, every text between the commas differs from
+// the first line's by more than numbers, or of which fewer than
+// csvProbeMinEchoRows lines after the first were sampled.
 func (p *csvParser) Probe(sample ProbeSample) (ProbeResult, error) {
 	sample, headers := csvProbeSources(sample)
 	if len(sample.Lines) == 0 {
@@ -110,7 +189,7 @@ func csvProbeSources(sample ProbeSample) (ProbeSample, [][]string) {
 // one csv record and keep at least csvProbeMinColumns columns csvProbeColumn
 // takes, else the source has no columns (not plausible). The columns
 // csvProbeColumn drops (e.g. after a trailing comma) still count in the
-// header's width, as they do for the parser.
+// header's width (the kept header row), as they do for the parser.
 func newCSVProbeSource(line string) *csvProbeSource {
 	header, err := parseCSVRecord(line)
 	if err != nil {
@@ -125,7 +204,7 @@ func newCSVProbeSource(line string) *csvProbeSource {
 	if len(columns) < csvProbeMinColumns {
 		return &csvProbeSource{}
 	}
-	return &csvProbeSource{columns: columns, width: len(header)}
+	return &csvProbeSource{columns: columns, header: header}
 }
 
 // dropUnlistedCSVFields deletes the fields of the generic probe that no

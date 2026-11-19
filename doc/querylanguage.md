@@ -112,7 +112,13 @@ FUNCTION := md5sum|maskdigits
   `PATH.query` with the query. A path starting with `append:` is rejected
   (`outfile append:result.csv` read like an append but wrote a new file
   named `append:result.csv`); a file really named so is written as
-  `outfile ./append:result.csv`.
+  `outfile ./append:result.csv`. Only the bare, lower case word `append`
+  before a path is the append mode: `outfile append` alone writes the file
+  `append`, as do the quoted `outfile "append"` and the escaped ``outfile
+  `append` ``, and `outfile append append` appends to it. A word after a
+  quoted or escaped `append` is rejected like any word after the path
+  (``outfile "append" x.csv`` and ``outfile `append` x.csv`` were read as
+  `outfile append x.csv` before; write the bare word to append).
   What is appended depends on how the query is run:
   * `dmap`, and `dtail --query` with an outfile, aggregate cumulatively:
     every interim report holds the whole result so far. With `append` the
@@ -203,11 +209,13 @@ FUNCTION := md5sum|maskdigits
     after the first server's (a server with nothing to send, or trailing
     by more, is in the next table; a connected server that sends nothing,
     e.g. no matching lines, so delays the first table to half an interval
-    after the first server's), and both at most half an interval (so `interval 1` reports half a second after the sends, between
+    after the first server's, or until about a second after its connection
+    ended), and both at most half an interval (so `interval 1` reports half a second after the sends, between
     them). The first table thus shows shortly after the data arrived instead
     of 1.5 intervals after the start; a server whose first aggregates trail
     by more is in the next table. The later reports follow once per
-    interval from then on. Continuous jobs keep reporting
+    interval from then on, each planned from the time the previous one was
+    due, however long that one took. Continuous jobs keep reporting
     every interval after the first half interval. A printed table that has
     no rows or did not change since the last print is not printed again.
     Scheduled jobs report no interim results: they write their outfile once,
@@ -232,8 +240,9 @@ FUNCTION := md5sum|maskdigits
     dserver puts the groups of an interrupted send back into its next
     interval, lines a dserver still batches are aggregated with a later
     interval, and a server's result the client could not merge at once
-    (the global result was busy) joins the global result with that server's
-    next message.
+    (the global result was busy) joins the global result a moment later
+    (the merge is tried again after 10 ms), which can be after the result
+    was reported.
 
   Per function:
   * `count`, `sum`, `min` and `max` only use the lines that have the field;
@@ -277,12 +286,27 @@ cannot be selected together with the aggregation it is named like
 
 ### Special table names
 
-Table names are upper-cased (`from stats` reads `STATS`) and normally match
-log lines of the form `|MAPREDUCE:<TABLENAME>|`. Two table names are special:
+Table names are upper-cased, quoted or not (`from stats` and `from "stats"`
+read `STATS`), and normally match log lines of the form
+`|MAPREDUCE:<TABLENAME>|` by that exact name. A line whose table name holds
+lower-case letters (`|MAPREDUCE:stats|`) is therefore in no table a table
+name selects; only `from *` (every `MAPREDUCE` line) and a query without a
+table (no `from`, or `from .`: every line) read it. The interactive field catalog
+(`:fields`, Tab completion) lists no such table, so that every table it
+offers is one a query can name. It lists the fields and `$variables` of
+those lines without a table instead (`fields:` in `:fields`, offered by Tab
+only while the query names no table) and notes the first such table. A
+table name is taken literally, also where it holds characters with a meaning
+in a regular expression: `from "A+B"` reads the lines of
+`|MAPREDUCE:A+B|` only, and `from A.B` not those of `|MAPREDUCE:AXB|`. Two
+table names are special:
 
 * `from .` — and likewise omitting the `from` clause entirely — matches every
   line.
-* `from *` matches every `MAPREDUCE` line regardless of the table name.
+* `from *` matches every `MAPREDUCE` line (every line holding
+  `|MAPREDUCE:`) regardless of the table name, also those of a table without
+  a name (`|MAPREDUCE:|`) and of a table whose name holds lower-case
+  letters (`|MAPREDUCE:stats|`), which no table name selects.
 
 Also note: a query using the `csv` log format without a `from` clause
 automatically behaves as if `from .` was given, so every line of the CSV file

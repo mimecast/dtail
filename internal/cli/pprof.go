@@ -18,7 +18,7 @@ import (
 // /debug/pprof/block endpoints return empty profiles unless these runtime
 // rates are enabled first; they are off by default in the Go runtime.
 //
-// The values below were validated during task ss0: a mutex profile fraction of
+// The values below were validated by measurement: a mutex profile fraction of
 // 5 (report ~1/5 of contention events) and a block profile rate of 100000ns
 // (record blocking events longer than 100µs) were sufficient to measure
 // outputManager mutex contention — 12.4ms total delay across three concurrent

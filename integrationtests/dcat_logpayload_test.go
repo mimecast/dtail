@@ -34,7 +34,7 @@ func readDailyLog(t *testing.T, dir string) string {
 	return sb.String()
 }
 
-// TestDCatLogPayload verifies Option B of task dt0: the default client log file
+// TestDCatLogPayload verifies what the client log holds: the default client log file
 // (the fout logger's daily file) records diagnostics only, and payload teeing
 // is opt-in via --log-payload. All sub-tests run serverless so the client log
 // output is deterministic (no network timing in diagnostics).

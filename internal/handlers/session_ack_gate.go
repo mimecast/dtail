@@ -20,17 +20,18 @@ type sessionAck struct {
 // sessionAckGate makes the acknowledgement of a SESSION START/UPDATE reach
 // the client ahead of every output of the workload it acknowledges.
 //
-// The session output delivers payload before server messages (task 1c4). An
+// The session output delivers payload before server messages. An
 // acknowledgement queued as a server message after the read commands were
 // dispatched therefore waited behind the whole session output buffer, and
-// on a slow link the client's 2 s acknowledgement wait ran out (task fd4).
+// on a slow link the client's 2 s acknowledgement wait ran out.
 // Now:
 //
 //   - start and update hold the new generation (hold) before they dispatch
 //     its commands, so before any output of it exists;
 //   - output of a held generation is not delivered: payload stays queued
 //     (outputManager.tryRead stops at its first entry), and server and
-//     MapReduce messages the output goroutine takes are deferred, in order;
+//     MapReduce messages and flush errors (takeFlushError) the output
+//     goroutine takes are deferred, in order;
 //   - acknowledgements go to a queue of their own (sessionAcks), which the
 //     output goroutine reads before payload, as soon as that splits no
 //     frame (tryReadSessionAckFirst), and before the other server messages;

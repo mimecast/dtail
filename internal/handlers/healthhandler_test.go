@@ -25,8 +25,8 @@ const (
 )
 
 // TestHealthHandlerIgnoresAuthKey: a health client that registers an auth
-// key first (every dtailhealth before task 7c4 with a readable
-// <auth key>.pub) sends AUTHKEY before health. The health handler must
+// key first (every dtailhealth from before clients.NewHealthClient set
+// NoAuthKey, with a readable <auth key>.pub) sends AUTHKEY before health. The health handler must
 // ignore it without an error and without ending the session, so the health
 // command that follows is answered OK and the session then closes with the
 // handshake. It used to report "Received unknown health command" and shut

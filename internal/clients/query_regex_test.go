@@ -33,11 +33,38 @@ func TestMaprRegexForQueryStaysALiteral(t *testing.T) {
 			wantNoMatch: []string{"INFO|1|MAPREDUCE:OTHER|a=b", "INFO|1|MAPREDUCEXSTATSXa=b"},
 		},
 		{
-			name:        "any table",
-			query:       &mapr.Query{Table: "*"},
-			wantRegex:   `\|MAPREDUCE:\|`,
-			wantMatch:   []string{"INFO|1|MAPREDUCE:|a=b"},
-			wantNoMatch: []string{"INFO|1|MAPREDUCE:STATS|a=b"},
+			// from * reads every MAPREDUCE line, whatever its table, as
+			// doc/querylanguage.md says; it used to match only the lines
+			// of the table without a name.
+			name:      "any table",
+			query:     &mapr.Query{Table: "*"},
+			wantRegex: `\|MAPREDUCE:`,
+			wantMatch: []string{"INFO|1|MAPREDUCE:|a=b", "INFO|1|MAPREDUCE:STATS|a=b",
+				"INFO|1|MAPREDUCE:stats|a=b"},
+			wantNoMatch: []string{"INFO|1|a=b", "INFO|1|XMAPREDUCE:STATS|a=b", "INFO|1|MAPREDUCE|a=b"},
+		},
+		{
+			// A table name is a literal: its regex metacharacters match
+			// themselves only.
+			name:        "table with a plus",
+			query:       &mapr.Query{Table: "A+B"},
+			wantRegex:   `\|MAPREDUCE:A\+B\|`,
+			wantMatch:   []string{"INFO|1|MAPREDUCE:A+B|a=b"},
+			wantNoMatch: []string{"INFO|1|MAPREDUCE:AAB|a=b", "INFO|1|MAPREDUCE:AB|a=b"},
+		},
+		{
+			name:        "table with a dot",
+			query:       &mapr.Query{Table: "A.B"},
+			wantRegex:   `\|MAPREDUCE:A\.B\|`,
+			wantMatch:   []string{"INFO|1|MAPREDUCE:A.B|a=b"},
+			wantNoMatch: []string{"INFO|1|MAPREDUCE:AXB|a=b"},
+		},
+		{
+			name:        "table of metacharacters",
+			query:       &mapr.Query{Table: `A(B)[C]{2}^$?*\D`},
+			wantRegex:   `\|MAPREDUCE:A\(B\)\[C\]\{2\}\^\$\?\*\\D\|`,
+			wantMatch:   []string{`INFO|1|MAPREDUCE:A(B)[C]{2}^$?*\D|a=b`},
+			wantNoMatch: []string{"INFO|1|MAPREDUCE:ABCC|a=b", `INFO|1|MAPREDUCE:A(B)[C]{2}^$?*5|a=b`},
 		},
 	}
 
@@ -132,5 +159,47 @@ func TestNormalizeInteractiveArgsIgnoresInvert(t *testing.T) {
 	if args.RegexStr != `\|MAPREDUCE:STATS\|` || args.RegexInvert {
 		t.Fatalf("normalized args = regex %q invert %v, want the STATS filter, not inverted",
 			args.RegexStr, args.RegexInvert)
+	}
+}
+
+// TestParsedQueryTableFilter runs the table filter of parsed queries over
+// lines of several tables: a from clause selects exactly the lines of its
+// table, from * those of every table and no from clause every line.
+func TestParsedQueryTableFilter(t *testing.T) {
+	t.Parallel()
+
+	lines := []string{
+		"INFO|1|MAPREDUCE:STATS|a=b",
+		"INFO|1|MAPREDUCE:A+B|a=b",
+		"INFO|1|MAPREDUCE:AAB|a=b",
+		"INFO|1|MAPREDUCE:|a=b",
+		"INFO|1|no table",
+	}
+	tests := []struct {
+		query string
+		want  []bool
+	}{
+		{"from STATS select count($line)", []bool{true, false, false, false, false}},
+		{"from stats select count($line)", []bool{true, false, false, false, false}},
+		{`from "A+B" select count($line)`, []bool{false, true, false, false, false}},
+		{"from * select count($line)", []bool{true, true, true, true, false}},
+		{"from . select count($line)", []bool{true, true, true, true, true}},
+		{"select count($line)", []bool{true, true, true, true, true}},
+		{"from NONE select count($line)", []bool{false, false, false, false, false}},
+	}
+	for _, tt := range tests {
+		query, err := mapr.NewQuery(tt.query, logging.NopLogger{})
+		if err != nil {
+			t.Fatalf("NewQuery(%q) error = %v", tt.query, err)
+		}
+		re, err := regex.New(maprRegexForQuery(query), regex.Default)
+		if err != nil {
+			t.Fatalf("%q: regex.New(%q) error = %v", tt.query, maprRegexForQuery(query), err)
+		}
+		for i, line := range lines {
+			if got := re.MatchString(line); got != tt.want[i] {
+				t.Errorf("%q (filter %q) matches %q = %v, want %v", tt.query, re, line, got, tt.want[i])
+			}
+		}
 	}
 }
