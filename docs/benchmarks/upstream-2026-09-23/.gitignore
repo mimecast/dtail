@@ -1,0 +1,3 @@
+# Keep these two intentional evidence files despite the repository CSV ignore.
+!results.csv
+!summary.csv

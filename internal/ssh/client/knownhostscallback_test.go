@@ -21,12 +21,14 @@ type recordingLogger struct {
 	logging.NopLogger
 	debugCount     atomic.Int32
 	infoCount      atomic.Int32
+	warnCount      atomic.Int32
 	errorCount     atomic.Int32
 	paused         atomic.Bool
 	logWhilePaused atomic.Bool
 	debugCh        chan struct{}
 	mutex          sync.Mutex
 	lastError      error
+	lastWarn       error
 }
 
 func (l *recordingLogger) Debug(...any) string {
@@ -49,6 +51,27 @@ func (l *recordingLogger) Info(...any) string {
 		l.logWhilePaused.Store(true)
 	}
 	return ""
+}
+
+func (l *recordingLogger) Warn(args ...any) string {
+	l.warnCount.Add(1)
+	if l.paused.Load() {
+		l.logWhilePaused.Store(true)
+	}
+	for _, arg := range args {
+		if err, ok := arg.(error); ok {
+			l.mutex.Lock()
+			l.lastWarn = err
+			l.mutex.Unlock()
+		}
+	}
+	return ""
+}
+
+func (l *recordingLogger) lastWarnValue() error {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	return l.lastWarn
 }
 
 func (l *recordingLogger) Error(args ...any) string {
@@ -104,6 +127,9 @@ func TestPromptAddHostsLogsAfterResume(t *testing.T) {
 
 			if got := logger.infoCount.Load(); got != 1 {
 				t.Fatalf("Info calls = %d, want 1", got)
+			}
+			if got := logger.warnCount.Load(); got != 0 {
+				t.Fatalf("Warn calls = %d, want 0 for a locked update", got)
 			}
 			if logger.logWhilePaused.Load() {
 				t.Fatal("known-host callback logged before the prompt resumed logging")
@@ -195,7 +221,7 @@ func TestTrustHostsAppendsDistinctExistingEntries(t *testing.T) {
 	callback := testKnownHostsCallback(t, knownHostsPath)
 	unknown := testUnknownHost("new.example:2222", "new")
 
-	if err := callback.trustHosts([]unknownHost{unknown}); err != nil {
+	if _, err := callback.trustHosts([]unknownHost{unknown}); err != nil {
 		t.Fatalf("trustHosts failed: %v", err)
 	}
 
@@ -236,7 +262,7 @@ func TestTrustHostsReplacesExistingEntriesForSameHostAndIP(t *testing.T) {
 	callback := testKnownHostsCallback(t, knownHostsPath)
 	newUnknown := testUnknownHost("replace.example:2222", "new")
 
-	if err := callback.trustHosts([]unknownHost{newUnknown}); err != nil {
+	if _, err := callback.trustHosts([]unknownHost{newUnknown}); err != nil {
 		t.Fatalf("trustHosts failed: %v", err)
 	}
 
@@ -279,7 +305,7 @@ func TestTrustHostsRejectsEscapingKnownHostsSymlink(t *testing.T) {
 	callback := testKnownHostsCallback(t, knownHostsPath)
 	unknown := testUnknownHost("escape.example:2222", "new")
 
-	if err := callback.trustHosts([]unknownHost{unknown}); err == nil {
+	if _, err := callback.trustHosts([]unknownHost{unknown}); err == nil {
 		t.Fatalf("trustHosts succeeded for escaping known_hosts symlink")
 	}
 }

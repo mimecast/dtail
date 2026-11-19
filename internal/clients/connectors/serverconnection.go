@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients/handlers"
+	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/protocol"
 	sessionspec "github.com/mimecast/dtail/internal/session"
@@ -93,7 +94,7 @@ func NewServerConnection(server string, userName string,
 	logger logging.Logger) (*ServerConnection, error) {
 
 	logger = logging.OrNop(logger)
-	logger.Debug(server, "Creating new connection", server, handler, commands)
+	logger.Debug(server, "Creating new connection", server, handler, config.RedactReadShares(commands))
 	sshConnectTimeout := defaultSSHConnectTimeout
 	defaultPort := defaultSSHPort
 	if settings != nil {
@@ -172,7 +173,7 @@ func (c *ServerConnection) RestoreCommittedSession(spec sessionspec.Spec, genera
 
 // Attempt to parse the server port address from the provided server FQDN.
 func (c *ServerConnection) initServerPort(defaultPort int) error {
-	hostname, port, err := parseServerAddress(c.server, defaultPort)
+	hostname, port, err := ParseServerAddress(c.server, defaultPort)
 	if err != nil {
 		return err
 	}
@@ -181,7 +182,10 @@ func (c *ServerConnection) initServerPort(defaultPort int) error {
 	return nil
 }
 
-func parseServerAddress(address string, defaultPort int) (string, int, error) {
+// ParseServerAddress returns the host and the port of a server address as a
+// connection dials them: host, host:port, an IPv6 address, or [ipv6]:port;
+// an address without a port gets defaultPort.
+func ParseServerAddress(address string, defaultPort int) (string, int, error) {
 	if defaultPort < 1 || defaultPort > 65535 {
 		return "", 0, fmt.Errorf("parse server address %q: default port must be between 1 and 65535", address)
 	}

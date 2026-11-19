@@ -52,10 +52,9 @@ func (s *journalReadTestServer) ReaderLogger() logging.Logger {
 	return logging.NopLogger{}
 }
 
-func (s *journalReadTestServer) PrepareReadTarget(path string) (fs.ValidatedReadTarget, bool) {
+func (s *journalReadTestServer) PrepareReadTarget(path string) (fs.ValidatedReadTarget, error) {
 	s.prepared = append(s.prepared, path)
-	target, err := fs.NewValidatedJournalTarget(path)
-	return target, err == nil
+	return fs.NewValidatedJournalTarget(path)
 }
 
 func (s *journalReadTestServer) readCommandDependencies() readCommandDependencies {
@@ -90,6 +89,19 @@ func (s *journalReadTestServer) AcquireReadSlot(ctx context.Context, mode omode.
 	case limiter <- struct{}{}:
 		return func() { <-limiter }, true
 	case <-ctx.Done():
+		return nil, false
+	}
+}
+
+func (s *journalReadTestServer) TryAcquireReadSlot(mode omode.Mode, _ string) (func(), bool) {
+	limiter := s.tailLimiter
+	if mode == omode.CatClient || mode == omode.GrepClient {
+		limiter = s.catLimiter
+	}
+	select {
+	case limiter <- struct{}{}:
+		return func() { <-limiter }, true
+	default:
 		return nil, false
 	}
 }

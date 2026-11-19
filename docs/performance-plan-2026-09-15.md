@@ -1,5 +1,15 @@
 # DTail performance plan (2026-09-15)
 
+The later tasks `y9`, `z9`, `0a`, `1a`, `2a`, `5a` and acceptance gate `3a`
+are covered by the archived 2026-09-23 follow-up:
+`git show 5eece8d:docs/performance-followup-2026-09-23.md`.
+Its local pre-plan control is `d2774f7`, distinct from this plan's `c472f83`.
+
+Standalone historical results referenced below, including `BENCHMARK_RESULTS.md`,
+are retained in Git at `5eece8d`, not in the current tree. The current
+[upstream comparison](upstream-benchmark-2026-09-23.md) is a separate whole-checkout
+measurement, not a rerun of every workload in this implementation plan.
+
 This document records the optimization plan derived from profiling the fork
 after the upstream comparison in `BENCHMARK_RESULTS.md`, the baseline numbers
 to beat, how to benchmark each change, and a results table to fill in as tasks

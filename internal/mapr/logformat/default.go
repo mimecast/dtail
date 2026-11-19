@@ -108,6 +108,19 @@ func (p *defaultParser) MakeFieldsInto(dst map[string]string, maprLine, _ string
 				if p.wantSecond {
 					fields["$second"] = token[13:]
 				}
+			} else if len(token) == 11 {
+				// dserver stamps its own diagnostics MMDD-HHMMSS (11 chars, see
+				// internal/io/dlog/dlog.go), which carries no year and so no
+				// $date. Example: 1002-071143
+				if p.wantHour {
+					fields["$hour"] = token[5:7]
+				}
+				if p.wantMinute {
+					fields["$minute"] = token[7:9]
+				}
+				if p.wantSecond {
+					fields["$second"] = token[9:11]
+				}
 			}
 		case 2:
 			if p.wantPID {

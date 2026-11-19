@@ -20,7 +20,7 @@ func DetectCapabilities() []string {
 
 // ServerCapabilities returns capabilities for an operating system and journalctl availability.
 func ServerCapabilities(goos string, journalctlAvailable bool) []string {
-	capabilities := []string{protocol.CapabilityQueryUpdateV1}
+	capabilities := []string{protocol.CapabilityQueryUpdateV1, protocol.CapabilityCommandFailureV1}
 	if goos == "linux" && journalctlAvailable {
 		capabilities = append(capabilities, protocol.CapabilityJournalV1)
 	}

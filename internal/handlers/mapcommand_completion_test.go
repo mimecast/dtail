@@ -46,17 +46,33 @@ func newMapTestHandler(t *testing.T) *ServerHandler {
 
 func newMapTestHandlerWithReaderLogger(t *testing.T, readerLogger logging.Logger) *ServerHandler {
 	t.Helper()
+	return newMapTestHandlerWithOutput(t, readerLogger, nil)
+}
+
+// newServerlessMapTestHandler builds the handler the in-process serverless
+// runtime builds: one that owns an output writer. Serverless mode is derived
+// from that writer alone, never from the session's "serverless" option.
+func newServerlessMapTestHandler(t *testing.T, readerLogger logging.Logger) *ServerHandler {
+	t.Helper()
+	return newMapTestHandlerWithOutput(t, readerLogger, io.Discard)
+}
+
+func newMapTestHandlerWithOutput(t *testing.T, readerLogger logging.Logger,
+	serverlessOutput io.Writer) *ServerHandler {
+
+	t.Helper()
 	user := &userserver.User{Name: config.ContinuousUser}
 	serverCfg := &config.ServerConfig{
 		MapreduceLogFormat: "default",
 		AuthKeyEnabled:     true,
 	}
 	handler, err := NewServerHandler(context.Background(), user, Dependencies{
-		CatLimiter:   make(chan struct{}, 4),
-		TailLimiter:  make(chan struct{}, 4),
-		ServerConfig: serverCfg,
-		AuthKeyStore: authkey.New(time.Hour, 5),
-		Loggers:      HandlerLoggers{Diagnostics: handlerTestLogger, Reader: readerLogger},
+		CatLimiter:       make(chan struct{}, 4),
+		TailLimiter:      make(chan struct{}, 4),
+		ServerConfig:     serverCfg,
+		AuthKeyStore:     authkey.New(time.Hour, 5),
+		ServerlessOutput: serverlessOutput,
+		Loggers:          HandlerLoggers{Diagnostics: handlerTestLogger, Reader: readerLogger},
 	})
 	if err != nil {
 		t.Fatalf("NewServerHandler: %v", err)
@@ -175,6 +191,12 @@ func (o *testOutput) append(p []byte) string {
 	defer o.mu.Unlock()
 	o.buf.Write(p)
 	return o.buf.String()
+}
+
+// Write makes testOutput usable as a runtime serverless output writer.
+func (o *testOutput) Write(p []byte) (int, error) {
+	o.append(p)
+	return len(p), nil
 }
 
 func (o *testOutput) String() string {
@@ -392,7 +414,7 @@ func TestServerModeMapFollowSessionKeepsStreaming(t *testing.T) {
 // below must come from graceful shutdown's final serialization.
 func TestServerlessMapFollowGracefulShutdownDrainsFinalResult(t *testing.T) {
 	readyLogger := newReaderReadyLogger()
-	handler := newMapTestHandlerWithReaderLogger(t, readyLogger)
+	handler := newServerlessMapTestHandler(t, readyLogger)
 	handler.readTimings.maxLineLength = len(testStatsLine) + 1
 	path := writeTestStatsFile(t, 0)
 

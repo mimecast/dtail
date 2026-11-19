@@ -133,7 +133,7 @@ type payloadFileTeeWriter struct {
 }
 
 func (w payloadFileTeeWriter) Write(p []byte) (int, error) {
-	clientlog.TeePayloadToFile(w.logger, string(p))
+	clientlog.TeePayloadBytesToFile(w.logger, p)
 	return len(p), nil
 }
 

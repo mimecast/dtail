@@ -44,6 +44,11 @@ type ServerConfig struct {
 	// The SSH server bind port.
 	SSHBindAddress string
 	// The max amount of concurrent user connection allowed to connect to the server.
+	// Connections still in their SSH handshake count too. Scheduled jobs whose
+	// servers are all this dserver run in groups of at most the smaller of a
+	// quarter of it and MaxConcurrentCats, divided by the number of servers of
+	// the jobs, and of at least one job; jobs on other dservers, whose limits
+	// the scheduler does not know, run one at a time.
 	MaxConnections int
 	// Rolling inactivity timeout for authenticated SSH sessions, in seconds.
 	// The close lags this value by two to three refresh intervals (see
@@ -52,10 +57,27 @@ type ServerConfig struct {
 	// three whole seconds late); omitting the key or setting it to 0 or less
 	// uses the DefaultIdleSessionTimeoutS 900 second default.
 	IdleSessionTimeoutS int `json:",omitempty"`
-	// The max amount of concurrent cats per server.
+	// The max amount of concurrent cats per server. It also bounds the jobs
+	// of a scheduled job group that run together, as a group read is shared
+	// among at most this many members (see SharedReadsDisable).
 	MaxConcurrentCats int
 	// The max amount of concurrent tails per server.
 	MaxConcurrentTails int
+	// SharedReadsDisable turns shared reads off: shared follow reads and the
+	// shared one-shot reads of scheduled job groups. By default, sessions that
+	// tail the same uncompressed file share one reader of it in dserver, and
+	// each session still filters and processes the lines on its own; a
+	// session that falls behind moves to a reader of its own until it caught
+	// up, and then rejoins the shared reader. The
+	// scheduled jobs that one scheduler run starts together on the same files
+	// of this dserver read each file once for the group (at most
+	// MaxConcurrentCats members per group read, each holding one of the cat
+	// slots during it; a member without a free cat slot when the group read
+	// starts reads on its own; only the scheduler's sessions, of user
+	// DTAIL-SCHEDULE, ask for group reads). With this set, every session reads
+	// the file with a reader of its own, and the scheduler runs its jobs one
+	// at a time.
+	SharedReadsDisable bool `json:",omitempty"`
 	// The max line length until it's split up into multiple smaller lines.
 	MaxLineLength int
 	// The user permissions.

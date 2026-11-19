@@ -48,11 +48,17 @@ _positive_integer() {
 _drop_caches() {
     # Prefer the root-owned, sudoers-whitelisted helper; fall back to the
     # in-repo script for hosts where the invoking user may sudo it directly.
+    # Explicit failure is needed even when our caller is in an if/! condition
+    # (where Bash disables errexit throughout the function call chain).
+    local helper="$_DEFAULT_LOCAL_ROOT/benchmarks/drop_caches.sh"
     if [[ -x /usr/local/sbin/drop-caches ]]; then
-        sudo -n /usr/local/sbin/drop-caches > /dev/null 2>&1 || true
-    else
-        sudo "$_DEFAULT_LOCAL_ROOT/benchmarks/drop_caches.sh" > /dev/null 2>&1 || true
+        helper=/usr/local/sbin/drop-caches
     fi
+    sudo -n "$helper" >> "$_WORKDIR/cache-drops.log" 2>&1 \
+        || _die "cache drop failed; see $_WORKDIR/cache-drops.log"
+    printf 'cache-drop-ok %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        "$helper" >> "$_WORKDIR/cache-drops.log" \
+        || _die "unable to record cache-drop receipt"
 }
 
 [[ $# -gt 0 ]] || {

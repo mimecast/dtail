@@ -133,3 +133,50 @@ func TestDefaultLogFormatQuerySpecificFields(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultLogFormatShortTimestamp(t *testing.T) {
+	// dserver stamps its own diagnostics MMDD-HHMMSS (11 chars, no year, see
+	// internal/io/dlog/dlog.go). Those lines must populate $hour, $minute and
+	// $second too, but never $date.
+	parser, err := NewParser("default", nil)
+	if err != nil {
+		t.Fatalf("Unable to create parser: %s", err.Error())
+	}
+
+	fields, err := parser.MakeFields(
+		"INFO|1002-071143|1|default_test.go:0|8|14|7|0.21|471h0m21s|MAPREDUCE:STATS|foo=bar|bar=foo",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("Parser unable to make fields: %s", err.Error())
+	}
+
+	if val, ok := fields["$time"]; !ok {
+		t.Errorf("Expected field '$time', but no such field there\n")
+	} else if val != "1002-071143" {
+		t.Errorf("Expected '1002-071143' stored in field '$time', but got '%s'\n", val)
+	}
+
+	if val, ok := fields["$hour"]; !ok {
+		t.Errorf("Expected field '$hour', but no such field there\n")
+	} else if val != "07" {
+		t.Errorf("Expected '07' stored in field '$hour', but got '%s'\n", val)
+	}
+
+	if val, ok := fields["$minute"]; !ok {
+		t.Errorf("Expected field '$minute', but no such field there\n")
+	} else if val != "11" {
+		t.Errorf("Expected '11' stored in field '$minute', but got '%s'\n", val)
+	}
+
+	if val, ok := fields["$second"]; !ok {
+		t.Errorf("Expected field '$second', but no such field there\n")
+	} else if val != "43" {
+		t.Errorf("Expected '43' stored in field '$second', but got '%s'\n", val)
+	}
+
+	if _, ok := fields["$date"]; ok {
+		t.Errorf("Expected no field '$date' for a MMDD-HHMMSS timestamp, but found '%s'\n",
+			fields["$date"])
+	}
+}

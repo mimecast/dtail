@@ -10,6 +10,7 @@ import (
 	"github.com/mimecast/dtail/internal/lcontext"
 	mapaggregate "github.com/mimecast/dtail/internal/mapr/aggregate"
 	"github.com/mimecast/dtail/internal/omode"
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 type pendingRegistrationTestServer struct {
@@ -274,6 +275,10 @@ func TestUppercaseReadCommandDoesNotSuppressIdleShutdown(t *testing.T) {
 	defer handler.handleAckCommand(3, []string{".ack", "close", "connection"})
 
 	_ = readServerMessage(t, handler.serverMessages) // Unknown-command diagnostic.
+	if message, want := readServerMessage(t, handler.serverMessages),
+		protocol.HiddenCommandFailedPrefix+commandFailureUnknown+"\n"; message != want {
+		t.Fatalf("message after the diagnostic = %q, want the failed command %q", message, want)
+	}
 	if message := readServerMessage(t, handler.serverMessages); message != ".syn close connection" {
 		t.Fatalf("shutdown message = %q, want close handshake", message)
 	}

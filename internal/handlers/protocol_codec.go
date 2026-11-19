@@ -86,7 +86,7 @@ func (c protocolCodec) handleBase64(args []string, argc int) ([]string, int, err
 	args = strings.Split(decodedStr, " ")
 	argc = len(args)
 	c.log().Trace(c.user, "Base64 decoded received command",
-		decodedStr, argc, args)
+		redactReadShare(decodedStr), argc, argsForLog(args))
 
 	return args, argc, nil
 }

@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -56,6 +58,8 @@ type KnownHostsCallback struct {
 	logger         logging.Logger
 	promptLogger   logging.Logger
 	removeTempFile func(*os.Root, string) error
+	// lockTimeout bounds the wait for another client's known_hosts update.
+	lockTimeout time.Duration
 }
 
 var _ HostKeyCallback = (*KnownHostsCallback)(nil)
@@ -81,6 +85,7 @@ func NewKnownHostsCallback(knownHostsPath string, trustAllHosts bool,
 		logger:          logging.OrNop(logger),
 		promptLogger:    logging.OrNop(promptLogger),
 		removeTempFile:  func(root *os.Root, name string) error { return root.Remove(name) },
+		lockTimeout:     knownHostsLockTimeout,
 	}
 	if trustAllHosts {
 		// Use the same sync.Once path so both the constructor and the
@@ -224,10 +229,13 @@ func (c *KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 	case <-c.trustAllHostsCh:
 		// Trust-all mode is non-interactive; avoid warning-level noise on stdout.
 		c.logger.Debug("Trusting host keys of servers", servers)
-		if err := c.trustHosts(hosts); err != nil {
+		unlocked, err := c.trustHosts(hosts)
+		if err != nil {
 			c.logger.Error("Unable to update known hosts file", c.knownHostsPath, err)
 			c.dontTrustHosts(hosts)
+			return
 		}
+		c.logUnlockedUpdate(unlocked)
 		return
 	default:
 	}
@@ -239,28 +247,30 @@ func (c *KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 	)
 	p := prompt.New(question, c.promptLogger)
 
-	var trustErr error
+	// The prompt pauses logging while it runs the callbacks, so their
+	// results are logged from the end callbacks once logging has resumed.
+	var trustUnlocked, trustErr error
 	a := prompt.Answer{
 		Long:  "yes",
 		Short: "y",
 		Callback: func() {
-			trustErr = c.trustHosts(hosts)
+			trustUnlocked, trustErr = c.trustHosts(hosts)
 			if trustErr != nil {
 				c.dontTrustHosts(hosts)
 			}
 		},
 		EndCallback: func() {
-			c.logTrustHostsResult(trustErr)
+			c.logTrustHostsResult(trustUnlocked, trustErr)
 		},
 	}
 	p.Add(a)
 
-	var trustAllErr error
+	var trustAllUnlocked, trustAllErr error
 	a = prompt.Answer{
 		Long:  "all",
 		Short: "a",
 		Callback: func() {
-			trustAllErr = c.trustHosts(hosts)
+			trustAllUnlocked, trustAllErr = c.trustHosts(hosts)
 			if trustAllErr != nil {
 				c.dontTrustHosts(hosts)
 				return
@@ -270,7 +280,7 @@ func (c *KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 			c.closeTrustAllHostsCh()
 		},
 		EndCallback: func() {
-			c.logTrustHostsResult(trustAllErr)
+			c.logTrustHostsResult(trustAllUnlocked, trustAllErr)
 		},
 	}
 	p.Add(a)
@@ -303,23 +313,75 @@ func (c *KnownHostsCallback) promptAddHosts(hosts []unknownHost) {
 	p.Ask(os.Stdin)
 }
 
-func (c *KnownHostsCallback) logTrustHostsResult(err error) {
+func (c *KnownHostsCallback) logTrustHostsResult(unlocked, err error) {
 	if err != nil {
 		c.logger.Error("Unable to update known hosts file", c.knownHostsPath, err)
 		return
 	}
+	c.logUnlockedUpdate(unlocked)
 	c.logger.Info("Added hosts to known hosts file", c.knownHostsPath)
 }
 
-func (c *KnownHostsCallback) trustHosts(hosts []unknownHost) error {
+// logUnlockedUpdate reports a successful known_hosts update that ran without
+// the lock, which may have dropped another client's concurrent additions.
+// Platforms without advisory locking never lock, so that is only a debug note.
+func (c *KnownHostsCallback) logUnlockedUpdate(unlocked error) {
+	switch {
+	case unlocked == nil:
+	case errors.Is(unlocked, errors.ErrUnsupported):
+		c.logger.Debug("Updated known hosts file without a lock", c.knownHostsPath, unlocked)
+	default:
+		c.logger.Warn("Updated known hosts file without a lock; concurrent "+
+			"updates by other clients may have been lost", c.knownHostsPath, unlocked)
+	}
+}
+
+// trustHosts adds hosts to known_hosts and then trusts them. A nil err with a
+// non-nil unlocked means the update succeeded without the lock, for the reason
+// in unlocked; if err is non-nil it already includes that reason.
+func (c *KnownHostsCallback) trustHosts(hosts []unknownHost) (unlocked, err error) {
+	unlocked, err = c.updateKnownHosts(hosts)
+	if err != nil {
+		return unlocked, err
+	}
+	for _, unknown := range hosts {
+		unknown.responseCh <- trustHost
+	}
+	return unlocked, nil
+}
+
+// updateKnownHosts rewrites known_hosts with hosts first, followed by every
+// existing entry whose address none of hosts replaces. Several dtail clients
+// may do this at the same time, so the read-merge-write runs under an
+// advisory lock and the new content goes through a uniquely named temporary
+// file that is renamed over known_hosts atomically. Without the lock (see
+// lockKnownHosts) the update still succeeds, but may drop another client's
+// concurrent additions.
+func (c *KnownHostsCallback) updateKnownHosts(hosts []unknownHost) (unlocked, err error) {
 	root, rootErr := c.knownHostsFile.OpenRoot()
 	if rootErr != nil {
-		return rootErr
+		return nil, rootErr
 	}
 	defer func() { _ = root.Close() }()
 
-	tmpKnownHostsName := fmt.Sprintf("%s.tmp", c.knownHostsFile.Name())
-	tmpKnownHostsPath := fmt.Sprintf("%s.tmp", c.knownHostsPath)
+	release, lockErr := lockKnownHosts(root, c.knownHostsFile.Name(), c.lockTimeout)
+	defer release()
+
+	if err := c.replaceKnownHosts(root, hosts); err != nil {
+		if lockErr != nil {
+			return lockErr, errors.Join(err, lockErr)
+		}
+		return nil, err
+	}
+	return lockErr, nil
+}
+
+func (c *KnownHostsCallback) replaceKnownHosts(root *os.Root, hosts []unknownHost) error {
+	newFd, tmpKnownHostsName, createErr := createKnownHostsTemp(root, c.knownHostsFile.Name())
+	if createErr != nil {
+		return fmt.Errorf("create temp known hosts file for %s: %w", c.knownHostsPath, createErr)
+	}
+	tmpKnownHostsPath := filepath.Join(filepath.Dir(c.knownHostsPath), tmpKnownHostsName)
 	cleanupTmp := func() error {
 		if removeErr := c.removeTempFile(root, tmpKnownHostsName); removeErr != nil && !os.IsNotExist(removeErr) {
 			return fmt.Errorf("remove temporary known hosts file %s: %w", tmpKnownHostsPath, removeErr)
@@ -327,16 +389,36 @@ func (c *KnownHostsCallback) trustHosts(hosts []unknownHost) error {
 		return nil
 	}
 
-	newFd, openErr := root.OpenFile(tmpKnownHostsName, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if openErr != nil {
-		return fmt.Errorf("open temp known hosts file %s: %w", tmpKnownHostsPath, openErr)
+	if err := c.writeKnownHosts(root, newFd, tmpKnownHostsPath, hosts); err != nil {
+		return errors.Join(err, cleanupTmp())
 	}
-	if chmodErr := newFd.Chmod(0o600); chmodErr != nil {
-		closeErr := closeKnownHostsFile(newFd, tmpKnownHostsPath)
-		return errors.Join(fmt.Errorf("chmod temp known hosts file %s: %w", tmpKnownHostsPath, chmodErr),
-			closeErr, cleanupTmp())
+	// Now, replace old known hosts file
+	if err := root.Rename(tmpKnownHostsName, c.knownHostsFile.Name()); err != nil {
+		return errors.Join(fmt.Errorf("replace known_hosts file %s: %w", c.knownHostsPath, err), cleanupTmp())
 	}
+	return nil
+}
 
+// writeKnownHosts fills the temporary file newFd and always closes it.
+func (c *KnownHostsCallback) writeKnownHosts(root *os.Root, newFd *os.File,
+	tmpKnownHostsPath string, hosts []unknownHost) error {
+
+	if chmodErr := newFd.Chmod(0o600); chmodErr != nil {
+		return errors.Join(fmt.Errorf("chmod temp known hosts file %s: %w", tmpKnownHostsPath, chmodErr),
+			closeKnownHostsFile(newFd, tmpKnownHostsPath))
+	}
+	if err := c.mergeKnownHosts(root, newFd, hosts); err != nil {
+		return errors.Join(err, closeKnownHostsFile(newFd, tmpKnownHostsPath))
+	}
+	if err := newFd.Close(); err != nil {
+		return fmt.Errorf("close temp known hosts file %s: %w", tmpKnownHostsPath, err)
+	}
+	return nil
+}
+
+// mergeKnownHosts writes the lines of hosts, then every line of the current
+// known_hosts file whose address is not one of the newly trusted ones.
+func (c *KnownHostsCallback) mergeKnownHosts(root *os.Root, newFd io.Writer, hosts []unknownHost) error {
 	// Newly trusted hosts in normalized form
 	addresses := make(map[string]struct{})
 	// First write to new known hosts file, and keep track of addresses
@@ -347,21 +429,17 @@ func (c *KnownHostsCallback) trustHosts(hosts []unknownHost) error {
 		addresses[knownhosts.Normalize(unknown.remote.String())] = struct{}{}
 
 		if _, writeErr := fmt.Fprintf(newFd, "%s\n", unknown.hostLine); writeErr != nil {
-			closeErr := closeKnownHostsFile(newFd, tmpKnownHostsPath)
-			return errors.Join(fmt.Errorf("write host known_hosts entry: %w", writeErr), closeErr, cleanupTmp())
+			return fmt.Errorf("write host known_hosts entry: %w", writeErr)
 		}
 		if _, writeErr := fmt.Fprintf(newFd, "%s\n", unknown.ipLine); writeErr != nil {
-			closeErr := closeKnownHostsFile(newFd, tmpKnownHostsPath)
-			return errors.Join(fmt.Errorf("write ip known_hosts entry: %w", writeErr), closeErr, cleanupTmp())
+			return fmt.Errorf("write ip known_hosts entry: %w", writeErr)
 		}
 	}
 
 	// Read old known hosts file, to see which are old and new entries
 	oldFd, oldOpenErr := root.OpenFile(c.knownHostsFile.Name(), os.O_RDONLY|os.O_CREATE, 0o600)
 	if oldOpenErr != nil {
-		closeErr := closeKnownHostsFile(newFd, tmpKnownHostsPath)
-		return errors.Join(fmt.Errorf("open known hosts file %s: %w", c.knownHostsPath, oldOpenErr),
-			closeErr, cleanupTmp())
+		return fmt.Errorf("open known hosts file %s: %w", c.knownHostsPath, oldOpenErr)
 	}
 
 	scanner := bufio.NewScanner(oldFd)
@@ -372,38 +450,16 @@ func (c *KnownHostsCallback) trustHosts(hosts []unknownHost) error {
 
 		if _, ok := addresses[address]; !ok {
 			if _, writeErr := fmt.Fprintf(newFd, "%s\n", line); writeErr != nil {
-				oldCloseErr := closeKnownHostsFile(oldFd, c.knownHostsPath)
-				newCloseErr := closeKnownHostsFile(newFd, tmpKnownHostsPath)
 				return errors.Join(fmt.Errorf("append existing known_hosts entry: %w", writeErr),
-					oldCloseErr, newCloseErr, cleanupTmp())
+					closeKnownHostsFile(oldFd, c.knownHostsPath))
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		oldCloseErr := closeKnownHostsFile(oldFd, c.knownHostsPath)
-		newCloseErr := closeKnownHostsFile(newFd, tmpKnownHostsPath)
 		return errors.Join(fmt.Errorf("scan existing known_hosts entries: %w", err),
-			oldCloseErr, newCloseErr, cleanupTmp())
+			closeKnownHostsFile(oldFd, c.knownHostsPath))
 	}
-
-	if err := oldFd.Close(); err != nil {
-		newCloseErr := closeKnownHostsFile(newFd, tmpKnownHostsPath)
-		return errors.Join(fmt.Errorf("close known hosts file %s: %w", c.knownHostsPath, err),
-			newCloseErr, cleanupTmp())
-	}
-	if err := newFd.Close(); err != nil {
-		return errors.Join(fmt.Errorf("close temp known hosts file %s: %w", tmpKnownHostsPath, err), cleanupTmp())
-	}
-
-	// Now, replace old known hosts file
-	if err := root.Rename(tmpKnownHostsName, c.knownHostsFile.Name()); err != nil {
-		return errors.Join(fmt.Errorf("replace known_hosts file %s: %w", c.knownHostsPath, err), cleanupTmp())
-	}
-
-	for _, unknown := range hosts {
-		unknown.responseCh <- trustHost
-	}
-	return nil
+	return closeKnownHostsFile(oldFd, c.knownHostsPath)
 }
 
 func closeKnownHostsFile(fd *os.File, path string) error {

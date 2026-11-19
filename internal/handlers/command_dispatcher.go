@@ -110,16 +110,19 @@ func applyCommandTimeout(ctx context.Context, args []string, argc int) (context.
 
 func (d *commandDispatcher) handleCommand(command string) {
 	h := d.handler
-	h.Logger().Debug(h.user, command)
+	h.Logger().Debug(h.user, commandForLog(command))
 
 	args, argc, add, err := d.codec.handleProtocolVersion(strings.Split(command, " "))
 	if err != nil {
+		// No failed-command message here: a client of another protocol
+		// version may not know hidden messages or their framing.
 		h.send(h.serverMessages, h.Logger().Error(h.user, err)+add)
 		return
 	}
 	args, argc, err = d.codec.handleBase64(args, argc)
 	if err != nil {
 		h.sendln(h.serverMessages, h.Logger().Error(h.user, err))
+		h.reportCommandFailure(commandFailureProtocol)
 		return
 	}
 
@@ -128,6 +131,7 @@ func (d *commandDispatcher) handleCommand(command string) {
 	if dispatchErr := d.dispatchCommand(ctx, args, argc); dispatchErr != nil {
 		cancel()
 		h.sendln(h.serverMessages, h.Logger().Error(h.user, dispatchErr))
+		h.reportCommandFailure(commandFailureRejected)
 	}
 }
 
@@ -147,6 +151,7 @@ func (d *commandDispatcher) dispatchCommand(ctx context.Context, args []string, 
 		}
 		d.handleOptions(options)
 		ltx = parsedContext
+		ctx = d.withReadShareOption(ctx, options[config.ReadShareOption])
 	}
 
 	if d.prepareCommandContextCb != nil {
@@ -208,9 +213,14 @@ func (d *commandDispatcher) handleOptions(options map[string]string) {
 			h.Logger().Debug(h.user, "Enabling plain mode")
 			d.plain = true
 		}
-		if serverless := options["serverless"]; serverless == "true" {
-			h.Logger().Debug(h.user, "Enabling serverless mode")
-			d.serverless = true
+		// The "serverless" option is deliberately not honoured here. It
+		// decides whether the session payload is written to this process'
+		// own stdout instead of the session transport, which only the
+		// in-process serverless runtime may do. It is derived once from the
+		// runtime (Dependencies.ServerlessOutput) when the handler is built,
+		// so a remote client cannot divert its payload into the dserver log.
+		if options["serverless"] == "true" && !d.serverless {
+			h.Logger().Debug(h.user, "Ignoring serverless option of a non-serverless session")
 		}
 	})
 }

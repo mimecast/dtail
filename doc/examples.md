@@ -11,6 +11,7 @@ This page demonstrates the primary usage of DTail. Please also see `--help` for 
 * How to use `dgrep`
 * How to use `dmap`
 * How to use the DTail serverless mode
+* More examples
 
 ## How to use `dtail`
 
@@ -22,7 +23,8 @@ The following example demonstrates how to follow logs of multiple servers at onc
 % dtail --servers serverlist.txt --grep INFO --files "/var/log/dserver/*.log"
 ```
 
-Hint: you can also provide a comma separated server list, e.g.: `servers server1.example.org,server2.example.org:PORT,...`
+Hint: you can also provide a comma-separated server list, e.g.:
+`--servers server1.example.org,server2.example.org:PORT,...`
 
 ![dtail](dtail.gif "Tail example")
 
@@ -77,7 +79,7 @@ You can also continuously append the results to a CSV file by adding `outfile ap
 
 The following example demonstrates how to cat files (display the full content of the files) of multiple servers at once.
 
-As you can see in this example, a DTail client also creates a local log file of all received data in `~/log`. You can also use the `noColor` and `-plain` flags (this all also work with other DTail commands than `dcat`).
+The default client logger (`fout`) writes a daily diagnostics file to `~/log/YYYYMMDD.log` containing only the small connection/audit diagnostics (INFO/WARN/ERROR lines); the retrieved payload itself goes to stdout only. If you also want the payload teed into that daily log file, add the `--log-payload` flag (or set `Client.LogPayload` in the config). You can also use the `noColor` and `-plain` flags (this all also work with other DTail commands than `dcat`). To log to stdout only or to no log file at all, use `--logger stdout` or `--logger none`; `--logger file` writes to the log file only.
 
 ```shell
 % dcat --servers serverlist.txt --files /etc/hostname
@@ -105,7 +107,7 @@ Generally, `dgrep` is also a very useful way to search historic application logs
 
 ![dgrep](dgrep.gif "Grep example")
 
-Hint: `-regex` is an alias for `-grep`.
+Hint: `--grep` is an alias for `--regex`.
 
 ## How to use `dmap`
 
@@ -113,7 +115,7 @@ To run a map-reduce aggregation over logs written in the past, the `dmap` comman
 
 ```shell
 % dmap --servers serverlist.txt \
-    --files '/var/log/dserver/*.log'
+    --files '/var/log/dserver/*.log' \
     --query 'from STATS select $hostname,max($goroutines),max($cgocalls),$loadavg,lifetimeConnections group by $hostname order by max($cgocalls)'
 ```
 
@@ -127,21 +129,21 @@ Until now, all examples so far required to have remote server(s) to connect to. 
 
 The serverless mode does not require any `dserver` up and running and therefore there is no networking/SSH involved. 
 
-All commands shown so far also work in a serverless mode. All what needs to be done is to omit a server list. The DTail client then starts in serverless mode.
+All commands shown so far also work in a serverless mode. All what needs to be done is to omit a server list. The DTail client then starts in serverless mode. The explicit spelling `--servers serverless` works as well. Note that serverless mode defaults to log level `warn` unless you override it (e.g. with `--logLevel info`).
 
 ### Serverless map-reduce query
 
 The following `dmap` example is the same as the previously shown one, but the difference is that it operates on a local log file directly:
 
 ```shell
-% dmap --files /var/log/dserver/dserver.log
+% dmap --files /var/log/dserver/dserver.log \
     --query 'from STATS select $hostname,max($goroutines),max($cgocalls),$loadavg,lifetimeConnections group by $hostname order by max($cgocalls)'
 ```
 
 As a shorthand version the following command can be used:
 
 ```shell
-% dmap 'from STATS select $hostname,max($goroutines),max($cgocalls),$loadavg,lifetimeConnections group by $hostname order by max($cgocalls)' /var/log/dsever/dserver.log
+% dmap 'from STATS select $hostname,max($goroutines),max($cgocalls),$loadavg,lifetimeConnections group by $hostname order by max($cgocalls)' /var/log/dserver/dserver.log
 ```
 
 You can also use a file input pipe as follows:
@@ -193,9 +195,46 @@ diff /etc/test /etc/passwd
 ```
 
 ```shell
-dgrep --regex ERROR --files /var/log/dserver/dsever.log
+dgrep --regex ERROR --files /var/log/dserver/dserver.log
 ```
 
 ```shell
-dgrep --before 10 --after 10 --max 10 --grep ERROR /var/log/dserver/dsever.log
+dgrep --before 10 --after 10 --max 10 --grep ERROR /var/log/dserver/dserver.log
+```
+
+## More examples
+
+Follow the systemd journal of a unit on all servers (Linux servers advertising the `journal-v1` capability, i.e. with `journalctl` on `PATH`):
+
+```shell
+% dtail --servers serverlist.txt journal:myapp.service
+```
+
+Keep a `dgrep` run open and reload the query in-flight (see the [Interactive Query Reload documentation](interactive-query.md)):
+
+```shell
+% dgrep --servers serverlist.txt --files '/var/log/dserver/*.log' --grep ERROR --interactive-query
+:reload --grep WARN
+```
+
+A few more one-liners:
+
+```shell
+% dgrep --servers serverlist.txt --invert --grep INFO --files '/var/log/dserver/*.log'
+# Prints all lines NOT matching the regex
+```
+
+```shell
+% dcat --servers serverlist.txt --trustAllHosts /etc/hostname
+# Skips the unknown-host trust prompt (use with care)
+```
+
+```shell
+% dtail --servers serverlist.txt --user paul --files '/var/log/dserver/*.log'
+# Connects as SSH user "paul" instead of the local system user
+```
+
+```shell
+% dcat --servers serverlist.txt --log-payload /etc/hostname
+# Also tees the retrieved payload into the daily client log file ~/log/YYYYMMDD.log
 ```

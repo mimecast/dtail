@@ -6,13 +6,18 @@
     "MaxConcurrentTails": 50,
     "MaxConnections": 50,
     "MapreduceLogFormat" : "default",
-    "HostKeyFile" : "cache/ssh_host_key",
-    "HostKeyBits" : 2048
+    "HostKeyPath" : "cache/ssh_host_key",
+    "HostKeyBits" : 4096,
+    "Permissions": {
+      "Default": [
+        "readfiles:^/var/log/.*$"
+      ]
+    }
   },
   "Common": {
     "LogDir": "/var/log/dserver",
     "Logger": "Fout",
-    "LogLevel": "Trace",
+    "LogLevel": "Info",
     "LogRotation": "Daily",
     "CacheDir": "cache",
     "SSHPort": 2222,

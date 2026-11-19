@@ -40,6 +40,10 @@ func (s *recordingReadSlots) AcquireReadSlot(_ context.Context, mode omode.Mode,
 	return func() { <-limiter }, true
 }
 
+func (s *recordingReadSlots) TryAcquireReadSlot(omode.Mode, string) (func(), bool) {
+	return nil, false
+}
+
 func TestReaderFactorySelectsModeBehaviorAndLimiter(t *testing.T) {
 	tests := []struct {
 		name         string

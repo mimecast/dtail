@@ -3,7 +3,7 @@ Log Formats
 
 You may have looked at the [DTail Query Language](./querylanguage.md) and wondered how to make DTail understand your own log format(s). If DTail doesn't know your log format, it won't be able to extract much useful information from your logs. This information then can be used as fields (e.g. variables) by the Query Language.
 
-You could either make your application follow the DTail default log format, or you would need to implement a custom log format. Have a look at `./integrationtests/mapr_testdata.log` for an example a log file in the DTail default format.
+You could either make your application follow the DTail default log format, or you would need to implement a custom log format. Have a look at `./integrationtests/mapr_testdata.log` for an example of a log file in the DTail default format.
 
 ## Available log formats
 
@@ -11,9 +11,12 @@ The following log formats are currently available out of the box:
 
 * `default` - The default DTail log format
 * `generic` - A generic log format with a simple set of fields
-* `generickv` - A simple log format expecting all log lines in form of `field1=value1|field2=value2|...`
-* `csv` - A simple CSV format expecting all files a comma separated CSV file. The first line of the file must be the CSV header.
-* `custom1` and `custom2` - Customizable log formats.
+* `generickv` - A simple log format expecting all log lines in the form of `field1=value1|field2=value2|...`
+* `csv` - A simple CSV format expecting all files to be comma separated CSV files. The first line of the file must be the CSV header.
+* `mimecast` and `mimecastgeneric` - Registered built-ins for Mimecast log formats. In the open source build these are stubs that return an error (`the mimecast logformat is not available in this build of DTail`); the real parsers are only compiled in with the proprietary build tag.
+* `custom1` and `custom2` - Customizable log formats. Out of the box these are templates returning a "not implemented" error; register your own parsers under these names (see below) to use them.
+
+Selecting a log format whose parser cannot be created — an unregistered name, or the `custom1`/`custom2`/`mimecast` stubs in a build without them — makes `dserver` log an error and fall back to the `generic` parser.
 
 ### Selecting a log format
 
@@ -31,7 +34,7 @@ As an example, let's have a look at the `generickv` log format's implementation.
 
 ```go
 type genericKVParser struct {
-	defaultParser
+	base defaultParser
 }
 
 func newGenericKVParser(hostname, timeZoneName string, timeZoneOffset int) (*genericKVParser, error) {
@@ -39,31 +42,37 @@ func newGenericKVParser(hostname, timeZoneName string, timeZoneOffset int) (*gen
 	if err != nil {
 		return &genericKVParser{}, err
 	}
-	return &genericKVParser{defaultParser: *defaultParser}, nil
+	return &genericKVParser{base: *defaultParser}, nil
 }
 
-func (p *genericKVParser) MakeFields(maprLine, _ string) (map[string]string, error) {
-	splitted := strings.Split(maprLine, protocol.FieldDelimiter)
-	fields := make(map[string]string, len(splitted))
-
-	fields["*"] = "*"
-	fields["$line"] = maprLine
-	fields["$empty"] = ""
-	fields["$hostname"] = p.hostname
-	fields["$server"] = p.hostname
-	fields["$timezone"] = p.timeZoneName
-	fields["$timeoffset"] = p.timeZoneOffset
-
-	for _, kv := range splitted[0:] {
-		keyAndValue := strings.SplitN(kv, "=", 2)
-		if len(keyAndValue) != 2 {
-			//dlog.Common.Debug("Unable to parse key-value token, ignoring it", kv)
-			continue
+func (p *genericKVParser) MakeFields(maprLine, sourceID string) (map[string]string, error) {
+	fields := make(map[string]string, p.base.fieldsCapacity)
+	if err := p.MakeFieldsInto(fields, maprLine, sourceID); err != nil {
+		if errors.Is(err, ErrIgnoreFields) {
+			return nil, err
 		}
-		fields[keyAndValue[0]] = keyAndValue[1]
+		return fields, err
+	}
+	return fields, nil
+}
+
+func (p *genericKVParser) MakeFieldsInto(dst map[string]string, maprLine, _ string) error {
+	clear(dst)
+	p.base.addDefaultFields(dst, maprLine)
+	start := 0
+
+	for {
+		token, next, done := protocol.ScanField(maprLine, start)
+		// Generic key-value logs may mix structured and unstructured fields.
+		// Ignore malformed fields while continuing to parse later tokens.
+		_ = p.base.addKeyValueField(dst, token)
+		if done {
+			break
+		}
+		start = next
 	}
 
-	return fields, nil
+	return nil
 }
 ```
 
@@ -71,9 +80,16 @@ func (p *genericKVParser) MakeFields(maprLine, _ string) (map[string]string, err
 
 * `maprLine` is the whole raw log line to be parsed by the log format.
 * `sourceID` is the stable identifier of the log file / stream the line came from. Stateful parsers (e.g. CSV with a header row per file) should key their per-file state by this value; stateless parsers may ignore it.
-* `protocol.FieldDelimiter` is the field delimiter used by the log format, here: `|`.
+* `protocol.ScanField` scans the next `|`-delimited field of the line. The delimiter itself is an implementation detail of the protocol package (`|` for log fields, `protocol.CSVDelimiter` `,` for CSV fields).
 * All field names starting with `$` are variables. They store some custom values.
 * All other fields are bareword-fields and are extracted from the log lines directly, e.g. `field1=value1|field2=value2|...`
+
+Two interfaces matter here:
+
+* `Parser` declares `MakeFields(maprLine, sourceID string) (map[string]string, error)` — allocate a field map and parse the line into it.
+* `FieldsIntoParser` declares the optional, allocation-free hot-path form `MakeFieldsInto(dst map[string]string, maprLine, sourceID string) error` — fill a map owned by the caller (clear it first). The MapReduce aggregator prefers this form when a parser implements it and falls back to `MakeFields` otherwise.
+
+A parser that keeps per-source state (like the CSV parser keeps header rows) should also implement `SourceReleaser` (`ReleaseSource(sourceID string)`), which the aggregator calls once it has parsed the last line of a source.
 
 ## Log format variables
 
@@ -95,15 +111,16 @@ These variables may only exist in the DTail default log format (see `internal/ma
 
 *Date and time:*
 
+* `$date` - The date in format YYYYMMDD. Only populated for timestamps carrying a year, i.e. the 15 character `YYYYMMDD-HHMMSS` form below.
 * `$hour` - The hour in format HH
 * `$minute` - The minute in format MM
-* `$second` - The second in format SS.
-* `$time` - The time in format YYYYMMDD-HHMMSS
+* `$second` - The second in format SS
+* `$time` - The raw timestamp token as it appears in the log line. The default format accepts two timestamp forms: the 15 character `YYYYMMDD-HHMMSS` form (e.g. `20211002-071209`), which populates `$date`, `$hour`, `$minute` and `$second`, and the 11 character `MMDD-HHMMSS` form (e.g. `1002-071143`) that `dserver` stamps onto its own diagnostics lines (see `internal/io/dlog/dlog.go`), which carries no year and therefore populates only `$hour`, `$minute` and `$second` but not `$date`.
 
 *Log level/severity:*
 
 * `$loglevel` - Alias for `$severity`
-* `$severity` - The log severity, one of `FATAL`, `ERROR`, `WARN`, `INFO`, `VERBOSE`, `DEBUG`, `DEVEL`, `TRACE`
+* `$severity` - The log severity. Note that in practice the default parser only accepts lines whose first field starts with `INFO` (all other lines are ignored with `ErrIgnoreFields`), so on the lines the default parser actually processes, `$severity`/`$loglevel` is always `INFO`.
 
 *System and Go runtime:*
 
@@ -123,13 +140,26 @@ What needs to be done is to place your own implementation into the `logformat` s
 % cp internal/mapr/logformat/generic.go internal/mapr/logformat/foo.go
 ```
 
-... and replace `generic` ` with your format's name `foo`:
+... and replace `generic` with your format's name `foo`:
 
 ```go
 package logformat
 
+import (
+	"errors"
+
+	"github.com/mimecast/dtail/internal/mapr"
+	"github.com/mimecast/dtail/internal/protocol"
+)
+
 type fooParser struct {
-	defaultParser
+	// Keep the defaultParser in a named field, NOT as an embedded field:
+	// embedding it would promote defaultParser.MakeFieldsInto onto
+	// fooParser, so the allocation-free path would silently parse every
+	// line in DTail's own MAPREDUCE layout instead of yours (see the
+	// FieldsIntoParser doc comment in parser.go). With a named field the
+	// compiler insists on a MakeFieldsInto of your own.
+	base defaultParser
 }
 
 func newFooParser(hostname, timeZoneName string, timeZoneOffset int) (*fooParser, error) {
@@ -137,20 +167,63 @@ func newFooParser(hostname, timeZoneName string, timeZoneOffset int) (*fooParser
 	if err != nil {
 		return &fooParser{}, err
 	}
-	return &fooParser{defaultParser: *defaultParser}, nil
+	return &fooParser{base: *defaultParser}, nil
+}
+
+func (p *fooParser) setQuery(query *mapr.Query) {
+	// Lets the base parser populate only the fields the query needs.
+	p.base.setQuery(query)
 }
 
 func (p *fooParser) MakeFields(maprLine, sourceID string) (map[string]string, error) {
-	fields := make(map[string]string, 3)
-
-	..
-	<YOUR CUSTOM CODE HERE>
-	..
-
+	fields := make(map[string]string, p.base.fieldsCapacity)
+	if err := p.MakeFieldsInto(fields, maprLine, sourceID); err != nil {
+		if errors.Is(err, ErrIgnoreFields) {
+			return nil, err
+		}
+		return fields, err
+	}
 	return fields, nil
+}
+
+func (p *fooParser) MakeFieldsInto(dst map[string]string, maprLine, _ string) error {
+	clear(dst)
+	p.base.addDefaultFields(dst, maprLine)
+	start := 0
+
+	for {
+		token, next, done := protocol.ScanField(maprLine, start)
+		..
+		<YOUR CUSTOM CODE HERE>
+		..
+		if done {
+			break
+		}
+		start = next
+	}
+
+	return nil
 }
 ```
 
-Next, `NewParser(...)` in `internal/mapr/logformat/parser.go` needs to be extended, so that the new log format is part of the switch statement. If you don't want to edit `parser.go` then you could instead use `custom1` or `custom2` log formats, there are ready templates available in the `logformat` package.
+Populate fields through `p.base.addDefaultFields(...)` (the common `$`-variables), `p.base.addDynamicField(...)`/`p.base.addKeyValueField(...)` (bareword fields, honoring the query's field plan) and `protocol.ScanField` — not by writing raw keys into the map by hand. If your parser ignores a line, return `ErrIgnoreFields`.
 
-Once done, recompile DTail. DTail now understands `... logformat foo` (see "Seleting a log format" above).
+Next, the new log format needs to be registered. There is no switch statement to extend: `NewParser` looks parsers up in a registry of parser factories (see `internal/mapr/logformat/parser.go`). The built-in formats are registered there via `registerBuiltInParsers`, but since your file lives in the same package you can simply register yours from an `init` function in `foo.go`:
+
+```go
+func init() {
+	mustRegisterParser("foo", wrapParserFactory(newFooParser))
+}
+```
+
+`logformat.RegisterParser("name", factory)` is exported, too, so code outside the `logformat` package can register (or replace) a parser without touching the package at all. That is the intended way to implement the `custom1` and `custom2` template formats in your own code:
+
+```go
+func init() {
+	logformat.RegisterParser("custom1", func(hostname, timeZoneName string, timeZoneOffset int) (logformat.Parser, error) {
+		return newMyCustom1Parser(hostname, timeZoneName, timeZoneOffset)
+	})
+}
+```
+
+Once done, recompile DTail. DTail now understands `... logformat foo` (see "Selecting a log format" above).

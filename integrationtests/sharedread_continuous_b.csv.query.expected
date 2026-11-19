@@ -1,0 +1,1 @@
+from STATS select count($line),max(lifetimeConnections) group by $hostname where lifetimeConnections >= 3 interval 1 outfile ./sharedread_continuous_b.csv.tmp

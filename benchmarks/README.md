@@ -2,6 +2,9 @@
 
 This directory contains comprehensive benchmarks for the DTail toolset (dcat, dgrep, dmap).
 
+Current measured results: [upstream versus local, 2026-09-23](../docs/upstream-benchmark-2026-09-23.md),
+including both serverless and SSH server workloads.
+
 ## Overview
 
 The benchmarking framework tests performance across:
@@ -38,6 +41,27 @@ make benchmark-upstream
 The upstream checkout defaults to `../dtail-upstream`. See
 [`upstream_comparison_plan.md`](upstream_comparison_plan.md) for the pinned
 revision, fairness controls, workloads, metrics, and result interpretation.
+
+### Makefile Targets
+
+The top-level Makefile wraps the benchmark runner (`dtail-tools benchmark`);
+all of these build the binaries and `dtail-tools` first, so they can be run
+straight from a fresh checkout:
+
+```bash
+# Run the full benchmark suite
+make benchmark
+
+# Quick benchmarks (smaller datasets, faster feedback)
+make benchmark-quick
+
+# Full benchmarks with 3x iterations (longer runs, more stable results)
+make benchmark-full
+
+# Drop the OS disk caches before a benchmark run for cold-cache measurements
+# (uses sudo; see benchmarks/drop_caches.sh)
+make drop-caches
+```
 
 ### Quick Benchmarks (Small Files Only)
 ```bash

@@ -7,15 +7,19 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mimecast/dtail/internal/ctxutil"
 	"github.com/mimecast/dtail/internal/io/fs"
+	"github.com/mimecast/dtail/internal/io/fs/readhub"
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/logging"
 	mapaggregate "github.com/mimecast/dtail/internal/mapr/aggregate"
 	"github.com/mimecast/dtail/internal/omode"
+	"github.com/mimecast/dtail/internal/protocol"
 	"github.com/mimecast/dtail/internal/regex"
+	user "github.com/mimecast/dtail/internal/sessionuser"
 )
 
 type readCommand struct {
@@ -34,7 +38,28 @@ type readCommand struct {
 	shutdownCoordinator  *shutdownCoordinator
 	inputBatch           *commandBatch
 	inputBatchRead       commandBatchRead
+	// followShared follows a file through the shared reader of dserver's read
+	// hub; nil when there is no hub and every read is private.
+	followShared func(context.Context, readhub.Session) error
+	// readGroup reads a file once for a group of sessions through dserver's
+	// read hub; nil when there is no hub.
+	readGroup groupReadFunc
+	// failureReported is set once the client was told that this command
+	// failed (see reportFailure).
+	failureReported atomic.Bool
 }
+
+// Reasons a read command reports with reportFailure. They name no path and no
+// server-side error: those are in the server log only, like the warnings the
+// client gets ("check server logs").
+const (
+	readFailureCommand     = protocol.CommandFailureReadCommand
+	readFailureNoFile      = protocol.CommandFailureNoFile
+	readFailureGlobCapped  = protocol.CommandFailureGlobCapped
+	readFailurePermission  = protocol.CommandFailurePermission
+	readFailureReader      = protocol.CommandFailureReader
+	readFailureReadingFile = protocol.CommandFailureReadingFile
+)
 
 type pendingInputReservationKeyType struct{}
 
@@ -152,6 +177,8 @@ func newReadCommandWithDependencies(dependencies readCommandDependencies, mode o
 		newLineWriter: dependencies.newLineWriter,
 		abort:         dependencies.abortAfterPanic,
 		serverless:    dependencies.serverless,
+		followShared:  followSharedFunc(dependencies.readHub),
+		readGroup:     groupReadFuncFor(dependencies.readHub),
 		aggregate:     aggregate,
 		mode:          mode,
 		shutdownCoordinator: newShutdownCoordinator(dependencies.lifecycle, dependencies.aggregates,
@@ -174,6 +201,7 @@ func (r *readCommand) Start(ctx context.Context, ltx lcontext.LContext,
 		if err != nil {
 			r.sendServerMessage(ctx, r.logger.Error(r.logContext,
 				"Unable to parse command", err))
+			r.reportFailure(ctx, readFailureCommand)
 			return
 		}
 		re = deserializedRegex
@@ -181,6 +209,7 @@ func (r *readCommand) Start(ctx context.Context, ltx lcontext.LContext,
 	if argc < 3 {
 		r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
 			"Unable to parse command", args, argc))
+		r.reportFailure(ctx, readFailureCommand)
 		return
 	}
 
@@ -292,6 +321,7 @@ func (r *readCommand) readGlob(ctx context.Context, ltx lcontext.LContext,
 			r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
 				"Glob expansion exceeded server limit, only first targets served",
 				"limit", maxTargets, "matched", len(paths)))
+			r.reportFailure(ctx, readFailureGlobCapped)
 			paths = paths[:maxTargets]
 		}
 
@@ -301,6 +331,7 @@ func (r *readCommand) readGlob(ctx context.Context, ltx lcontext.LContext,
 
 	r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
 		"Giving up to read file(s)"))
+	r.reportFailure(ctx, readFailureNoFile)
 }
 
 func (r *readCommand) readFiles(ctx context.Context, ltx lcontext.LContext,
@@ -316,9 +347,17 @@ func (r *readCommand) readFiles(ctx context.Context, ltx lcontext.LContext,
 	r.logger.Info(r.logContext, "Added pending files", "count", len(paths), "totalPending", totalPending)
 
 	var wg sync.WaitGroup
+	var skipped atomic.Int32
 	wg.Add(len(paths))
 	for _, path := range paths {
-		go r.readFileIfPermissions(ctx, ltx, &wg, path, glob, re)
+		go func() {
+			// Completion includes the returned result's accounting, not just
+			// the read and its cleanup: Wait must observe every skipped path.
+			defer wg.Done()
+			if r.readFileIfPermissions(ctx, ltx, path, glob, re) {
+				skipped.Add(1)
+			}
+		}()
 	}
 	wg.Wait()
 
@@ -328,6 +367,15 @@ func (r *readCommand) readFiles(ctx context.Context, ltx lcontext.LContext,
 	case <-ctx.Done():
 		return
 	default:
+	}
+
+	// A glob that matched only paths that are no regular files (e.g. only
+	// directories) read nothing, like a glob that matched no path.
+	if int(skipped.Load()) == len(paths) {
+		r.logger.Error(r.logContext, "No regular file(s) to read", glob)
+		r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+			"Unable to read file(s), check server logs"))
+		r.reportFailure(ctx, readFailureNoFile)
 	}
 
 	// The handler owns output draining and the epoch-protected EOF handshake.
@@ -364,25 +412,45 @@ func (r *readCommand) releasePendingInputReservation(ctx context.Context) {
 	r.shutdownCoordinator.onFileProcessed(ctx, "unresolved read command")
 }
 
+// readFileIfPermissions reads path if the session may read it. It reports
+// true when it skipped path as it is no regular file (e.g. a directory a glob
+// matched), which is not a failure: such a path is skipped silently, as it
+// has no lines to read.
 func (r *readCommand) readFileIfPermissions(ctx context.Context, ltx lcontext.LContext,
-	wg *sync.WaitGroup, path, glob string, re regex.Regex) {
+	path, glob string, re regex.Regex) (skipped bool) {
 
 	defer recoverHandlerPanic(r.logger, r.logContext, "file read cleanup", r.abortAfterPanic)
-	defer wg.Done()
 	defer func() {
 		r.shutdownCoordinator.onFileProcessed(ctx, path)
 	}()
 	defer recoverHandlerPanic(r.logger, r.logContext, "file read", r.abortAfterPanic)
 
 	globID := r.makeGlobID(ctx, path, glob)
-	target, ok := r.server.PrepareReadTarget(path)
-	if !ok {
+	target, err := r.server.PrepareReadTarget(path)
+	switch {
+	case err == nil:
+		r.read(ctx, ltx, path, &target, globID, re)
+		return false
+	case errors.Is(err, fs.ErrNotRegularFile):
+		r.logger.Info(r.logContext, "Skipping path that is not a regular file", path, globID)
+		return true
+	case errors.Is(err, os.ErrNotExist):
+		r.logger.Error(r.logContext, "File to read does not exist (anymore)", path, globID, err)
+		r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+			"Unable to read file(s), check server logs"))
+		r.reportFailure(ctx, readFailureNoFile)
+	case errors.Is(err, user.ErrReadPermissionDenied):
 		r.logger.Error(r.logContext, "No permission to read file", path, globID)
 		r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
 			"Unable to read file(s), check server logs"))
-		return
+		r.reportFailure(ctx, readFailurePermission)
+	default:
+		r.logger.Error(r.logContext, "Unable to read file", path, globID, err)
+		r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+			"Unable to read file(s), check server logs"))
+		r.reportFailure(ctx, readFailureReadingFile)
 	}
-	r.read(ctx, ltx, path, &target, globID, re)
+	return false
 }
 
 func (r *readCommand) read(ctx context.Context, ltx lcontext.LContext,
@@ -395,7 +463,7 @@ func (r *readCommand) read(ctx context.Context, ltx lcontext.LContext,
 	defer closeServerMessages()
 
 	factory := readerFactoryFor(r.mode)
-	reader, limiter, err := factory(readerFactoryOptions{
+	readerOptions := readerFactoryOptions{
 		slots:          r.server,
 		target:         target,
 		path:           path,
@@ -403,22 +471,7 @@ func (r *readCommand) read(ctx context.Context, ltx lcontext.LContext,
 		serverMessages: serverMessages,
 		maxLineLength:  r.timings.maxLineLength,
 		logger:         r.readerLogger,
-	})
-	if err != nil {
-		message := "Unable to create file reader"
-		if target != nil && target.Kind == fs.JournalKind {
-			message = "Unable to read journal"
-		}
-		r.sendServerMessage(ctx, r.logger.Warn(r.logContext, message, err))
-		return
 	}
-
-	release, acquired := limiter(ctx, path)
-	if !acquired {
-		return
-	}
-	defer release()
-
 	// Output is the one and only read path. read() is only ever invoked for the
 	// cat/grep/tail command handlers (see makeReadCommandHandler), and MapReduce
 	// always builds a Aggregate for both server mode and serverless (see
@@ -432,6 +485,37 @@ func (r *readCommand) read(ctx context.Context, ltx lcontext.LContext,
 	r.logger.Debug(r.logContext, "Selecting read mode",
 		"mode", r.mode, "hasAggregate", r.aggregate != nil)
 	r.logger.Info(r.logContext, "Using turbo mode for reading", path, "mode", r.mode, "hasAggregate", r.aggregate != nil)
+	// A group member waits for the other members holding no cat slot; its
+	// group read takes the slot for it (see readWithGroup). The group read
+	// makes the reader it needs itself, so this is decided before a private
+	// reader is made.
+	if group, ok := r.readShareGroup(ctx, target); ok && r.readWithGroup(ctx, ltx, re, readerOptions, group) {
+		return
+	}
+
+	reader, limiter, err := factory(readerOptions)
+	if err != nil {
+		message := "Unable to create file reader"
+		if target != nil && target.Kind == fs.JournalKind {
+			message = "Unable to read journal"
+		}
+		r.sendServerMessage(ctx, r.logger.Warn(r.logContext, message, err))
+		r.reportFailure(ctx, readFailureReader)
+		return
+	}
+
+	release, acquired := limiter(ctx, path)
+	if !acquired {
+		return
+	}
+	defer release()
+
+	// The session's own PrepareReadTarget succeeded and it holds a read slot of
+	// its own, exactly as for a private read, before it may join a shared one.
+	if r.shouldShareRead(ltx, target, path) {
+		r.readShared(ctx, ltx, re, readerOptions)
+		return
+	}
 	r.readWithProcessor(ctx, ltx, path, globID, re, reader)
 }
 
@@ -455,6 +539,7 @@ func (r *readCommand) executeReadLoop(ctx context.Context, ltx lcontext.LContext
 			if errors.Is(err, fs.ErrReaderWorkerPanic) {
 				panic(err)
 			}
+			r.reportFailure(ctx, readFailureReadingFile)
 		}
 
 		select {
@@ -547,6 +632,19 @@ func (r *readCommand) makeGlobID(ctx context.Context, path, glob string) string 
 
 	r.sendServerMessage(ctx, r.logger.Warn("Empty file path given?", path, glob))
 	return ""
+}
+
+// reportFailure tells the client, once per command, that this read failed and
+// its output is incomplete (see protocol.HiddenCommandFailedPrefix). It is
+// sent through the same channel as the command's other messages and before
+// the command ends, so it reaches the client before the session's close
+// handshake. Nothing is sent once ctx is done: the session is ending without
+// its close handshake then, which clients recognise as incomplete anyway.
+func (r *readCommand) reportFailure(ctx context.Context, reason string) {
+	if ctx.Err() != nil || !r.failureReported.CompareAndSwap(false, true) {
+		return
+	}
+	r.server.SendReadMessage(ctx, r.generation, protocol.HiddenCommandFailedPrefix+reason)
 }
 
 // sendServerMessage forwards a user-visible message to the session's shared

@@ -11,7 +11,7 @@ To compile and install all DTail binaries directly from GitHub run:
 
 ```console
 % for cmd in dcat dgrep dmap dtail dserver dtailhealth; do
-    go get github.com/mimecast/dtail/cmd/$cmd@latest;
+    go install github.com/mimecast/dtail/cmd/$cmd@latest;
   done
 ```
 
@@ -24,31 +24,33 @@ It produces the following executables in ``$GOPATH/bin``:
 * ``dtailhealth``: Client for dserver health checks
 * ``dserver``: The DTail server
 
+Alternatively, you can clone the repository and run ``make build``, which compiles all of the binaries above plus ``dtail-tools`` (a helper binary with benchmarking, profiling and PGO tooling) into the repository root.
+
 # Start DTail server
 
 Copy the ``dserver`` binary to the remote server machines of your choice (e.g. ``serv-001.lan.example.org`` and ``serv-002.lan.example.org``) and start it on each of the servers as follows:
 
 ```console
 ❯ ./dserver --logger Stdout --logLevel debug --bindAddress $(hostname) --port 2222
-DTail 4.0.0 Protocol 4 Have a lot of fun!
-INFO|20211027-102513|Creating server|DTail 4.0.0-RC2 Protocol 4 Have a lot of fun!
-INFO|20211027-102513|Reading private server RSA host key from file|./ssh_host_key
-INFO|20211027-102513|Starting server
-INFO|20211027-102513|Binding server|X.Y.Z.W:2222
-INFO|20211027-102513|Starting continuous job runner after 10s
-DEBUG|20211027-102513|Starting listener loop
-INFO|20211027-102513|Starting scheduled job runner after 10s
+DTail 4.3.2-ng Protocol 4.1 Have a lot of fun!
+INFO|20250923-222429|Starting server|DTail 4.3.2-ng Protocol 4.1 Have a lot of fun!
+INFO|20250923-222429|Reading private server RSA host key from file|./cache/ssh_host_key
+INFO|20250923-222429|Starting server
+INFO|20250923-222429|Binding server|X.Y.Z.W:2222
+DEBUG|20250923-222429|Starting listener loop
+INFO|20250923-222429|Starting continuous job runner after 2s
+INFO|20250923-222429|Starting scheduled job runner after 2s
 ```
 
-``dserver`` is now listening on TCP port 2222 and waiting for incoming connections. All SSH keys listed in ``~/.ssh/authorized_keys`` are now respected by the DTail server for authorization.
+``dserver`` is now listening on TCP port 2222 and waiting for incoming connections. All SSH keys listed in ``~/.ssh/authorized_keys`` are now respected by the DTail server for authorization. On first start, the server generates an RSA host key into ``./cache/ssh_host_key`` (configurable via the ``HostKeyPath`` config setting).
 
 # Setup DTail client
 
 ## Setup SSH
 
-Ensure that your public SSH key is listed in ``~/.ssh/authorized_keys`` on all server machines involved. The private SSH key counterpart should preferably stay on your Laptop or workstation in ``~/.ssh/id_rsa`` or ``~/.ssh/id_dsa``.
+Ensure that your public SSH key is listed in ``~/.ssh/authorized_keys`` on all server machines involved. The private SSH key counterpart should preferably stay on your Laptop or workstation in one of the default key locations ``~/.ssh/id_rsa``, ``~/.ssh/id_dsa``, ``~/.ssh/id_ecdsa`` or ``~/.ssh/id_ed25519`` — the DTail client tries all of them in that order.
 
-DTail relies on SSH for secure authentication and communication. You can either use an SSH Agent or a private SSH key file directly. 
+DTail relies on SSH for secure authentication and communication. You can either use an SSH Agent or a private SSH key file directly.
 
 ### SSH Agent
 
@@ -75,29 +77,31 @@ Please consult the OpenSSH documentation of your distribution if the test above 
 
 ### SSH Private Key file
 
-As an alternative to using an SSH Agent, an SSH private key file can be used directly. Just add the argument ``--key ~/.ssh/id_rsa`` (pointing to your private key) to the DTail client. This currently does not work with password-protected keys. Use the SSH Agent method instead, in case your key comes with a password (recommended).
+As an alternative to using an SSH Agent, an SSH private key file can be used directly. Just add the argument ``--auth-key-path ~/.ssh/id_rsa`` (pointing to your private key) to the DTail client. The same path can also be configured via the ``DTAIL_AUTH_KEY_PATH`` environment variable or the ``Client.AuthKeyPath`` config setting. Password-protected keys are supported via the ``DTAIL_KEY_PASSPHRASE`` environment variable (there is no interactive passphrase prompt, so env-var is the only way).
 
 ## Run DTail client
 
 Now it is time to connect to the DTail servers through the DTail client:
 
 ```console
-% dtail --servers serv-001.lan.example.org,server-002.lan.example.org --files "/var/log/service/*.log"
-CLIENT|workstation01|INFO|Launching client|tail|DTail 4.0.0
-CLIENT|workstation01|INFO|Initiating base client
-CLIENT|workstation01|INFO|Added SSH Agent to list of auth methods
-CLIENT|workstation01|INFO|Deduped server list|1|1
-CLIENT|workstation01|WARN|Encountered unknown host|{serv-002.lan.example.org:2222 0xc000146450 0xc00014a2f0 [serv-002.lan.example.org]:2222 ssh-rsa AAAA....
-CLIENT|workstation01|WARN|Encountered unknown host|{serv-001.lan.example.org:2222 0xc0001ff450 0xc00ee4a2f0 [serv-001.lan.example.org]:2222 ssh-rsa AAAA....
-Encountered 2 unknown hosts: 'serv-002.lan.example.org:2222 serv-001.lan.example.org:2222'
+% dtail --servers serv-001.lan.example.org,serv-002.lan.example.org --files "/var/log/service/*.log"
+Encountered 2 unknown hosts: 'serv-001.lan.example.org:2222,serv-002.lan.example.org:2222'
 Do you want to trust these hosts?? (y=yes,a=all,n=no,d=details): y
-CLIENT|workstation01|INFO|Added hosts to known hosts file|~/.ssh/known_hosts
-CLIENT|workstation01|INFO|stats|connected=1/1(100%)|new=1|rate=0.20/s|throttle=0|cpus/goroutines=8/17
-CLIENT|workstation01|INFO|stats|connected=1/1(100%)|new=0|rate=0.00/s|throttle=0|cpus/goroutines=8/17
-CLIENT|workstation01|INFO|stats|connected=1/1(100%)|new=0|rate=0.00/s|throttle=0|cpus/goroutines=8/17
-CLIENT|workstation01|INFO|stats|connected=1/1(100%)|new=0|rate=0.00/s|throttle=0|cpus/goroutines=8/17
+CLIENT|workstation01|INFO|Added hosts to known hosts file|/home/user/.ssh/known_hosts
+REMOTE|serv-001|100|1|service.log|2025-09-23T22:25:01|INFO|Service started
+REMOTE|serv-002|100|1|service.log|2025-09-23T22:25:01|INFO|Service started
+CLIENT|workstation01|INFO|STATS:STATS|connected=2|servers=2|connected%=100|new=2|throttle=0|goroutines=37|cgocalls=7|cpu=8
 .
 .
 ```
+
+Without the ``--cfg`` flag, all client commands look for a JSON config file at ``~/.config/dtail/dtail.conf`` first and, if that does not exist, at ``~/.dtail.conf``. The first file that exists wins (they are not merged).
+
+# What else can it do?
+
+* **Serverless mode**: All clients also work without any ``dserver`` — just omit the server list (or pass ``--servers serverless``) to read local files directly. See [examples.md](examples.md).
+* **Journal reads**: On Linux, a ``journal:unit.service`` file target follows or reads the systemd journal of that unit (requires the server to advertise the ``journal-v1`` capability, i.e. ``journalctl`` on ``PATH``).
+* **Auth-key fast reconnect**: Enabled by default; the client registers a key with ``dserver`` on first connect so repeated connections skip the normal SSH auth round-trips. See [auth-key-fast-reconnect.md](auth-key-fast-reconnect.md).
+* **Interactive query control**: ``--interactive-query`` keeps the run open for ``:reload <flags>``, ``:show``, ``:help`` and ``:quit`` control commands. See [interactive-query.md](interactive-query.md).
 
 Have a look [here](examples.md) for more usage examples.

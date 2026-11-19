@@ -1,7 +1,10 @@
 DTail Installation Guide
 ========================
 
-The following installation guide has been tested successfully on CentOS 7. You may need to adjust accordingly depending on the distribution you use.
+This guide targets maintained Linux distributions. Its service examples use
+`systemd` and its package examples use `dnf` (RHEL, Rocky Linux and Fedora);
+adapt them for your platform. Install at least the Go version declared in
+[`go.mod`](../go.mod) (currently Go 1.26.6) before building.
 
 # Compile it
 
@@ -37,6 +40,10 @@ For targets where CGO-based zstd is unavailable (for example cross-compiling `ds
 
 This sets `-tags nozstd` via the Makefile. Plain `go build` users can pass `-tags nozstd` directly.
 
+## Proprietary features (optional)
+
+Builds can enable the proprietary features with `DTAIL_USE_PROPRIETARY=yes make build`. Leave it off for the regular open-source build.
+
 # Install it
 
 It is recommended to automate all the installation process outlined here. You could use a configuration management system such as Puppet, Chef or Ansible. However, that relies heavily on how your infrastructure is managed and is out of scope of this documentation.
@@ -53,7 +60,7 @@ It is recommended to automate all the installation process outlined here. You co
 ```console
 % sudo adduser dserver
 % id dserver
-uid=1001(dserver) 1001=670(dserver) groups=1001(dserver)
+uid=1001(dserver) gid=1001(dserver) groups=1001(dserver)
 ```
 
 3. Create the required file system structure and set the correct permissions:
@@ -66,10 +73,11 @@ uid=1001(dserver) 1001=670(dserver) groups=1001(dserver)
 4. Install the ``dtail.json`` config to ``/etc/dserver/dtail.json``. An example can be found [here](../examples/dtail.json.example).
 
 ```console
-% sudo mkdir /etc/dserver
 % curl https://raw.githubusercontent.com/mimecast/dtail/master/examples/dtail.json.example |
     sudo tee /etc/dserver/dtail.json
 ```
+
+Config resolution note: ``dserver`` reads ``/etc/dserver/dtail.json`` only because the example ``systemd`` unit passes ``-cfg /etc/dserver/dtail.json``. Without ``-cfg``, every DTail binary searches for a config at ``~/.config/dtail/dtail.conf`` first and, if that does not exist, at ``~/.dtail.conf`` (the first existing file wins; they are not merged).
 
 ### Upgrade note: ``Common.Logger`` and ``Common.LogDir`` now take effect
 
@@ -112,6 +120,38 @@ The unit is intended to stay **disabled** until you opt in. Start DTail server m
 ```
 
 To start it automatically at boot, run once: `sudo systemctl enable dserver`.
+
+# Configure it
+
+The example config above only sets a few keys. The most important ``Server`` settings (built-in defaults, see ``examples/dtail.schema.json``):
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| ``SSHBindAddress`` | ``0.0.0.0`` | Address the SSH server binds to |
+| ``MaxConnections`` | ``10`` | Max concurrent user connections (SSH handshakes included) |
+| ``IdleSessionTimeoutS`` | ``900`` | Rolling inactivity timeout of authenticated sessions, in seconds |
+| ``MaxConcurrentCats`` | ``2`` | Max concurrent cat/grep/MapReduce reads; also bounds grouped scheduled jobs |
+| ``MaxConcurrentTails`` | ``50`` | Max concurrent tails |
+| ``SharedReadsDisable`` | ``false`` | Turn off shared reads (same-file follow reads and grouped job reads) |
+| ``MaxLineLength`` | ``1048576`` | Max line length in bytes before a line is split |
+| ``HostKeyPath`` | ``./cache/ssh_host_key`` | Private SSH host key (generated on first start) |
+| ``HostKeyBits`` | ``4096`` | RSA host key size in bits |
+| ``AuthKeyEnabled`` | ``true`` | In-memory auth-key registration and fast reconnect |
+| ``AuthKeyTTLSeconds`` | ``86400`` | Auth-key cache entry TTL in seconds |
+| ``AuthKeyMaxPerUser`` | ``5`` | Max cached auth keys per user |
+| ``OutputBufferMaxBytes`` | ``2097152`` | Per-session payload backing memory cap; producers apply backpressure |
+| ``OutputFlushTimeoutMs`` | ``2000`` | Max wait for the session reader to drain output |
+| ``OutputReadRetryIntervalMs`` | ``1`` | Stale-generation fallback poll interval |
+| ``OutputEOFAckTimeoutMs`` | ``2000`` | Max wait for the output EOF acknowledgement |
+| ``MaxGlobTargets`` | ``1000`` | Max files one read command's glob may dispatch |
+| ``Permissions.Default`` | ``["^/.*"]`` | Read permissions for users without a ``Users`` entry |
+
+A few pointers beyond the table:
+
+* **Auth-key fast reconnect**: ``AuthKeyEnabled``/``AuthKeyTTLSeconds``/``AuthKeyMaxPerUser`` tune the in-memory auth-key cache, see [auth-key-fast-reconnect.md](auth-key-fast-reconnect.md).
+* **Session/output tuning**: ``IdleSessionTimeoutS`` plus the ``Output*`` keys above bound idle sessions and slow clients; ``SharedReadsDisable`` trades the shared-read optimization for per-session readers; ``MaxConnections``/``MaxConcurrentCats``/``MaxConcurrentTails`` size the connection and read slots.
+* **Journal support**: dserver advertises the ``journal-v1`` capability on Linux when ``journalctl`` is on ``PATH``; clients can then read ``journal:unit.service`` targets (permission rules must match the full ``journal:...`` target).
+* **Scheduled and continuous MapReduce jobs**: the ``Schedule`` and ``Continuous`` config arrays run MapReduce queries periodically (``TimeRange`` hours) or continuously and write CSV outfiles; see the config schema for the job fields.
 
 # Start it
 
@@ -170,9 +210,11 @@ It is recommended to execute [update_key_cache.sh](../examples/update_key_cache.
 % sudo systemctl start dserver-update-keycache.timer
 ```
 
+**Note on persistent script locations:** ``/var/run`` (usually ``/run``) is a ``tmpfs``: the installed scripts vanish on reboot while the systemd timers keep firing (and failing). Installing the scripts into a persistent location such as ``/usr/local/bin`` is recommended instead — the example units reference ``/var/run/dserver/`` out of the box, so if you move the scripts, also update the ``ExecStart=`` paths in the service units accordingly. The dserver ``WorkingDirectory=/var/run/dserver`` with the relative ``CacheDir`` ``cache`` and ``LogDir`` ``log`` is fine to keep: those are regenerable caches and rotating logs.
+
 # Prune old dserver log files
 
-Log files live under ``/var/run/dserver/log`` (see ``LogDir`` in ``dtail.json``). To remove ``*.log`` files **older than seven days**, install [prune_dserver_logs.sh](../examples/prune_dserver_logs.sh.example) and a systemd timer (runs daily with a randomized delay):
+Log files live under ``/var/run/dserver/log`` (see ``LogDir`` in ``dtail.json``). To remove ``*.log`` files **older than seven days**, install [prune_dserver_logs.sh](../examples/prune_dserver_logs.sh.example) and a systemd timer (runs daily with a randomized delay). As with the key-cache script above, prefer a persistent location such as ``/usr/local/bin`` over ``/var/run/dserver`` — see the note there:
 
 ```console
 % curl https://raw.githubusercontent.com/mimecast/dtail/master/examples/prune_dserver_logs.sh.example |
@@ -200,4 +242,3 @@ To verify that DTail server is up and running and functioning as expected, you s
 % ./check_dserver.sh
 OK: DTail SSH Server seems fine
 ```
-

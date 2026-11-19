@@ -349,7 +349,7 @@
         },
         "MaxConnections": {
           "type": "integer",
-          "description": "Maximum number of concurrent user connections.",
+          "description": "Maximum number of concurrent user connections, including connections still in their SSH handshake. Scheduled jobs that read the same files from this dserver only run together in groups of at most the smaller of a quarter of it and MaxConcurrentCats, divided by the number of servers of the jobs, and of at least one job; scheduled jobs on other dservers, whose limits are unknown, run one at a time.",
           "minimum": 1,
           "default": 10
         },
@@ -360,7 +360,7 @@
         },
         "MaxConcurrentCats": {
           "type": "integer",
-          "description": "Maximum number of concurrent cat/grep/MapReduce reads per server.",
+          "description": "Maximum number of concurrent cat/grep/MapReduce reads per server. It also bounds how many scheduled jobs run together, as dserver shares the read of a scheduled job group among at most this many members, each holding one of these slots during the read, and the jobs beyond that would queue for the same slots while holding their connections. With MaxConnections 50 and MaxConcurrentCats 2, at most 2 jobs run together instead of the 12 a quarter of MaxConnections alone would allow; raise it to let larger job groups share a read.",
           "minimum": 1,
           "default": 2
         },
@@ -369,6 +369,11 @@
           "description": "Maximum number of concurrent tails per server.",
           "minimum": 1,
           "default": 50
+        },
+        "SharedReadsDisable": {
+          "type": "boolean",
+          "description": "Turn shared reads off, both shared follow reads and the shared one-shot reads of scheduled job groups. By default, sessions that tail the same uncompressed file share one reader of it in dserver; every session still checks its own permissions, uses its own read slot, starts at the end of the file as of its join and filters and processes the lines on its own. A session that falls behind the shared reader moves to a reader of its own at the line where it stopped, so it does not delay the others, and rejoins the shared reader once it caught up. Scheduled jobs that start together on the same files of this dserver read each file once for the group (at most MaxConcurrentCats members per group read). When true, every session reads the file with a reader of its own and the scheduler runs its jobs one at a time.",
+          "default": false
         },
         "MaxLineLength": {
           "type": "integer",

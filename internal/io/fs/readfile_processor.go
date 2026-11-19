@@ -22,12 +22,45 @@ type filteringProcessor struct {
 	stats        *stats
 	globID       string
 	recycle      func(*bytes.Buffer)
+	// The query's context is immutable. Select its input path once instead
+	// of testing before/after/max settings on every line. Method expressions
+	// need no per-filter closure allocation.
+	filterRaw func(*filteringProcessor, []byte) error
 
 	// For local context handling
 	beforeBuf  []*bytes.Buffer
+	beforeHead int // oldest entry when the before-context ring is full
 	afterCount int
 	maxCount   int
 	maxReached bool
+}
+
+// newFilteringProcessor builds the filter for one reader or subscriber. stats
+// is the line counter the filter numbers lines from; processLine advances it.
+func newFilteringProcessor(ltx lcontext.LContext, processor line.Processor,
+	re regex.Regex, stats *stats, globID string) *filteringProcessor {
+
+	filterProcessor := &filteringProcessor{
+		processor: processor,
+		re:        re,
+		ltx:       ltx,
+		stats:     stats,
+		globID:    globID,
+	}
+	// Max/after context never retains input. Before-context still uses owned
+	// buffers, including when emitting the queued lines on a later match.
+	if rawProcessor, ok := processor.(line.RawProcessor); ok && ltx.BeforeContext <= 0 {
+		filterProcessor.rawProcessor = rawProcessor
+	}
+	switch {
+	case ltx.BeforeContext > 0:
+		filterProcessor.filterRaw = (*filteringProcessor).processOwnedContext
+	case ltx.Has():
+		filterProcessor.filterRaw = (*filteringProcessor).processRawContext
+	default:
+		filterProcessor.filterRaw = (*filteringProcessor).ProcessFilteredRaw
+	}
+	return filterProcessor
 }
 
 func (f *ReadFile) recycleBytesBuffer(buf *bytes.Buffer) {
@@ -56,6 +89,7 @@ func (fp *filteringProcessor) resetGeneration() {
 		}
 	}
 	fp.beforeBuf = fp.beforeBuf[:0]
+	fp.beforeHead = 0
 	fp.afterCount = 0
 }
 
@@ -68,61 +102,32 @@ func (fp *filteringProcessor) restartSource() {
 	}
 }
 
-// ProcessFilteredLine applies regex filtering before passing to the underlying processor
-func (fp *filteringProcessor) ProcessFilteredLine(rawLine *bytes.Buffer) error {
-	ownedRawLine := rawLine
-	defer func() {
-		if ownedRawLine != nil {
-			fp.recycleBytesBuffer(ownedRawLine)
-		}
-	}()
-
-	// Update stats
-	lineNum := fp.stats.totalLineCount()
-
-	// Simple case: no local context
-	if !fp.ltx.Has() {
-		if !fp.re.Match(rawLine.Bytes()) {
-			fp.stats.updateLineNotMatched()
-			fp.stats.updateLineNotTransmitted()
-			ownedRawLine = nil
-			fp.recycleBytesBuffer(rawLine)
-			return nil
-		}
-
-		fp.stats.updateLineMatched()
-		fp.stats.updateLineTransmitted()
-
-		// Process the line. Per the line.Processor contract (processor.go),
-		// ownership of rawLine transfers to the processor, which recycles it on
-		// every return path. The only processors on the fs read path -
-		// DirectLineProcessor and AggregateProcessor - recycle unconditionally,
-		// even when ProcessLine returns a write error (e.g. a client disconnect /
-		// broken pipe). Recycling here on error would Put the same buffer into the
-		// shared pool.BytesBuffer a second time; the pool would then hand one object
-		// to two Get callers whose concurrent writes race and corrupt data. So do
-		// not recycle rawLine here.
-		ownedRawLine = nil
-		return fp.processor.ProcessLine(rawLine, lineNum, fp.globID)
-	}
-
-	// Complex case: handle local context (before/after/max)
-	ownedRawLine = nil
-	return fp.processWithContext(rawLine, lineNum)
+// processLine counts data as the next line and filters it. data is borrowed
+// for the duration of the call only: without local context it takes the
+// zero-copy ProcessFilteredRaw path. Max/after context also borrows data;
+// before-context uses an owned pooled buffer. Every reader and subscriber
+// feeds its lines through here, so line numbering and filtering cannot diverge.
+func (fp *filteringProcessor) processLine(data []byte) error {
+	fp.stats.updatePosition()
+	return fp.filterRaw(fp, data)
 }
 
-// ProcessFilteredRaw is the zero-copy fast path for the no-local-context case.
+func (fp *filteringProcessor) processOwnedContext(data []byte) error {
+	lineBuf := pool.BytesBuffer.Get().(*bytes.Buffer)
+	lineBuf.Write(data)
+	return fp.processWithContext(lineBuf, fp.stats.totalLineCount())
+}
+
+// ProcessFilteredRaw is the zero-copy path when there is no local context.
 // It runs the regex match directly on the scanner-owned byte slice, so a
 // non-matching line costs no pooled buffer at all. At low hit rates this avoids
 // a pool.Get + copy + pool.Put for the (vast majority of) non-matching lines,
 // which profiling showed as ~10-15% of serverless dgrep CPU (sync.Pool Get/Put +
 // bytes.Buffer.Write).
 //
-// Semantics are identical to the !ltx.Has() branch of ProcessFilteredLine: the
-// same regex, the same stats bookkeeping, and the same lineNum are used, so
-// output is byte-identical. It MUST only be called when fp.ltx.Has() is false;
-// the local-context path deliberately buffers non-matching lines (before/after
-// context) and cannot skip the copy.
+// It is selected only without local context. Max/after-only queries use
+// processRawContext; before-context must use owned input because it buffers
+// non-matching lines beyond the call.
 //
 // The caller passes raw = scanner.Bytes() (or the follow reader's partial-line
 // buffer), which is only valid until the next Scan() or Reset. A match goes to
@@ -131,32 +136,94 @@ func (fp *filteringProcessor) ProcessFilteredLine(rawLine *bytes.Buffer) error {
 // buffer is needed. Otherwise the match is copied into a pooled buffer, which
 // is a stable copy that never aliases the scanner's transient slice.
 func (fp *filteringProcessor) ProcessFilteredRaw(raw []byte) error {
-	lineNum := fp.stats.totalLineCount()
-
 	if !fp.re.Match(raw) {
-		fp.stats.updateLineNotMatched()
-		fp.stats.updateLineNotTransmitted()
+		fp.stats.updateFilteredLine(false)
 		// No buffer was acquired, so there is nothing to recycle.
 		return nil
 	}
 
-	fp.stats.updateLineMatched()
-	fp.stats.updateLineTransmitted()
+	fp.stats.updateFilteredLine(true)
 
+	// Keep this hot path inline: routing every no-context match through
+	// emitRaw adds a measurable call cost for short, dense reads.
+	lineNum := fp.stats.totalLineCount()
 	if fp.rawProcessor != nil {
-		// Borrowed, not transferred: nothing to recycle on any return path.
 		return fp.rawProcessor.ProcessRawLine(raw, lineNum, fp.globID)
 	}
-
-	// Only now, on a confirmed match, pay for the buffer and the copy.
 	lineBuf := pool.BytesBuffer.Get().(*bytes.Buffer)
 	lineBuf.Write(raw)
-
-	// Ownership of lineBuf transfers to the processor, which recycles it on every
-	// return path (see ProcessFilteredLine for the full rationale). Recycling here
-	// on error would return the same buffer to the shared pool a second time and
-	// race, so leave it to the processor.
+	// Ownership transfers even on errors/panics; only the processor recycles.
 	return fp.processor.ProcessLine(lineBuf, lineNum, fp.globID)
+}
+
+// processRawContext filters max/after-only reads without copying rejected
+// input. Neither mode retains lines, so emitted input can also be borrowed.
+func (fp *filteringProcessor) processRawContext(raw []byte) error {
+	if !fp.re.Match(raw) {
+		fp.stats.updateLineNotMatched()
+		if fp.ltx.AfterContext > 0 && fp.afterCount > 0 {
+			fp.afterCount--
+			fp.stats.updateLineTransmitted()
+			return fp.emitRaw(raw)
+		}
+		fp.stats.updateLineNotTransmitted()
+		return nil
+	}
+	fp.stats.updateLineMatched()
+	if fp.maxReached {
+		return io.EOF
+	}
+	fp.stats.updateLineTransmitted()
+	if err := fp.emitRaw(raw); err != nil {
+		return err
+	}
+	return fp.finishContextMatch()
+}
+
+func (fp *filteringProcessor) emitRaw(raw []byte) error {
+	lineNum := fp.stats.totalLineCount()
+	if fp.rawProcessor != nil {
+		return fp.rawProcessor.ProcessRawLine(raw, lineNum, fp.globID)
+	}
+	// A processor without the borrowed interface owns this copy, including
+	// on errors/panics. The filter must never recycle it after transfer.
+	buf := pool.BytesBuffer.Get().(*bytes.Buffer)
+	buf.Write(raw)
+	return fp.processor.ProcessLine(buf, lineNum, fp.globID)
+}
+
+// retainBefore keeps the last BeforeContext owned lines without advancing
+// the slice's backing array. Storage grows only until the ring is full.
+func (fp *filteringProcessor) retainBefore(buf *bytes.Buffer) {
+	if len(fp.beforeBuf) < fp.ltx.BeforeContext {
+		fp.beforeBuf = append(fp.beforeBuf, buf)
+		return
+	}
+	fp.recycleBytesBuffer(fp.beforeBuf[fp.beforeHead])
+	fp.beforeBuf[fp.beforeHead] = buf
+	fp.beforeHead++
+	if fp.beforeHead == len(fp.beforeBuf) {
+		fp.beforeHead = 0
+	}
+}
+
+func (fp *filteringProcessor) emitBefore(lineNum uint64) error {
+	count := len(fp.beforeBuf)
+	for i := 0; i < count; i++ {
+		index := (fp.beforeHead + i) % count
+		buf := fp.beforeBuf[index]
+		// Clear before transfer: error/panic cleanup must only recycle the
+		// remaining locally owned buffers, never the processor's input.
+		fp.beforeBuf[index] = nil
+		fp.stats.updateLineTransmitted()
+		if err := fp.processor.ProcessLine(buf, lineNum-uint64(count-i), fp.globID); err != nil {
+			fp.resetGeneration()
+			return err
+		}
+	}
+	fp.beforeBuf = fp.beforeBuf[:0]
+	fp.beforeHead = 0
+	return nil
 }
 
 // processWithContext handles lines when local context is enabled
@@ -182,21 +249,15 @@ func (fp *filteringProcessor) processWithContext(rawLine *bytes.Buffer, lineNum 
 			fp.stats.updateLineTransmitted()
 			// Ownership transfers to the processor, which recycles rawLine on every
 			// return path; recycling here on error would double Put into the shared
-			// pool and race (see ProcessFilteredLine).
+			// pool and allow two concurrent readers to receive the same buffer.
 			ownedRawLine = nil
 			return fp.processor.ProcessLine(rawLine, lineNum, fp.globID)
 		}
 
 		// Handle before context buffer
 		if fp.ltx.BeforeContext > 0 {
-			// Add to before buffer
-			if len(fp.beforeBuf) >= fp.ltx.BeforeContext {
-				// Recycle oldest buffer
-				fp.recycleBytesBuffer(fp.beforeBuf[0])
-				fp.beforeBuf = fp.beforeBuf[1:]
-			}
+			fp.retainBefore(rawLine)
 			ownedRawLine = nil
-			fp.beforeBuf = append(fp.beforeBuf, rawLine)
 		} else {
 			ownedRawLine = nil
 			fp.recycleBytesBuffer(rawLine)
@@ -218,30 +279,26 @@ func (fp *filteringProcessor) processWithContext(rawLine *bytes.Buffer, lineNum 
 
 	// Process before context
 	if fp.ltx.BeforeContext > 0 && len(fp.beforeBuf) > 0 {
-		beforeCount := len(fp.beforeBuf)
-		for i, buf := range fp.beforeBuf {
-			// Ownership transfers to the processor before the call. Clearing the
-			// slot lets resetGeneration recycle only buffers still owned here if
-			// the processor returns an error or panics.
-			fp.beforeBuf[i] = nil
-			fp.stats.updateLineTransmitted()
-			if err := fp.processor.ProcessLine(buf, lineNum-uint64(beforeCount-i), fp.globID); err != nil {
-				fp.resetGeneration()
-				return err
-			}
+		if err := fp.emitBefore(lineNum); err != nil {
+			return err
 		}
-		fp.beforeBuf = fp.beforeBuf[:0]
 	}
 
 	// Process the matched line. Ownership transfers to the processor, which
 	// recycles rawLine on every return path; recycling here on error would double
-	// Put into the shared pool and race (see ProcessFilteredLine).
+	// Put into the shared pool and allow two readers to receive the same buffer.
 	fp.stats.updateLineTransmitted()
 	ownedRawLine = nil
 	if err := fp.processor.ProcessLine(rawLine, lineNum, fp.globID); err != nil {
 		return err
 	}
+	return fp.finishContextMatch()
+}
 
+// finishContextMatch advances query state only after a successful emission.
+// With max+after, the legacy stop boundary is the NEXT match, even if the
+// requested trailing context ended earlier. Both input paths preserve it.
+func (fp *filteringProcessor) finishContextMatch() error {
 	// Update max count
 	if fp.ltx.MaxCount > 0 {
 		fp.maxCount++

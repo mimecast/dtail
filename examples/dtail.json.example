@@ -91,12 +91,28 @@
   "Server": {
     "SSHBindAddress": "0.0.0.0",
     "HostKeyPath": "cache/ssh_host_key",
-    "HostKeyBits": 2048,
+    "HostKeyBits": 4096,
     "MapreduceLogFormat": "default",
+    "MaxConnections": 50,
+    "IdleSessionTimeoutS": 900,
     "MaxConcurrentCats": 2,
     "MaxConcurrentTails": 50,
-    "MaxConnections": 50,
+    "SharedReadsDisable": false,
     "MaxLineLength": 1048576,
+    "AuthKeyTTLSeconds": 86400,
+    "AuthKeyMaxPerUser": 5,
+    "OutputBufferMaxBytes": 2097152,
+    "Schedule": [
+      {
+        "Name": "example-scheduled-job",
+        "Enable": false,
+        "Files": "/var/log/dtail/$today.log",
+        "Query": "from STATS select $hostname,avg($goroutines),max($cgocalls),lifetimeConnections group by $hostname",
+        "Outfile": "/var/lib/dtail/stats-$today.csv",
+        "Servers": ["localhost"],
+        "TimeRange": [9, 17]
+      }
+    ],
     "Permissions": {
       "Default": [
         "readfiles:^/.*$"

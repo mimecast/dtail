@@ -33,7 +33,9 @@ The profiling package integrates Go's pprof profiling tools directly into DTail 
 
 ### Command-Line Flags
 
-All DTail commands support these profiling flags:
+The client commands (`dcat`, `dgrep`, `dmap`, and `dtail`) support these
+profiling flags. `dserver` instead exposes runtime profiles through
+`--pprof <address>`.
 
 ```bash
 # Enable both CPU and memory profiling

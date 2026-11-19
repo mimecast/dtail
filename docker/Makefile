@@ -22,9 +22,9 @@ dtail2:
 dgrep:
 	../dgrep --user paul --key id_rsa_docker --servers serverlist.txt --files '/var/log/dserver/*' --regex MAPREDUCE --trustAllHosts
 dcat:
-	../dcat --user paul --key id_rsa_docker --servers serverlist.txt --files '/etc/passwd' --trustAllHosts
+	../dcat --user paul --key id_rsa_docker --servers serverlist.txt --files '/var/log/mapr_testdata.log' --trustAllHosts
 dcat_notrust:
-	../dcat --user paul --key id_rsa_docker --servers serverlist.txt --files '/etc/passwd'
+	../dcat --user paul --key id_rsa_docker --servers serverlist.txt --files '/var/log/mapr_testdata.log'
 dmap:
 	../dmap --user paul --key id_rsa_docker --servers serverlist.txt --files '/var/log/dserver/*' --trustAllHosts --query 'from stats select avg($$goroutines),max($$goroutines),min($$goroutines),last($$goroutines),count($$hostname),$$hostname group by $$hostname order by avg($$goroutines)'
 test: dmap_test dmap2_test

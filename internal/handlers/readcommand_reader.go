@@ -13,6 +13,7 @@ import (
 
 type readSlotAcquirer interface {
 	AcquireReadSlot(context.Context, omode.Mode, string) (release func(), acquired bool)
+	TryAcquireReadSlot(omode.Mode, string) (release func(), acquired bool)
 }
 
 type readLimiter func(context.Context, string) (release func(), acquired bool)

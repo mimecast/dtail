@@ -125,7 +125,7 @@ func TestFileLoggerWriteReturnsBufferedWriteError(t *testing.T) {
 	f.lastFileName = "failure-test"
 	f.writer = bufio.NewWriterSize(failingLogWriter{err: wantErr}, 1)
 
-	err := f.write(&fileMessageBuf{message: "payload", nl: true})
+	err := f.write([]byte("payload\n"))
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("write error = %v, want %v", err, wantErr)
 	}
@@ -202,7 +202,7 @@ func TestFileLoggerFailedRotationPreservesCurrentWriter(t *testing.T) {
 	f.lastFileName = "" // The logger goroutine consumed a Rotate signal.
 	var stderr bytes.Buffer
 	f.errorWriter = &stderr
-	rotationErr := f.write(&fileMessageBuf{message: "dropped", nl: true})
+	rotationErr := f.write([]byte("dropped\n"))
 	f.reportError("write log message", rotationErr)
 
 	if rotationErr == nil || !strings.Contains(rotationErr.Error(), "create log directory") {
@@ -334,7 +334,7 @@ func midnightTimes() (before, after time.Time, beforeDay, afterDay string) {
 
 func writeFileMessage(t *testing.T, f *file, message string) {
 	t.Helper()
-	if err := f.write(&fileMessageBuf{message: message, nl: true}); err != nil {
+	if err := f.write([]byte(message + "\n")); err != nil {
 		t.Fatalf("write %q: %v", message, err)
 	}
 }

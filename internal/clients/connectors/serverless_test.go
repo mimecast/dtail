@@ -330,8 +330,12 @@ type realServerlessMapFactory struct {
 func (f realServerlessMapFactory) NewServerlessHandler(ctx context.Context, _ string) (sessionHandlers.Handler, error) {
 	return sessionHandlers.NewServerHandler(ctx, &userserver.User{Name: config.ContinuousUser}, sessionHandlers.Dependencies{
 		ServerConfig: f.serverCfg,
-		CatLimiter:   make(chan struct{}, f.serverCfg.MaxConcurrentCats),
-		TailLimiter:  make(chan struct{}, f.serverCfg.MaxConcurrentTails),
+		// The runtime's own output is what makes the handler serverless, as
+		// in clientRuntimeBoundary.NewServerlessHandler. This test asserts on
+		// the client-side aggregate, so the payload itself is discarded.
+		ServerlessOutput: io.Discard,
+		CatLimiter:       make(chan struct{}, f.serverCfg.MaxConcurrentCats),
+		TailLimiter:      make(chan struct{}, f.serverCfg.MaxConcurrentTails),
 		AuthKeyStore: authkey.New(
 			time.Duration(f.serverCfg.AuthKeyTTLSeconds)*time.Second,
 			f.serverCfg.AuthKeyMaxPerUser,

@@ -19,7 +19,12 @@ To run all the unit tests simply run the following make command at the top level
 % make test
 ```
 
-It will run unit tests for each source directory one after another and abort immediately when an error occurs.
+It clears the Go test cache first (`go clean -testcache`) and then runs all
+unit tests with `-race` (race detector) and `-shuffle=on` (randomized test
+order) across every package. `go test ./...` does not abort on the first
+failure: it reports results per package, so one package's failing tests do not
+prevent the other packages from running (the make target still fails at the
+end if any package failed).
 
 ## Integration tests
 
@@ -40,12 +45,22 @@ The integration tests can be enabled setting the following environment variable:
 % export DTAIL_INTEGRATION_TEST_RUN_MODE=yes
 ```
 
-To run the integration test together with all the unit tests, simply run `make test` in the top level source tree. In case you only want to run the integration tests without the normal unit tests, then just do:
+To run the integration test together with all the unit tests, simply run `make test` in the top level source tree (with `DTAIL_INTEGRATION_TEST_RUN_MODE` exported). In case you only want to run the integration tests without the normal unit tests, the easiest way is the dedicated make target, which rebuilds the binaries and runs the integration tests with the run mode enabled:
+
+```shell
+% make test-integration
+```
+
+(If the binaries are already up to date and you want to skip the rebuild, the target is equivalent to:)
 
 ```shell
 % go clean -testcache
-% go test -race -v ./integrationtests
+% DTAIL_INTEGRATION_TEST_RUN_MODE=yes go test -v --race -count=1 ./integrationtests
 ```
+
+**Important:** the integration tests launch the compiled DTail binaries, so
+always rebuild (`make clean && make build`) after code changes before running
+them — `make test-integration` does that rebuild for you.
 
 ![testing](testing.gif "Integration tests")
 
@@ -53,7 +68,7 @@ To run the integration test together with all the unit tests, simply run `make t
 
 ### Requirements 
 
-This assumes, that you have Docker up and running on your system. The following has been tested only on Fedora Linux 35. For other versions of Fedora (or Linux) you might need to change the Docker base image used (see Dockerfile) as otherwise you might run into issues with a different `GLIBC` major version used.
+This assumes, that you have Docker up and running on your system. The Docker base image used by `docker/Dockerfile` (currently Fedora Linux) must match the GLIBC major version of the binaries you compiled locally, or you may run into issues; see the Dockerfile for the exact, current version.
 
 This also assumes, that you have compiled all the DTail binaries already (with `make` in the top level source directory).
 
@@ -63,12 +78,12 @@ To build the `dserver` Docker image run:
 
 ```
 % make -C docker
-make: Entering directory '/home/paul/git/dtail/docker'
+make: Entering directory '/home/user/git/dtail/docker'
 cp ../integrationtests/mapr_testdata.log .
 cp ../dserver .
 docker build . -t dserver:develop
 Sending build context to Docker daemon  13.84MB
-Step 1/11 : FROM fedora:34
+Step 1/11 : FROM fedora:42
 ---> dce66322d647
 Step 2/11 : RUN mkdir -p /etc/dserver /var/run/dserver/ /var/log/dserver
 .
@@ -78,7 +93,7 @@ Successfully built b44e92f7c066
 Successfully tagged dserver:develop
 rm ./dserver
 rm ./mapr_testdata.log
-make: Leaving directory '/home/paul/git/dtail/docker'
+make: Leaving directory '/home/user/git/dtail/docker'
 ```
 
 ### Starting a DTail server farm
@@ -87,7 +102,7 @@ To spin up 10 instances of the `dserver` Docker image, run:
 
 ```shell
 % make -C docker spinup
-make: Entering directory '/home/paul/git/dtail/docker'
+make: Entering directory '/home/user/git/dtail/docker'
 ./spinup.sh 10
 Creating dserver-serv0
 b34e05f33deb62df628dc00b4ea4e7f1da0be73fdba7895d182fff6dd5b48b2f

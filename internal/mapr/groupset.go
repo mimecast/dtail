@@ -21,15 +21,22 @@ type GroupSet struct {
 
 // Internal helper type
 type result struct {
-	groupKey     string
-	values       []string
-	columnWidths []int
-	orderBy      float64
+	groupKey string
+	values   []string
+	orderBy  float64
 }
 
 type resultStats struct {
 	percentageTotals map[string]float64
 	percentileValues map[string][]float64
+}
+
+// orderedResults uses the same stable ordering as sort.SliceStable, but swaps
+// rows directly instead of using reflection. In particular, keep the legacy
+// comparisons for NaN rather than introducing a different total ordering.
+type orderedResults struct {
+	rows    []result
+	reverse bool
 }
 
 // NewGroupSet returns a new empty group set.
@@ -38,6 +45,17 @@ func NewGroupSet(logger logging.Logger) *GroupSet {
 	g.InitSet()
 	return &g
 }
+
+func (r orderedResults) Len() int { return len(r.rows) }
+
+func (r orderedResults) Less(i, j int) bool {
+	if r.reverse {
+		return r.rows[i].orderBy < r.rows[j].orderBy
+	}
+	return r.rows[i].orderBy > r.rows[j].orderBy
+}
+
+func (r orderedResults) Swap(i, j int) { r.rows[i], r.rows[j] = r.rows[j], r.rows[i] }
 
 // String representation of the group set.
 func (g *GroupSet) String() string {
@@ -113,7 +131,10 @@ func (g *GroupSet) ResetWith(sets map[string]*AggregateSet) {
 // propagated directly into tied rows).
 func (g *GroupSet) result(query *Query, gathercolumnWidths bool) ([]result, []int, error) {
 	var err error
-	var rows []result
+	rows := make([]result, 0, len(g.sets))
+	// One backing store avoids a growing values slice for every group. Each
+	// row owns a capacity-limited segment so later appends cannot cross rows.
+	values := make([]string, len(g.sets)*len(query.Select))
 
 	// Helpers for calculating the ASCII table output (output is the terminal and
 	// not a CSV file).
@@ -126,9 +147,10 @@ func (g *GroupSet) result(query *Query, gathercolumnWidths bool) ([]result, []in
 	// preserves this order for tied OrderBy values.
 	keys := sortedGroupKeys(g.sets)
 
-	for _, groupKey := range keys {
+	for index, groupKey := range keys {
 		set := g.sets[groupKey]
-		row := result{groupKey: groupKey}
+		start, end := index*len(query.Select), (index+1)*len(query.Select)
+		row := result{groupKey: groupKey, values: values[start:start:end]}
 
 		for i, sc := range query.Select {
 			if valueStrLen, err = g.resultSelect(query, &sc, set, &row, &stats); err != nil {
@@ -156,7 +178,7 @@ func (g *GroupSet) result(query *Query, gathercolumnWidths bool) ([]result, []in
 
 // sortedGroupKeys returns the keys of the given sets map sorted
 // lexicographically. This helper centralises the deterministic key extraction
-// used by result() and makeResultStats() to guarantee consistent iteration
+// used by result() to guarantee consistent iteration
 // order regardless of Go's runtime map randomisation.
 func sortedGroupKeys(sets map[string]*AggregateSet) []string {
 	keys := make([]string, 0, len(sets))
@@ -224,6 +246,18 @@ func (*GroupSet) resultSelect(query *Query, sc *selectCondition, set *AggregateS
 }
 
 func (g *GroupSet) makeResultStats(query *Query) resultStats {
+	// Most queries need no cross-group statistics. Avoid visiting every
+	// aggregate (and allocating the maps) unless a selected operation uses it.
+	needed := false
+	for _, sc := range query.Select {
+		if sc.Operation == Percentage || sc.Operation == Percentile {
+			needed = true
+			break
+		}
+	}
+	if !needed {
+		return resultStats{}
+	}
 	stats := resultStats{
 		percentageTotals: make(map[string]float64),
 		percentileValues: make(map[string][]float64),
@@ -263,13 +297,5 @@ func (*GroupSet) resultOrderBy(query *Query, rows []result) {
 	if query.OrderBy == "" {
 		return
 	}
-	if query.ReverseOrder {
-		sort.SliceStable(rows, func(i, j int) bool {
-			return rows[i].orderBy < rows[j].orderBy
-		})
-	} else {
-		sort.SliceStable(rows, func(i, j int) bool {
-			return rows[i].orderBy > rows[j].orderBy
-		})
-	}
+	sort.Stable(orderedResults{rows: rows, reverse: query.ReverseOrder})
 }

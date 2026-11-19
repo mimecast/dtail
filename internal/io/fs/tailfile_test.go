@@ -290,7 +290,7 @@ func TestTailFileCopytruncateResetsLongLineWarning(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- tail.tailWithProcessorOptimized(ctx, fd, bufio.NewReader(observedReader), nil,
-			lcontext.LContext{}, processor, regex.NewNoop())
+			tail.newFilteringProcessor(lcontext.LContext{}, processor, regex.NewNoop()))
 	}()
 	defer stopObservedTail(t, cancel, done, fd)
 
@@ -420,7 +420,7 @@ func TestTailFileCopytruncateRestartsSource(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- tail.tailWithProcessorOptimized(ctx, fd, bufio.NewReader(observedReader), nil,
-			lcontext.LContext{}, processor, regex.NewNoop())
+			tail.newFilteringProcessor(lcontext.LContext{}, processor, regex.NewNoop()))
 	}()
 
 	appendTestPath(t, path, "old-1\nold-2\n")
@@ -467,7 +467,7 @@ func runCopytruncateContextBoundaryTest(t *testing.T, localContext lcontext.LCon
 	done := make(chan error, 1)
 	go func() {
 		done <- tail.tailWithProcessorOptimized(ctx, fd, bufio.NewReader(observedReader), nil,
-			localContext, processor, re)
+			tail.newFilteringProcessor(localContext, processor, re))
 	}()
 	defer stopObservedTail(t, cancel, done, fd)
 

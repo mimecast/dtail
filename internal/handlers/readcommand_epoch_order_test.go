@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -141,7 +142,7 @@ func TestFinishReadBatchCapturesEpochBeforePendingCheck(t *testing.T) {
 
 func TestFinishReadBatchSignalsEOFWhenPendingWorkIsDrained(t *testing.T) {
 	handler := &ServerHandler{
-		baseHandler: newBaseHandler(context.Background(), baseHandlerConfig{serverless: true}),
+		baseHandler: newBaseHandler(context.Background(), baseHandlerConfig{serverlessOutput: io.Discard}),
 		readTimings: newReadTimings(nil),
 	}
 	handler.output.configure(outputManagerConfig{}, nil)
@@ -161,7 +162,7 @@ func TestFinishReadBatchSignalsEOFWhenPendingWorkIsDrained(t *testing.T) {
 
 func TestFinishReadBatchDoesNotSignalEOFWithPendingWork(t *testing.T) {
 	handler := &ServerHandler{
-		baseHandler:  newBaseHandler(context.Background(), baseHandlerConfig{serverless: true}),
+		baseHandler:  newBaseHandler(context.Background(), baseHandlerConfig{serverlessOutput: io.Discard}),
 		readTimings:  newReadTimings(nil),
 		pendingFiles: 1,
 	}
@@ -182,7 +183,7 @@ func TestFinishReadBatchDoesNotSignalEOFWithPendingWork(t *testing.T) {
 
 func TestFinishReadBatchReportsFlushFailureAndStillSignalsEOF(t *testing.T) {
 	handler := &ServerHandler{
-		baseHandler: newBaseHandler(context.Background(), baseHandlerConfig{serverless: true}),
+		baseHandler: newBaseHandler(context.Background(), baseHandlerConfig{serverlessOutput: io.Discard}),
 		readTimings: newReadTimings(nil),
 	}
 	handler.output.configure(outputManagerConfig{flushTimeout: time.Millisecond}, nil)

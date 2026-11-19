@@ -1,0 +1,45 @@
+created_utc=2026-09-23T17:55:40Z
+mode=run
+kernel=Linux 5.14.0-687.42.1.el9_8.x86_64 #1 SMP PREEMPT_DYNAMIC Wed Aug 26 12:55:43 UTC 2026 x86_64 GNU/Linux
+go_binary=/usr/local/go/bin/go
+go_version=go version go1.26.6 linux/amd64
+go_env=linux amd64 1 auto
+logical_cpus=4
+
+[upstream]
+root=/home/user/git/dtail-upstream
+commit=91d35001488dd036b1f1def30cc435d3ab25c5f1
+remote=https://github.com/mimecast/dtail.git
+go_directive=1.24.0
+tracked_dirty=no
+status:
+binary_sha256:
+a8902949046d63e9bcb65f7f6f0d089bf73d4b4070287908a6b26efc9ae69a69  /tmp/dtail-upstream-20260923.ZBR3ebEX/bin/upstream/dcat
+435247b1fd8dc0ce70f649f92d088d9ad5e8651e11e391450508d0868c6b5223  /tmp/dtail-upstream-20260923.ZBR3ebEX/bin/upstream/dgrep
+a1373fddfc2b3aa8e467c080a51fa04a32a3aaf9a6789528b7999e7c098c19e6  /tmp/dtail-upstream-20260923.ZBR3ebEX/bin/upstream/dmap
+b6a7bd0e370a04defda545d7d178ba42316adda96698bf9faff653623253e3b3  /tmp/dtail-upstream-20260923.ZBR3ebEX/bin/upstream/dserver
+53a54140938b48519085b7437d5d7324c3a838ce05e8cb22621937d2faeb7d20  /tmp/dtail-upstream-20260923.ZBR3ebEX/bin/upstream/dtail
+
+[local]
+root=/home/user/git/dtail
+commit=5eece8df07bfbbb6c6dcfe921ab26ea8490cbdba
+remote=ssh://git@code.f3s.buetow.org:2022/snonux/dtail.git
+go_directive=1.26.6
+tracked_dirty=no
+status:
+?? docs/code-quality-audit-2026-09-06.md
+binary_sha256:
+9fc77b72dfae4ab0614d799759a4c205e503eada249a10821a4ada6a9dd2e0b7  /tmp/dtail-upstream-20260923.ZBR3ebEX/bin/local/dcat
+64275b65e1d0ee040618a7af8cffa7cfe4bbb6afbc3033a061e1514a556be3b7  /tmp/dtail-upstream-20260923.ZBR3ebEX/bin/local/dgrep
+c8851fb13d53ac3e0f005345ca85853c1f2b087798462d83c2fb5085d31ed06b  /tmp/dtail-upstream-20260923.ZBR3ebEX/bin/local/dmap
+e123f590e84270b767fcb2d3fdc486134fa134b90a0922475bfa3d0a669bce4e  /tmp/dtail-upstream-20260923.ZBR3ebEX/bin/local/dserver
+db2d2c2c5e13dbde6106883638353470bcc002d415efbb297fd5edde6f32d556  /tmp/dtail-upstream-20260923.ZBR3ebEX/bin/local/dtail
+
+[data_sha256]
+bb615cf54c9d4faa80230d3c778f48e761d46725d7520e1dd5b0cd3e69c4585a  /tmp/dtail-upstream-20260923.ZBR3ebEX/data/smoke/normal.log
+76debc59e6369a64b9afbc7e5f0832c9d3e52cb18e4a2bf0894f7e37fc232eff  /tmp/dtail-upstream-20260923.ZBR3ebEX/data/smoke/stats.log
+ebbac7bf57ff8efb066a9313f6edb7e1042fc12936cc693470a8c9fadcfe64f8  /tmp/dtail-upstream-20260923.ZBR3ebEX/data/smoke/follow.log
+3bcafa015d65bae0e4f7f46463f28b122fc8436d383f8c03faf9ce27f1c27587  /tmp/dtail-upstream-20260923.ZBR3ebEX/data/normal_100mib.log
+deb662eaee0afe0281c887127f30e702b0e423c9b579ecd32bc726dd283f36ec  /tmp/dtail-upstream-20260923.ZBR3ebEX/data/normal_1gib.log
+807bfa4e5759bef3b11f5d134d33fb3409b560ba578d7299ab2832eb3c6014c9  /tmp/dtail-upstream-20260923.ZBR3ebEX/data/stats_100mib.log
+db2d4cf1ff8845d6b9d7db1bc1718542b75c4d90bde4687eabfcf51ca3774ec1  /tmp/dtail-upstream-20260923.ZBR3ebEX/data/follow_10mib.log

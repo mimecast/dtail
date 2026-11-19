@@ -58,11 +58,11 @@ func newGlobCapTestServer(maxGlobTargets int) *globCapTestServer {
 // We use a plain ValidatedReadTarget with FileKind so no actual file I/O is
 // attempted; the goroutine that calls read() will fail gracefully when the
 // nonexistent catFile cannot be opened, but that is fine for this test.
-func (s *globCapTestServer) PrepareReadTarget(path string) (fs.ValidatedReadTarget, bool) {
+func (s *globCapTestServer) PrepareReadTarget(path string) (fs.ValidatedReadTarget, error) {
 	atomic.AddInt32(&s.preparedCount, 1)
 	// Return a valid file-kind target so readFileIfPermissions proceeds past
 	// the permission check and reaches the actual read machinery.
-	return fs.ValidatedReadTarget{Kind: fs.FileKind}, true
+	return fs.ValidatedReadTarget{Kind: fs.FileKind}, nil
 }
 
 func (s *globCapTestServer) LogContext() any              { return "glob-cap-test" }
@@ -98,6 +98,19 @@ func (s *globCapTestServer) AcquireReadSlot(ctx context.Context, mode omode.Mode
 	case limiter <- struct{}{}:
 		return func() { <-limiter }, true
 	case <-ctx.Done():
+		return nil, false
+	}
+}
+
+func (s *globCapTestServer) TryAcquireReadSlot(mode omode.Mode, _ string) (func(), bool) {
+	limiter := s.tailLimiter
+	if mode == omode.CatClient || mode == omode.GrepClient {
+		limiter = s.catLimiter
+	}
+	select {
+	case limiter <- struct{}{}:
+		return func() { <-limiter }, true
+	default:
 		return nil, false
 	}
 }

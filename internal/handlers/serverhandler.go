@@ -10,6 +10,7 @@ import (
 
 	"github.com/mimecast/dtail/internal/authkey"
 	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/io/fs/readhub"
 	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/omode"
@@ -26,6 +27,7 @@ type ServerHandler struct {
 	*baseHandler
 	catLimiter          chan struct{}
 	tailLimiter         chan struct{}
+	readHub             *readhub.Hub
 	serverCfg           *config.ServerConfig
 	readTimings         readTimings
 	authKeyStore        *authkey.Store
@@ -83,14 +85,18 @@ func NewServerHandler(ctx context.Context, user *user.User, dependencies Depende
 
 	h := ServerHandler{
 		baseHandler: newBaseHandler(ctx, baseHandlerConfig{
-			logger:              loggers.Diagnostics,
-			readerLogger:        loggers.Reader,
+			logger:       loggers.Diagnostics,
+			readerLogger: loggers.Reader,
+			// Only the in-process client runtime provides an output writer,
+			// and it alone selects serverless mode, so dserver sessions
+			// always stay on the transport path.
 			serverlessOutput:    dependencies.ServerlessOutput,
 			user:                user,
 			maxCommandFrameSize: serverCfg.MaxCommandFrameSize,
 		}),
 		catLimiter:   dependencies.CatLimiter,
 		tailLimiter:  dependencies.TailLimiter,
+		readHub:      dependencies.ReadHub,
 		serverCfg:    serverCfg,
 		readTimings:  newReadTimings(serverCfg),
 		authKeyStore: dependencies.AuthKeyStore,
@@ -136,7 +142,7 @@ func minimumOutputBufferMaxBytes(maxLineLength int) int {
 func (h *ServerHandler) handleUserCommand(ctx context.Context, ltx lcontext.LContext,
 	argc int, args []string, commandName string) {
 
-	h.Logger().Debug(h.user, "Handling user command", argc, args)
+	h.Logger().Debug(h.user, "Handling user command", argc, argsForLog(args))
 	// The close acknowledgement completes an existing shutdown handshake; it
 	// is protocol control traffic rather than new workload. Process it even
 	// after graceful shutdown has sealed command admission, and keep it out of
@@ -197,7 +203,8 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, ltx lcontext.LCon
 	handler, found := h.commands[commandName]
 	if !found {
 		h.sendln(h.serverMessages, h.Logger().Error(h.user,
-			"Received unknown user command", commandName, argc, args))
+			"Received unknown user command", commandName, argc, argsForLog(args)))
+		h.reportCommandFailure(commandFailureUnknown)
 		commandFinished()
 		return
 	}
@@ -334,6 +341,7 @@ func (h *ServerHandler) handleMapCommand(ctx context.Context, _ lcontext.LContex
 	if err != nil {
 		h.sendln(h.serverMessages, err.Error())
 		h.Logger().Error(h.user, err)
+		h.reportCommandFailure(commandFailureMapQuery)
 		commandFinished()
 		return
 	}

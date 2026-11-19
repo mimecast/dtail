@@ -256,6 +256,10 @@ type payloadFileTeer interface {
 	RawFileOnly(message string)
 }
 
+type payloadFileBytesTeer interface {
+	RawFileOnlyBytes(message []byte)
+}
+
 // RawPayloadFileTee writes retrieved payload to the logger's FILE sink only
 // (never stdout), honoring the client's --log-payload / Client.LogPayload
 // opt-in. It is used by the serverless direct-output path, which emits payload
@@ -266,6 +270,18 @@ type payloadFileTeer interface {
 func (d *DLog) RawPayloadFileTee(message string) {
 	if teer, ok := d.logger.(payloadFileTeer); ok {
 		teer.RawFileOnly(message)
+	}
+}
+
+// RawPayloadFileTeeBytes is the borrowed-byte form of RawPayloadFileTee.
+// It writes only to an opt-in file tee, never stdout or the colorizer. The
+// sink must consume or copy message before returning; string-only sinks get
+// an owned copy, and sinks without a file tee remain a no-op.
+func (d *DLog) RawPayloadFileTeeBytes(message []byte) {
+	if teer, ok := d.logger.(payloadFileBytesTeer); ok {
+		teer.RawFileOnlyBytes(message)
+	} else if teer, ok := d.logger.(payloadFileTeer); ok {
+		teer.RawFileOnly(string(message))
 	}
 }
 

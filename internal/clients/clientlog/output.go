@@ -50,6 +50,10 @@ type payloadFileTeer interface {
 	RawPayloadFileTee(string)
 }
 
+type payloadFileBytesTeer interface {
+	RawPayloadFileTeeBytes([]byte)
+}
+
 // Raw writes client payload through the logger's raw-output capability.
 func Raw(logger Logger, message string) {
 	logger.Raw(message)
@@ -103,5 +107,16 @@ func Resume(logger logging.Logger) {
 func TeePayloadToFile(logger logging.Logger, message string) {
 	if output, ok := logger.(payloadFileTeer); ok {
 		output.RawPayloadFileTee(message)
+	}
+}
+
+// TeePayloadBytesToFile passes borrowed bytes to the optional file-only sink.
+// A byte-capable sink consumes or copies them before returning; legacy sinks
+// receive an owned string. Loggers without either capability are skipped.
+func TeePayloadBytesToFile(logger logging.Logger, message []byte) {
+	if output, ok := logger.(payloadFileBytesTeer); ok {
+		output.RawPayloadFileTeeBytes(message)
+	} else if output, ok := logger.(payloadFileTeer); ok {
+		output.RawPayloadFileTee(string(message))
 	}
 }

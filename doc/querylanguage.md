@@ -24,30 +24,35 @@ $VARIABLE := Like a bareword, but with a $ prefix, e.g. $foo. This usually conta
             a special value set by DTail itself (not necessary from the log line).
 ```
 
-This is the overall structure of a query:
+A query is a sequence of clauses. Each clause starts with one of the clause
+keywords below and extends up to the next clause keyword, so the clauses can be
+written in **any order**. All of them are optional except `select`:
 
 ```shell
-QUERY := select SELECT1[,SELECT2...]
-         [from TABLE]
-         [where CONDITION1[,CONDITION2...]]
-         [group by FIELD1[,FIELD2...]]
-         [order|rorder by ORDERFIELD]
-         [set SET1,[,SET2...]]
-         [interval NUMBER]
-         [limit NUMBER]
-         [outfile [append] STRING]
-         [logformat LOGFORMAT]
+QUERY := CLAUSE1 [CLAUSE2 ...]
+CLAUSE := select SELECT1[,SELECT2...]
+          | from TABLE
+          | where CONDITION1[,CONDITION2...]
+          | group [by] FIELD1[,FIELD2...]
+          | order [by] ORDERFIELD
+          | rorder [by] ORDERFIELD
+          | set SET1[,SET2...]
+          | interval NUMBER
+          | limit NUMBER
+          | outfile [append] STRING
+          | logformat LOGFORMAT
 ```
 
 ... whereas:
 
 ```shell
-TABLE := The mapreduce table name, e.g. STATS in MAPREDUCE:STATS
+TABLE := The mapreduce table name, e.g. STATS in MAPREDUCE:STATS (see "Special
+         table names" below)
 SELECT := FIELD|AGGREGATION(FIELD)
 CONDITION := ARG1 OPERATOR ARG2
 ARG := FIELD|FLOAT|STRING
 OPERATOR := FLOATOPERATOR|STRINGOPERATOR
-FLOATOPERATOR := One of: == != < <= > >=
+FLOATOPERATOR := One of: == != < <= =< > >= =>
 STRINGOPERATOR := eq|ne|contains|ncontains|lacks|hasprefix|nhasprefix|hassuffix|nhassuffix
 ORDERFIELD := FIELD|AGGREGATION(FIELD)
 SET := $VARIABLE = FLOAT|STRING|FIELD|FUNCTION(FIELD)
@@ -60,9 +65,47 @@ FUNCTION := md5sum|maskdigits
 
 * `rorder` stands for reverse order.
 * `lacks` is an alias for `ncontains` (not contains).
+* The float operators `=<` and `=>` are accepted aliases for `<=` and `>=`.
+* The `by` in `group by`, `order by` and `rorder by` is optional: `group $foo`
+  and `group by $foo` mean the same.
+* Where conditions are separated by commas or by the keyword `and`
+  (`where $a eq 1 and $b ne 2` is the same as `where $a eq 1, $b ne 2`), and
+  they are AND-ed together: a line must satisfy every condition to be counted.
+* If no `group by` clause is given, DTail implicitly groups by the first select
+  field. For `select count(*)` that field is `*`, i.e. everything collapses
+  into a single group.
+* The field given to `order by`/`rorder by` must also appear in the `select`
+  clause, otherwise the query fails to parse with an error.
+* If no `interval` clause is given, results are aggregated every 5 seconds.
 * Available fields (variables and barewords) vary from the log format used. Check out the [log format](./logformats.md) documentation for more information.
 * `percentage(field)` returns the selected group's share of the total for that field across all groups. For non-negative inputs, the result is between 0 and 100; with mixed positive and negative values, it can fall outside that range.
 * `percentile(field)` returns the percentile rank of the selected group's value among all grouped values for that field, also expressed as a value between 0 and 100. Equal values share the same rank.
+
+### Escaping keywords
+
+Backticks around a token make it a literal field name instead of interpreting
+it. For example, `select` with an escaped aggregation expression:
+
+```shell
+% dmap --files example.log --query 'select `count($foo)` group by `count($foo)`'
+```
+
+This selects the field literally named `count($foo)` (using the `last`
+aggregation to pick its value) instead of counting the occurrences of `$foo`.
+This also allows using a clause keyword itself as a field name.
+
+### Special table names
+
+Table names are upper-cased (`from stats` reads `STATS`) and normally match
+log lines of the form `|MAPREDUCE:<TABLENAME>|`. Two table names are special:
+
+* `from .` — and likewise omitting the `from` clause entirely — matches every
+  line.
+* `from *` matches every `MAPREDUCE` line regardless of the table name.
+
+Also note: a query using the `csv` log format without a `from` clause
+automatically behaves as if `from .` was given, so every line of the CSV file
+is processed.
 
 ## Selecting the log format and dynamic fields
 
@@ -83,9 +126,10 @@ resolve" while positional/built-in fields work. Both are by design:
    unchanged), and it is never emitted for barewords, for built-ins like
    `$empty`, or for variables defined via a `set` clause.
 
-2. **The `from TABLE` clause selects the rich parser.** Although `from TABLE` is
-   written as optional in the grammar above, omitting it (and not passing an
-   explicit `logformat`) downgrades the query to the `generic` log format, which
+2. **The `from TABLE` clause selects the rich parser.** Omitting `from TABLE`
+   matches every line (see "Special table names" above), and — unless an
+   explicit `logformat` is given — also downgrades the query to the `generic`
+   log format, which
    exposes only the common variables (`$line`, `$hostname`, ...) and **no**
    dynamic `key=value` fields and **no** default-format `$`-variables such as
    `$time`. To query DTail's own default-format logs (lines containing

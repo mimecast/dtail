@@ -9,4 +9,8 @@ const (
 
 	// CapabilityJournalV1 marks support for journal protocol operations over an existing session.
 	CapabilityJournalV1 = "journal-v1"
+
+	// CapabilityCommandFailureV1 marks that the server reports failed session
+	// commands with a hidden HiddenCommandFailedPrefix message.
+	CapabilityCommandFailureV1 = "command-failure-v1"
 )

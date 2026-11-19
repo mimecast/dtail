@@ -58,12 +58,15 @@ type Args struct {
 	Plain             bool
 	QueryStr          string
 	Quiet             bool
-	RegexInvert       bool
-	RegexStr          string
-	Serverless        bool
-	ServersStr        string
-	Timeout           int
-	What              string
+	// ReadShare, when set, asks dserver to share one-shot reads with the
+	// other members of a group of scheduled jobs; see ReadShare.
+	ReadShare   ReadShare
+	RegexInvert bool
+	RegexStr    string
+	Serverless  bool
+	ServersStr  string
+	Timeout     int
+	What        string
 }
 
 func (a *Args) String() string {
@@ -90,6 +93,7 @@ func (a *Args) String() string {
 	fmt.Fprintf(&sb, "NoColor:%v,", a.NoColor)
 	fmt.Fprintf(&sb, "QueryStr:%v,", a.QueryStr)
 	fmt.Fprintf(&sb, "Quiet:%v,", a.Quiet)
+	fmt.Fprintf(&sb, "ReadShare:%s,", a.ReadShare.Redacted())
 	fmt.Fprintf(&sb, "RegexInvert:%v,", a.RegexInvert)
 	fmt.Fprintf(&sb, "RegexStr:%v,", a.RegexStr)
 	fmt.Fprintf(&sb, "SSHAgentKeyIndex:%v,", a.SSHAgentKeyIndex)
@@ -131,6 +135,9 @@ func (a *Args) SerializeOptions() string {
 	}
 	if a.AfterContext != 0 {
 		options["after"] = fmt.Sprintf("%d", a.AfterContext)
+	}
+	if !a.ReadShare.IsZero() {
+		options[ReadShareOption] = a.ReadShare.String()
 	}
 
 	return serializeOptions(options)

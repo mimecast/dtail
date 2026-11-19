@@ -1,0 +1,32 @@
+Work directory: /tmp/dtail-upstream-20260923.ZBR3ebEX
+Building both revisions with go=/usr/local/go/bin/go and -p=1
+  upstream dserver
+  upstream dcat
+  upstream dgrep
+  upstream dmap
+  upstream dtail
+  local    dserver
+  local    dcat
+  local    dgrep
+  local    dmap
+  local    dtail
+Running untimed serverless correctness checks
+Running untimed matched client/server correctness checks
+Smoke checks passed: outputs and delivered follow records match.
+Generating shared deterministic benchmark data in /tmp/dtail-upstream-20260923.ZBR3ebEX/data
+Benchmarking serverless dcat_medium        (5 observations each)
+Benchmarking serverless dcat_large         (5 observations each)
+Benchmarking serverless dgrep_low          (5 observations each)
+Benchmarking serverless dgrep_high         (5 observations each)
+Benchmarking serverless dmap_aggregate     (5 observations each)
+Traceback (most recent call last):
+  File "<stdin>", line 6, in <module>
+ConnectionRefusedError: [Errno 111] Connection refused
+Benchmarking server     dcat_medium        (5 observations each)
+Benchmarking server     dgrep_low          (5 observations each)
+Benchmarking server     dgrep_high         (5 observations each)
+Benchmarking server     dmap_count         (5 observations each)
+Benchmarking server     dmap_aggregate     (5 observations each)
+Benchmarking server     dtail_follow       (5 observations each)
+Raw results: /tmp/dtail-upstream-20260923.ZBR3ebEX/results.csv
+Summary:     /tmp/dtail-upstream-20260923.ZBR3ebEX/report.md

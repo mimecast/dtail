@@ -1,0 +1,1 @@
+from STATS select count($line),last($time),avg($goroutines),min(concurrentConnections),max(lifetimeConnections) group by $hostname interval 1 outfile ./sharedread_continuous_a.csv.tmp

@@ -100,3 +100,22 @@ func TestReadSemaphoreNotStolenOnCancelBeforeAcquire(t *testing.T) {
 			capacity, got, workers)
 	}
 }
+
+// TryAcquireReadSlot takes a free slot of the mode's limiter without waiting
+// and reports false, taking nothing, when the limiter is full.
+func TestTryAcquireReadSlotNeverWaits(t *testing.T) {
+	handler, limiter := buildLimiterTestHandler(t, 1)
+	if release, acquired := handler.TryAcquireReadSlot(omode.CatClient, "/f"); acquired || release != nil {
+		t.Fatal("TryAcquireReadSlot() took a slot of a full limiter")
+	}
+	<-limiter
+	release, acquired := handler.TryAcquireReadSlot(omode.GrepClient, "/f")
+	if !acquired || len(limiter) != 1 {
+		t.Fatalf("TryAcquireReadSlot() = %v with %d slots in use, want a slot", acquired, len(limiter))
+	}
+	release()
+	release()
+	if len(limiter) != 0 {
+		t.Errorf("%d slots in use after release, want none; release must be idempotent", len(limiter))
+	}
+}

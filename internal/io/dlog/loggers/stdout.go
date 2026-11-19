@@ -27,6 +27,10 @@ type stdout struct {
 	mutex      sync.Mutex
 	resumeCond *sync.Cond
 	pauseDepth int
+	// flushPending covers both an unread dirty notification and an armed
+	// timer. Protected by mutex, it coalesces a burst into one notification.
+	flushPending bool
+	dirtyCh      chan struct{}
 }
 
 var _ Logger = (*stdout)(nil)
@@ -45,28 +49,42 @@ func newStdout() *stdout {
 // isolated unit tests); idle/shutdown flushing is only driven once Start()
 // spawns the flush goroutine.
 func newStdoutWriter(w io.Writer) *stdout {
-	s := &stdout{writer: bufio.NewWriterSize(w, stdoutWriterBufSize)}
+	s := &stdout{writer: bufio.NewWriterSize(w, stdoutWriterBufSize), dirtyCh: make(chan struct{}, 1)}
 	s.resumeCond = sync.NewCond(&s.mutex)
 	return s
 }
 
 func (s *stdout) Start(ctx context.Context, wg *sync.WaitGroup) {
-	// Background flusher: with a real buffer, low-volume (follow/interactive)
-	// output would otherwise sit unwritten until the buffer fills. The ticker
-	// flushes any partial buffer promptly, and ctx.Done triggers a final flush
-	// so no buffered output is lost on clean shutdown. wg.Done is deferred to
-	// the goroutine so callers (ClientRuntime.Stop -> wg.Wait) block until the
-	// final flush has happened.
+	// Arm only on the first buffered write after a flush. Producers never
+	// read the clock or reset a timer; an unused logger has no timer wakeups.
 	go func() {
 		defer wg.Done()
-		ticker := time.NewTicker(stdoutIdleFlushInterval)
-		defer ticker.Stop()
+		start := time.Now()
+		var timer *time.Timer
+		var tick <-chan time.Time
+		defer func() {
+			if timer != nil {
+				timer.Stop()
+			}
+		}()
 		for {
 			select {
-			case <-ticker.C:
-				s.Flush()
+			case <-s.dirtyCh:
+				delay := nextFlushDelay(start, stdoutIdleFlushInterval)
+				if timer == nil {
+					timer = time.NewTimer(delay)
+				} else {
+					timer.Reset(delay)
+				}
+				tick = timer.C
+			case <-tick:
+				tick = nil
+				s.flushIdle()
 			case <-ctx.Done():
-				s.Flush()
+				// Another Start caller may still be alive. Release the
+				// pending state along with this worker's final flush so
+				// later writes can wake that worker (or a future Start).
+				s.flushIdle()
 				return
 			}
 		}
@@ -94,6 +112,7 @@ func (s *stdout) RawBytes(message []byte) {
 	s.lockUnpaused()
 	defer s.mutex.Unlock()
 	_, _ = s.writer.Write(message)
+	s.armIdleFlush()
 }
 
 func (s *stdout) log(message string, nl bool) {
@@ -107,6 +126,23 @@ func (s *stdout) log(message string, nl bool) {
 	if nl {
 		_ = s.writer.WriteByte('\n')
 	}
+	s.armIdleFlush()
+}
+
+// armIdleFlush is called with mutex held. Flush/Pause leave a pending timer
+// alone: any later write before it fires is covered by the same deadline.
+func (s *stdout) armIdleFlush() {
+	if !s.flushPending && s.writer.Buffered() > 0 {
+		s.flushPending = true
+		signal(s.dirtyCh)
+	}
+}
+
+func (s *stdout) flushIdle() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	_ = s.writer.Flush()
+	s.flushPending = false
 }
 
 // lockUnpaused acquires the mutex once logging is not paused. The caller must
@@ -147,8 +183,6 @@ func (s *stdout) Resume() {
 func (s *stdout) Flush() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	// bufio.Flush is a no-op when nothing is buffered, so calling this on every
-	// idle tick is cheap.
 	_ = s.writer.Flush()
 }
 

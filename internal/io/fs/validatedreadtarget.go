@@ -21,6 +21,10 @@ const (
 	JournalKind
 )
 
+// ErrNotRegularFile is wrapped by the error of NewValidatedReadTarget for a
+// path that is not a regular file, e.g. a directory a glob matched.
+var ErrNotRegularFile = errors.New("not a regular file")
+
 // ValidatedReadTarget stores a resolved regular file path for rooted re-opens.
 type ValidatedReadTarget struct {
 	Kind         ReadTargetKind
@@ -45,7 +49,7 @@ func NewValidatedReadTarget(resolvedPath string) (ValidatedReadTarget, error) {
 		return ValidatedReadTarget{}, fmt.Errorf("lstat validated read target %s: %w", cleanedPath, err)
 	}
 	if !info.Mode().IsRegular() {
-		return ValidatedReadTarget{}, fmt.Errorf("validated read target must be a regular file: %s", cleanedPath)
+		return ValidatedReadTarget{}, fmt.Errorf("validated read target %s: %w", cleanedPath, ErrNotRegularFile)
 	}
 
 	rootedPath, err := NewRootedPath(cleanedPath)
@@ -88,6 +92,12 @@ func validateJournalSpec(spec string) error {
 		}
 	}
 	return nil
+}
+
+// ResolvedPath returns the absolute path the target was validated for. Two
+// targets with the same resolved path open the same file.
+func (t ValidatedReadTarget) ResolvedPath() string {
+	return t.resolvedPath
 }
 
 // Open re-opens the validated file beneath its resolved parent directory.

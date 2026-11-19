@@ -29,6 +29,29 @@ func (f *stats) updatePosition() {
 	f.lineCount++
 }
 
+// updateFilteredLine records a line without local context: matching and
+// transmission have the same outcome. Capture the bucket once, since writes
+// to either history otherwise require its position to be loaded again.
+func (f *stats) updateFilteredLine(matched bool) {
+	i := f.pos
+	if f.matched[i] != matched {
+		if matched {
+			f.matchCount++
+		} else {
+			f.matchCount--
+		}
+		f.matched[i] = matched
+	}
+	if f.transmitted[i] != matched {
+		if matched {
+			f.transmitCount++
+		} else {
+			f.transmitCount--
+		}
+		f.transmitted[i] = matched
+	}
+}
+
 // Increment match counter.
 func (f *stats) updateLineMatched() {
 	if !f.matched[f.pos] {

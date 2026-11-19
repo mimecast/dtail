@@ -30,6 +30,7 @@ test_*.log
 /dtailhealth
 /dtail-tools
 known_hosts
+known_hosts.lock
 id_rsa
 id_rsa.pub
 ssh_host_key

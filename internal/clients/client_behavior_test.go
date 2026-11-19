@@ -261,6 +261,7 @@ func TestMaprClientCumulativePolicy(t *testing.T) {
 		want bool
 	}{
 		{name: "explicit cumulative", mode: CumulativeMode, q: plainQuery, want: true},
+		{name: "scheduled is cumulative", mode: ScheduledMode, op: omode.TailClient, q: plainQuery, want: true},
 		{name: "explicit non-cumulative", mode: NonCumulativeMode, op: omode.MapClient, q: outfileQuery},
 		{name: "map defaults cumulative", mode: DefaultMode, op: omode.MapClient, q: plainQuery, want: true},
 		{name: "outfile defaults cumulative", mode: DefaultMode, op: omode.TailClient, q: outfileQuery, want: true},

@@ -295,7 +295,7 @@ func TestReadCommandProcessorUsesAggregateCapturedAtAdmission(t *testing.T) {
 }
 
 func TestServerlessMapBatchAcceptsReadAfterEarlierReadFullyCompletes(t *testing.T) {
-	handler := newMapTestHandler(t)
+	handler := newServerlessMapTestHandler(t, handlerTestLogger)
 	firstPath := writeTestStatsFile(t, 1)
 	secondPath := writeTestStatsFile(t, 2)
 	// writeTestStatsFile uses a fresh TempDir on each call, so the two paths
@@ -370,7 +370,7 @@ func TestServerlessMapBatchAcceptsReadAfterEarlierReadFullyCompletes(t *testing.
 }
 
 func TestInputBatchKeepsUnclaimedReadFromFinishingBeforeLaterValidRead(t *testing.T) {
-	handler := newMapTestHandler(t)
+	handler := newServerlessMapTestHandler(t, handlerTestLogger)
 	path := writeTestStatsFile(t, 3)
 	readServerMessage(t, handler.serverMessages) // Initial capability advertisement.
 

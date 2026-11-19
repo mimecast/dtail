@@ -1,6 +1,7 @@
 package sessionuser
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -62,8 +63,25 @@ func (u *User) HasFilePermission(filePath, permissionType string) bool {
 	return hasPermission
 }
 
+// ErrReadPermissionDenied is returned by ResolveReadTarget for a path the
+// user's read permissions deny.
+var ErrReadPermissionDenied = errors.New("no permission to read file")
+
 // ValidateReadTarget resolves and authorizes a file path for server-side reads.
 func (u *User) ValidateReadTarget(filePath, permissionType string) (fs.ValidatedReadTarget, bool) {
+	target, err := u.ResolveReadTarget(filePath, permissionType)
+	return target, err == nil
+}
+
+// ResolveReadTarget resolves and authorizes a file path for server-side reads.
+// Its error is ErrReadPermissionDenied when the permissions deny the path, and
+// otherwise wraps why the path can not be read: os.ErrNotExist for a path
+// that does not exist (e.g. a dangling symbolic link or a file removed after
+// its glob matched it) and fs.ErrNotRegularFile for a permitted path that is
+// no regular file (e.g. a directory). The permissions are checked first, so a
+// denied path gives the same error whatever it is; for users the permissions
+// apply to, a path that can not be resolved is denied too.
+func (u *User) ResolveReadTarget(filePath, permissionType string) (fs.ValidatedReadTarget, error) {
 	u.log().Debug(u, filePath, permissionType, "Checking config permissions")
 	if fs.IsJournalSpec(filePath) {
 		return u.validateJournalReadTarget(filePath, permissionType)
@@ -73,14 +91,20 @@ func (u *User) ValidateReadTarget(filePath, permissionType string) (fs.Validated
 	if err != nil {
 		u.log().Error(u, filePath, permissionType,
 			"Unable to evaluate symlinks", err)
-		return fs.ValidatedReadTarget{}, false
+		if u.permissionChecked() {
+			// The permissions of a path that can not be resolved can not
+			// be checked; a user gets the same error for it as for any
+			// other path the permissions deny.
+			return fs.ValidatedReadTarget{}, ErrReadPermissionDenied
+		}
+		return fs.ValidatedReadTarget{}, fmt.Errorf("evaluate symlinks: %w", err)
 	}
 
 	cleanPath, err = filepath.Abs(cleanPath)
 	if err != nil {
 		u.log().Error(u, cleanPath, permissionType,
 			"Unable to make file path absolute", err)
-		return fs.ValidatedReadTarget{}, false
+		return fs.ValidatedReadTarget{}, fmt.Errorf("make file path absolute: %w", err)
 	}
 
 	if cleanPath != filePath {
@@ -88,42 +112,56 @@ func (u *User) ValidateReadTarget(filePath, permissionType string) (fs.Validated
 			"Calculated new clean path from original file path (possibly symlink)")
 	}
 
-	if u.Name != config.ScheduleUser && u.Name != config.ContinuousUser {
-		hasPermission, permissionErr := u.hasFilePermission(cleanPath, permissionType)
-		if permissionErr != nil {
-			u.log().Warn(u, cleanPath, permissionErr)
-		}
-		if !hasPermission {
-			return fs.ValidatedReadTarget{}, false
-		}
+	if u.permissionChecked() && !u.hasAnyFilePermission(cleanPath, permissionType) {
+		return fs.ValidatedReadTarget{}, ErrReadPermissionDenied
 	}
 
 	target, err := fs.NewValidatedReadTarget(cleanPath)
+	if errors.Is(err, fs.ErrNotRegularFile) {
+		// E.g. a directory a glob matched: the read command skips it.
+		u.log().Debug(u, cleanPath, permissionType, "Read target is not a regular file", err)
+		return fs.ValidatedReadTarget{}, err
+	}
 	if err != nil {
 		u.log().Warn(u, cleanPath, permissionType, "Unable to validate read target", err)
-		return fs.ValidatedReadTarget{}, false
+		return fs.ValidatedReadTarget{}, err
 	}
 
-	return target, true
+	return target, nil
 }
 
-func (u *User) validateJournalReadTarget(spec, permissionType string) (fs.ValidatedReadTarget, bool) {
-	if u.Name != config.ScheduleUser && u.Name != config.ContinuousUser {
+// permissionChecked reports whether the read permissions apply to u: they do
+// not to dserver's own scheduled and continuous jobs.
+func (u *User) permissionChecked() bool {
+	return u.Name != config.ScheduleUser && u.Name != config.ContinuousUser
+}
+
+// hasAnyFilePermission reports whether the read permissions permit path.
+func (u *User) hasAnyFilePermission(path, permissionType string) bool {
+	hasPermission, permissionErr := u.hasFilePermission(path, permissionType)
+	if permissionErr != nil {
+		u.log().Warn(u, path, permissionErr)
+	}
+	return hasPermission
+}
+
+func (u *User) validateJournalReadTarget(spec, permissionType string) (fs.ValidatedReadTarget, error) {
+	if u.permissionChecked() {
 		hasPermission, permissionErr := u.iteratePaths(spec, permissionType)
 		if permissionErr != nil {
 			u.log().Warn(u, spec, permissionErr)
 		}
 		if !hasPermission {
-			return fs.ValidatedReadTarget{}, false
+			return fs.ValidatedReadTarget{}, ErrReadPermissionDenied
 		}
 	}
 
 	target, err := fs.NewValidatedJournalTarget(spec)
 	if err != nil {
 		u.log().Warn(u, spec, permissionType, "Unable to validate journal read target", err)
-		return fs.ValidatedReadTarget{}, false
+		return fs.ValidatedReadTarget{}, err
 	}
-	return target, true
+	return target, nil
 }
 
 func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error) {

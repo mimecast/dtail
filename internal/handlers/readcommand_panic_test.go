@@ -59,7 +59,7 @@ type panicAggregateServer struct {
 
 func (s *panicAggregateServer) Aggregate() *mapaggregate.Aggregate { return s.aggregate }
 
-func (s *panicReadServer) PrepareReadTarget(string) (fs.ValidatedReadTarget, bool) {
+func (s *panicReadServer) PrepareReadTarget(string) (fs.ValidatedReadTarget, error) {
 	panic("prepare target failed")
 }
 

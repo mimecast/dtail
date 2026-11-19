@@ -159,10 +159,9 @@ func TestStartUsesRawProcessorFastPath(t *testing.T) {
 	}
 }
 
-// TestStartLocalContextBypassesRawProcessor is the negative case: any local
-// context (before, after, max) has to keep lines past the call, so a processor
-// with the fast path must still receive every line through ProcessLine.
-func TestStartLocalContextBypassesRawProcessor(t *testing.T) {
+// Before-context retains lines; max/after-only reads can borrow them. Both
+// delivery paths must produce the same payload and numbering.
+func TestStartLocalContextSelectsRawProcessor(t *testing.T) {
 	const content = "a\nb\nHIT 1\nc\nd\nHIT 2\ne\nHIT 3\nf\n"
 
 	tests := []struct {
@@ -190,18 +189,21 @@ func TestStartLocalContextBypassesRawProcessor(t *testing.T) {
 				t.Fatalf("context read: %v", err)
 			}
 
-			if processor.rawCalls != 0 {
-				t.Fatalf("ProcessRawLine called %d times with local context %+v, want 0",
-					processor.rawCalls, tt.ltx)
-			}
 			if len(reference.lines) == 0 {
 				t.Fatal("reference read emitted no lines; the test would be vacuous")
 			}
-			if processor.bufferCalls != len(reference.lines) {
-				t.Fatalf("ProcessLine called %d times, want %d", processor.bufferCalls, len(reference.lines))
+			wantRaw, wantOwned := len(reference.lines), 0
+			if tt.ltx.BeforeContext > 0 {
+				wantRaw, wantOwned = 0, len(reference.lines)
+			}
+			if processor.bufferCalls != wantOwned || processor.rawCalls != wantRaw {
+				t.Fatalf("owned/raw calls = %d/%d, want %d/%d", processor.bufferCalls, processor.rawCalls, wantOwned, wantRaw)
 			}
 			if !equalStrings(processor.lines, reference.lines) {
 				t.Fatalf("lines = %q, want %q", processor.lines, reference.lines)
+			}
+			if !equalUint64s(processor.lineNums, reference.lineNums) {
+				t.Fatalf("line numbers = %v, want %v", processor.lineNums, reference.lineNums)
 			}
 		})
 	}
@@ -209,7 +211,7 @@ func TestStartLocalContextBypassesRawProcessor(t *testing.T) {
 
 // TestNewFilteringProcessorResolvesRawProcessor pins when the fast path is
 // wired up: only for a processor implementing line.RawProcessor and only
-// without local context.
+// without before-context (max/after-only context does not retain input).
 func TestNewFilteringProcessorResolvesRawProcessor(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -219,8 +221,8 @@ func TestNewFilteringProcessorResolvesRawProcessor(t *testing.T) {
 	}{
 		{name: "raw processor without context", processor: &rawCaptureProcessor{}, wantRaw: true},
 		{name: "raw processor with before context", processor: &rawCaptureProcessor{}, ltx: lcontext.LContext{BeforeContext: 1}},
-		{name: "raw processor with after context", processor: &rawCaptureProcessor{}, ltx: lcontext.LContext{AfterContext: 1}},
-		{name: "raw processor with max count", processor: &rawCaptureProcessor{}, ltx: lcontext.LContext{MaxCount: 1}},
+		{name: "raw processor with after context", processor: &rawCaptureProcessor{}, ltx: lcontext.LContext{AfterContext: 1}, wantRaw: true},
+		{name: "raw processor with max count", processor: &rawCaptureProcessor{}, ltx: lcontext.LContext{MaxCount: 1}, wantRaw: true},
 		{name: "buffer-only processor", processor: &captureProcessor{}},
 	}
 

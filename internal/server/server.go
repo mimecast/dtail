@@ -14,6 +14,7 @@ import (
 	"github.com/mimecast/dtail/internal/color/brush"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/handlers"
+	"github.com/mimecast/dtail/internal/io/fs/readhub"
 	"github.com/mimecast/dtail/internal/logging"
 	user "github.com/mimecast/dtail/internal/sessionuser"
 	"github.com/mimecast/dtail/internal/ssh/server"
@@ -39,6 +40,9 @@ type Server struct {
 	catLimiter chan struct{}
 	// To control the max amount of concurrent tails.
 	tailLimiter chan struct{}
+	// readHub lets sessions tailing the same file share one reader of it; nil
+	// when shared reads are turned off.
+	readHub *readhub.Hub
 	// Background jobs are composed by cmd/dserver so this package does not depend on clients.
 	backgroundJobs BackgroundJobs
 	// Capabilities are detected once during construction and passed to every session handler.
@@ -117,6 +121,7 @@ func New(cfg config.RuntimeConfig, loggers handlers.HandlerLoggers, backgroundJo
 		stats:          newStats(cfg.Server.MaxConnections, logger),
 		catLimiter:     make(chan struct{}, cfg.Server.MaxConcurrentCats),
 		tailLimiter:    make(chan struct{}, cfg.Server.MaxConcurrentTails),
+		readHub:        handlers.NewReadHub(cfg.Server, logger),
 		backgroundJobs: backgroundJobs,
 		capabilities:   handlers.DetectCapabilities(),
 		authKeyStore: authkey.New(
@@ -362,6 +367,7 @@ func (s *Server) handleShellRequest(ctx context.Context, sshConn gossh.Conn,
 		ServerConfig: s.cfg.Server,
 		CatLimiter:   s.catLimiter,
 		TailLimiter:  s.tailLimiter,
+		ReadHub:      s.readHub,
 		AuthKeyStore: s.authKeyStore,
 		Loggers: handlers.HandlerLoggers{
 			Diagnostics: s.log(),
