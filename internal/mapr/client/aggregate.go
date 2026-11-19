@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/mimecast/dtail/internal/logging"
@@ -62,7 +63,14 @@ type Aggregate struct {
 	// The server we aggregate the data for (logging and debugging purposes only)
 	server string
 	logger logging.Logger
+	// retrying is set while a retry of a merge that missed the global
+	// group set's lock is scheduled (retryMerge).
+	retrying bool
 }
+
+// mergeRetryDelay is how long after a merge that missed the global group
+// set's lock the queued messages are tried again.
+const mergeRetryDelay = 10 * time.Millisecond
 
 // pendingMessage is a queued aggregate message: its group key is
 // pending[start:keyEnd] and its fields are pending[keyEnd:end].
@@ -99,6 +107,12 @@ func NewAggregate(server string, session *SessionState, logger logging.Logger) *
 	}
 }
 
+// Expected reports whether the session expects aggregate frames (see
+// SessionState.AggregatesExpected); false without a session.
+func (a *Aggregate) Expected() bool {
+	return a.session != nil && a.session.AggregatesExpected()
+}
+
 // Add validates one aggregate message (the content of an aggregate frame)
 // and queues it for the next Merge or Flush. message is copied, so the caller
 // may reuse it right away. A message of another generation than the queued
@@ -133,9 +147,10 @@ func (a *Aggregate) Add(message []byte) error {
 }
 
 // Merge aggregates the queued messages into the shared global group set
-// when its lock is free right away, and otherwise keeps them queued for the
-// next Merge or Flush, so a connection never waits for another one. Only
-// once maxPendingBytes are queued does it wait for the lock.
+// when its lock is free right away, and otherwise keeps them queued, so a
+// connection never waits for another one, and tries again shortly
+// (retryMerge) and at the next Merge or Flush. Only once maxPendingBytes
+// are queued does it wait for the lock.
 func (a *Aggregate) Merge() error {
 	return a.merge(false)
 }
@@ -159,11 +174,14 @@ func (a *Aggregate) merge(block bool) error {
 	}
 	snapshot := a.session.Snapshot()
 	if snapshot.Query == nil || snapshot.GlobalGroup == nil {
+		// No query is active: interactive dtail switched its session to a
+		// plain read (SessionState.ClearQuery), or not yet to the query
+		// whose first aggregates these are (the servers start the new
+		// workload before the client commits it). Neither has a result to
+		// add them to, so they are dropped, as aggregates of a replaced
+		// generation are.
 		a.reset()
-		if block {
-			return nil
-		}
-		return fmt.Errorf("missing client mapreduce query state")
+		return nil
 	}
 	if snapshot.Generation != a.generation {
 		a.reset()
@@ -171,13 +189,38 @@ func (a *Aggregate) merge(block bool) error {
 		return nil
 	}
 
-	apply := func(group *mapr.GroupSet) { a.aggregatePending(snapshot.Query, group) }
+	// The first merge of the generation from this server tells the reporter
+	// that its data arrived (SessionSnapshot.AggregatesArrived); a missed
+	// UpdateNoblock merges nothing yet and so signals nothing either.
+	apply := func(group *mapr.GroupSet) {
+		a.aggregatePending(snapshot.Query, group)
+		snapshot.arrival.mark(a.server)
+	}
 	if block || len(a.pending) >= maxPendingBytes {
 		snapshot.GlobalGroup.Update(apply)
 		return nil
 	}
-	snapshot.GlobalGroup.UpdateNoblock(apply)
+	if !snapshot.GlobalGroup.UpdateNoblock(apply) && !a.retrying {
+		a.retrying = true
+		go a.retryMerge()
+	}
 	return nil
+}
+
+// retryMerge merges the messages a Merge left queued because another
+// connection (or the result rendering) held the global group set's lock.
+// Without it they waited for the connection's next aggregate messages: the
+// servers send their results at the same moment, once per interval, so a
+// connection that lost the lock had its rows reported one interval late
+// (seen live as a server missing from a query's first table). It never
+// waits for the lock either: a merge that misses again schedules the next
+// retry. Messages of a replaced generation are dropped by merge.
+func (a *Aggregate) retryMerge() {
+	time.Sleep(mergeRetryDelay)
+	a.mu.Lock()
+	a.retrying = false
+	a.mu.Unlock()
+	_ = a.merge(false)
 }
 
 // aggregatePending aggregates every queued message, in order, into group and
@@ -237,7 +280,7 @@ func (a *Aggregate) aggregateFields(set *mapr.AggregateSet, samples int) {
 		}
 		var err error
 		if sc.Operation == mapr.Avg {
-			err = a.aggregateAvg(set, sc.FieldStorage, a.plan.avgCountKeys[i], val, samples)
+			err = a.aggregateAvg(set, sc.FieldStorage, a.plan.avgCountKeys[i], val)
 		} else {
 			err = set.Aggregate(sc.FieldStorage, sc.Operation, val, true)
 		}
@@ -253,22 +296,22 @@ func (a *Aggregate) aggregateFields(set *mapr.AggregateSet, samples int) {
 }
 
 // aggregateAvg adds a server's avg() sum of storage, and the number of values
-// it holds, to set. A current dserver sends that number under countKey
-// (mapr.AvgCountKey(storage)). An older one sends none: its sample count (the
-// lines of the group with any selected field) is then taken instead, so such a
-// server's average is what it always was. A count that is not a positive
-// integer rejects the field, sum included.
-func (a *Aggregate) aggregateAvg(set *mapr.AggregateSet, storage, countKey, sum string, samples int) error {
-	count := samples
-	if raw, ok := a.fieldValue(countKey); ok {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			return fmt.Errorf("unable to parse value count of '%s': %w", storage, err)
-		}
-		if parsed <= 0 {
-			return fmt.Errorf("invalid value count '%s' of '%s'", raw, storage)
-		}
-		count = parsed
+// it holds, to set. dserver sends that number with every avg() sum, under
+// countKey (mapr.AvgCountKey(storage)), as the sum alone cannot be averaged:
+// the message's samples count lines with any selected field, not values of
+// this one. A sum without its count, or with a count that is not a positive
+// integer, is a malformed message and rejects the field, sum included.
+func (a *Aggregate) aggregateAvg(set *mapr.AggregateSet, storage, countKey, sum string) error {
+	raw, ok := a.fieldValue(countKey)
+	if !ok {
+		return fmt.Errorf("avg() value of '%s' without its value count", storage)
+	}
+	count, err := strconv.Atoi(raw)
+	if err != nil {
+		return fmt.Errorf("unable to parse value count of '%s': %w", storage, err)
+	}
+	if count <= 0 {
+		return fmt.Errorf("invalid value count '%s' of '%s'", raw, storage)
 	}
 	return set.AggregateAvg(storage, sum, count)
 }

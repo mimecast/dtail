@@ -36,6 +36,13 @@ type baseClient struct {
 	runtime   *clientRuntimeBoundary
 	colorizer *brush.Brush
 	loggers   LoggerDependencies
+	// setForceExitHook registers the interactive line editor's terminal
+	// restore with the forced exit; nil means signal.SetBeforeForceExit.
+	// Tests replace it per client.
+	setForceExitHook func(func())
+	// editorEnv looks up VISUAL and EDITOR for the line editor's external
+	// editor (Alt-E/Alt-V); nil means os.Getenv. Tests replace it per client.
+	editorEnv func(string) string
 	// To display client side stats
 	stats *stats
 	// We have one connection per remote server.
@@ -59,6 +66,14 @@ type baseClient struct {
 	throttleCh chan struct{}
 	// The current connection-wide session specification.
 	sessionSpec SessionSpec
+	// tailFilter is the line filter of the tail workload that a switch of
+	// interactive dtail to a MapReduce query set aside (see switchToQuery
+	// and switchToTail), guarded by mu.
+	tailFilter tailFilter
+	// reloadMu is held by an interactive :reload for its whole run and by
+	// a reconnect while it creates and installs its new connection (see
+	// reloadLock and recreateConnection).
+	reloadMu *sync.Mutex
 	// Client-specific connection behavior.
 	profile clientProfile
 	// Optional factory override for retry/reconnect tests.
@@ -71,6 +86,11 @@ type baseClient struct {
 	nowFn func() time.Time
 	// Regex is the regular expresion object for line filtering
 	Regex regex.Regex
+	// prober is the background prober of an interactive session and its
+	// field catalog (see interactiveProber), set by startInteractiveControl
+	// before the control loop starts; nil otherwise, which its methods
+	// accept.
+	prober *interactiveProber
 }
 
 func newBaseClient(args config.Args, cfg config.RuntimeConfig, loggers LoggerDependencies,
@@ -321,7 +341,7 @@ func (c *baseClient) startConnection(ctx context.Context, i int,
 		retryDelay = nextRetryDelay(retryDelay)
 		server := conn.Server()
 		var err error
-		conn, err = c.makeConnection(server, c.sshAuthMethods, c.hostKeyCallback)
+		conn, err = c.recreateConnection(i, server)
 		if err != nil {
 			c.clientLogger().Error(server, "Unable to recreate connection", err)
 			if status == 0 {
@@ -329,8 +349,40 @@ func (c *baseClient) startConnection(ctx context.Context, i int,
 			}
 			return
 		}
-		c.replaceConnection(i, conn)
 	}
+}
+
+// recreateConnection creates the next connection to server with the
+// current session spec and installs it as connection i. It holds the reload
+// lock (reloadLock) meanwhile: a :reload running then has connection i's
+// previous connection in its list and skips it, as its session ended, so a
+// new connection created in the middle of the reload would get the
+// replaced spec and run the replaced workload. Held back until the reload
+// ended, it is created with the spec the reload stored.
+func (c *baseClient) recreateConnection(i int, server string) (connectors.Connector, error) {
+	reloadMu := c.reloadLock()
+	reloadMu.Lock()
+	defer reloadMu.Unlock()
+
+	conn, err := c.makeConnection(server, c.sshAuthMethods, c.hostKeyCallback)
+	if err != nil {
+		return nil, err
+	}
+	c.replaceConnection(i, conn)
+	return conn, nil
+}
+
+// reloadLock returns the lock an interactive :reload holds for its whole
+// run (see recreateConnection), created on first use.
+func (c *baseClient) reloadLock() *sync.Mutex {
+	mu := c.stateMu()
+	mu.Lock()
+	defer mu.Unlock()
+
+	if c.reloadMu == nil {
+		c.reloadMu = &sync.Mutex{}
+	}
+	return c.reloadMu
 }
 
 // runSession runs one session of conn, connection i, under a context of its

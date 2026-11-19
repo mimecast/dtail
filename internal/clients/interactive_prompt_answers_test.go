@@ -2,9 +2,12 @@ package clients
 
 import (
 	"bufio"
+	"bytes"
 	"io"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type fakePromptRouter struct {
@@ -47,4 +50,39 @@ func TestPromptAnswersRoutesLinesOnlyWhilePrompting(t *testing.T) {
 		t.Fatal("nil answers took a line")
 	}
 	none.close()
+}
+
+// An answer to the host key question does not enter the history; lines
+// entered while no question is asked do.
+func TestControlHistorySkipsAnswers(t *testing.T) {
+	var asking atomic.Bool
+	h := &controlHistory{skip: asking.Load}
+	h.Add(":show")
+	asking.Store(true)
+	h.Add("yes")
+	asking.Store(false)
+	h.Add(":help")
+	if h.Len() != 2 || h.entries[0] != ":help" || h.entries[1] != ":show" {
+		t.Fatalf("history = %q, want [:help :show]", h.entries)
+	}
+}
+
+// The interrupt statistics go to the writer set with setInterruptOutput, and
+// no longer once it is reset.
+func TestStatsInterruptOutput(t *testing.T) {
+	s := newTailStats(1, nil, time.Millisecond, nil)
+	var out bytes.Buffer
+	s.setInterruptOutput(&out)
+	s.printStatsDueInterrupt([]string{"Hint: Hit Ctrl+C again to exit"})
+	if got := out.String(); got != " Hint: Hit Ctrl+C again to exit\n" {
+		t.Fatalf("interrupt output = %q", got)
+	}
+	s.setInterruptOutput(nil)
+	if s.interruptOut.Load() != nil {
+		t.Fatal("interrupt output not reset to stdout")
+	}
+	s.printStatsDueInterrupt([]string{"to stdout"})
+	if strings.Contains(out.String(), "to stdout") {
+		t.Fatal("statistics written to the reset writer")
+	}
 }

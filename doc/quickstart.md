@@ -32,8 +32,8 @@ Copy the ``dserver`` binary to the remote server machines of your choice (e.g. `
 
 ```console
 ❯ ./dserver --logger Stdout --logLevel debug --bindAddress $(hostname) --port 2222
-DTail 4.3.2-ng Protocol 4.1 Have a lot of fun!
-INFO|20250923-222429|Starting server|DTail 4.3.2-ng Protocol 4.1 Have a lot of fun!
+DTail 4.3.2-ng Protocol 5 Have a lot of fun!
+INFO|20250923-222429|Starting server|DTail 4.3.2-ng Protocol 5 Have a lot of fun!
 INFO|20250923-222429|Reading private server RSA host key from file|./cache/ssh_host_key
 INFO|20250923-222429|Starting server
 INFO|20250923-222429|Binding server|X.Y.Z.W:2222
@@ -101,11 +101,13 @@ A host whose key differs from the one in ``known_hosts`` is not an unknown host:
 
 Without the ``--cfg`` flag, all client commands look for a JSON config file at ``~/.config/dtail/dtail.conf`` first and, if that does not exist, at ``~/.dtail.conf``. The first file that exists wins (they are not merged).
 
+Two timeouts bound connecting to a server: ``Common.SSHConnectTimeoutMs`` (default 2000) the TCP connect, and ``Common.SSHHandshakeTimeoutMs`` (default 30000) the SSH handshake after it (version and key exchange, authentication), so a host that accepts the TCP connection but never completes the handshake fails with ``no handshake within 30s`` instead of leaving the client connecting forever. The time the host key check takes, e.g. while the unknown host question waits for your answer, does not count; the time an SSH agent takes to sign does: with a key that needs a touch or a confirmation per signature (a hardware key, ``ssh-add -c``) and many servers, confirm promptly or raise ``Common.SSHHandshakeTimeoutMs``. Both apply to every client, ``dtailhealth`` and the scheduled and continuous jobs of ``dserver``.
+
 # What else can it do?
 
 * **Serverless mode**: All clients also work without any ``dserver`` — just omit the server list (or pass ``--servers serverless``) to read local files directly. See [examples.md](examples.md).
 * **Journal reads**: On Linux, a ``journal:unit.service`` file target follows or reads the systemd journal of that unit (requires the server to advertise the ``journal-v1`` capability, i.e. ``journalctl`` on ``PATH``).
 * **Auth-key fast reconnect**: Enabled by default; the client registers a key with ``dserver`` on first connect so repeated connections skip the normal SSH auth round-trips. See [auth-key-fast-reconnect.md](auth-key-fast-reconnect.md).
-* **Interactive query control**: ``--interactive-query`` keeps the run open for ``:reload <flags>``, ``:show``, ``:help`` and ``:quit`` control commands. See [interactive-query.md](interactive-query.md).
+* **Interactive query control**: ``--interactive-query`` keeps the run open for ``:reload <flags>``, ``:show``, ``:fields [table]``, ``:probe``, ``:help`` and ``:quit`` control commands; pressing Enter on an empty line pauses the output while a command is typed, and Enter again resumes it. ``dtail`` does this by default in a terminal (``--no-interactive`` turns it off; pipes, cron and scripts are unaffected), and ``:help`` shows examples of changing the grep filter or MapReduce query on the fly. On a terminal, Tab completes commands, flags and the current filter, query or files value, inside a ``--query`` the query language and the tables, fields and sample values found in the logs being read (``:fields`` lists them), inside ``--files`` remote file paths the server lets you read; Up/Down recall earlier lines, Alt-E opens the line in your ``$EDITOR``, ``--edit-mode vi`` adds vi normal mode keys, typing a command pauses the output until it is entered, and the control output and queries are colored unless ``--noColor``/``--plain``. See [interactive-query.md](interactive-query.md).
 
 Have a look [here](examples.md) for more usage examples.

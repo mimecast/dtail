@@ -308,3 +308,51 @@ func TestDTailHealthNoPanicOnClientConstruction(t *testing.T) {
 		})
 	}
 }
+
+// TestDTailHealthWithAuthKey is the regression test of task 7c4: dtailhealth
+// run without --no-auth-key while the auth key's .pub file exists (the
+// suite's DTAIL_AUTH_KEY_PATH pair, prepared by TestMain) must report a
+// healthy dserver OK with exit status 0. It used to send AUTHKEY before its
+// health command, which the server's health handler took for an unknown
+// command, ending the session: CRITICAL, exit status 2. waitForServerReady
+// passes --no-auth-key and so did not see it.
+func TestDTailHealthWithAuthKey(t *testing.T) {
+	skipIfNotIntegrationTest(t)
+	cleanupTmpFiles(t)
+	testLogger := NewTestLogger("TestDTailHealthWithAuthKey")
+	defer writeLogFileIgnoringError(testLogger)
+
+	keyPath := os.Getenv("DTAIL_AUTH_KEY_PATH")
+	if keyPath == "" {
+		t.Fatal("DTAIL_AUTH_KEY_PATH is not set, the test would not have a key")
+	}
+	if _, err := os.Stat(keyPath + ".pub"); err != nil {
+		t.Fatalf("auth key .pub file missing, the test would not register a key: %v", err)
+	}
+
+	port := getUniquePortNumber()
+	bindAddress := "localhost"
+	ctx, cancel := context.WithCancel(WithTestLogger(context.Background(), testLogger))
+	defer cancel()
+	if _, _, _, err := startCommand(ctx, t, "", "../dserver",
+		"--cfg", "none", "--logger", "stdout", "--logLevel", "error",
+		"--bindAddress", bindAddress, "--port", fmt.Sprintf("%d", port)); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForServerReady(ctx, bindAddress, port); err != nil {
+		t.Fatal(err)
+	}
+
+	outFile := "dtailhealth_authkey.stdout.tmp"
+	server := fmt.Sprintf("%s:%d", bindAddress, port)
+	exitCode, err := runCommandWithEnv(ctx, t, outFile, "../dtailhealth",
+		map[string]string{"DTAIL_AUTH_KEY_PATH": keyPath}, "--server", server)
+	if exitCode != 0 {
+		data, _ := os.ReadFile(outFile)
+		t.Fatalf("exit status %d, want 0 (%v):\n%s", exitCode, err, data)
+	}
+	if err := fileContainsStrWithContext(ctx, t, outFile,
+		fmt.Sprintf("OK: All fine at %s :-)", server)); err != nil {
+		t.Fatal(err)
+	}
+}

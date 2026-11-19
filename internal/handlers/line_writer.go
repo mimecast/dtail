@@ -73,10 +73,11 @@ func NewDirectWriterWithColorizer(writer io.Writer, hostname string, plain, serv
 		format = lineFormatNewline
 	}
 
-	// A DirectWriter has no negotiated session framing: in production it only
-	// serves serverless mode, whose line formats write terminal output rather
-	// than frames, so the frame-producing formats keep RawFraming.
-	w := newDirectWriter(writer, newLineFormatter(format, hostname, colorizer, protocol.RawFraming))
+	// A DirectWriter writes no session frames: in production it only serves
+	// serverless mode, whose line formats write terminal output rather than
+	// frames, so the frame-producing formats (used by tests) only borrow the
+	// frame layout, unescaped (protocol.TerminalFraming).
+	w := newDirectWriter(writer, newLineFormatter(format, hostname, colorizer, protocol.TerminalFraming))
 	if serverless {
 		w.messageSink = discardServerMessage
 		if flusher, ok := writer.(interface{ Flush() error }); ok {
@@ -174,7 +175,7 @@ func (w *DirectWriter) writeServerMessage(hostname string, plain bool, message s
 	if plain || len(message) > 0 && message[0] == '.' {
 		kind = protocol.MessagePlain
 	}
-	protocol.RawFraming.EncodeMessage(&w.writeBuf, protocol.Message{
+	protocol.TerminalFraming.EncodeMessage(&w.writeBuf, protocol.Message{
 		Kind:     kind,
 		Hostname: hostname,
 		Content:  message,
@@ -252,12 +253,11 @@ type NetworkWriter struct {
 var _ LineWriter = (*NetworkWriter)(nil)
 
 // NewNetworkWriter creates a NetworkWriter that batches formatted lines into
-// a 64KB buffer before sending them to the output channel. framing is the
-// session's negotiated framing (see protocol.Framing): every line frame the
-// writer formats is written in it. It is a required argument, so no writer
-// can silently fall back to raw framing in an escaped session. Server
-// messages go to serverMessages unframed; the session framer frames them
-// when it sends them.
+// a 64KB buffer before sending them to the output channel. Every line frame
+// the writer formats is written in the session framing (sessionFraming,
+// protocol.EscapedControlFraming), like every other frame of the session.
+// Server messages go to serverMessages unframed; the session framer frames
+// them when it sends them.
 //
 // bufSize is the field the previous bare struct literal in makeWriter
 // omitted. With bufSize left at its zero value the flush condition in
@@ -271,14 +271,14 @@ var _ LineWriter = (*NetworkWriter)(nil)
 // calls processor.Flush() after every read chunk, and Flush drains the partial
 // writeBuf to the output channel promptly, so batching never holds interactive
 // output back past a read boundary.
-func NewNetworkWriter(ctx context.Context, framing protocol.Framing, outputLines chan<- []byte,
+func NewNetworkWriter(ctx context.Context, outputLines chan<- []byte,
 	serverMessages chan<- string, hostname string, plain, serverless bool,
 	generation uint64, activeGeneration func() uint64, logger logging.Logger) *NetworkWriter {
 	format := lineFormatProtocol
 	if plain || serverless {
 		format = lineFormatDelimited
 	}
-	w := newNetworkWriter(ctx, outputLines, newLineFormatter(format, hostname, nil, framing), generation,
+	w := newNetworkWriter(ctx, outputLines, newLineFormatter(format, hostname, nil, sessionFraming), generation,
 		activeGeneration, logger)
 	if serverless || serverMessages == nil {
 		w.messageSink = discardServerMessage

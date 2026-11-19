@@ -200,7 +200,7 @@ func TestOutputManagerCommittedPartialReadSurvivesGenerationFlipAndCancellation(
 func TestDefaultOutputBufferAdmitsMaximumFormattedLine(t *testing.T) {
 	manager := &outputManager{}
 	manager.enable()
-	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", false, false, 1, nil, handlerTestLogger)
+	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", false, false, 1, nil, handlerTestLogger)
 	writer.enqueueOutput = manager.enqueue
 
 	line := bytes.Repeat([]byte("x"), 1<<20)

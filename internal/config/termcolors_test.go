@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -194,5 +195,25 @@ func TestShippedConfigsDecodeToDefaultPalette(t *testing.T) {
 				t.Fatalf("TermColors = %+v, want defaults %+v", got, want)
 			}
 		})
+	}
+}
+
+// TestPartialInteractiveColors checks that a config naming only some
+// interactive styles (and only part of one) keeps the defaults of the rest.
+func TestPartialInteractiveColors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dtail.json")
+	cfg := `{"Client": {"TermColors": {"Interactive": {"Prompt": {"Fg": "Green"}}}}}`
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	in := initializer{Common: newDefaultCommonConfig(), Server: newDefaultServerConfig(),
+		Client: newDefaultClientConfig()}
+	if err := in.parseConfig(&Args{ConfigFile: path}); err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	want := DefaultTermColors()
+	want.Interactive.Prompt.Fg = color.FgGreen // its Attr stays the default Bold
+	if got := in.Client.TermColors; got != want {
+		t.Fatalf("TermColors = %+v, want %+v", got.Interactive, want.Interactive)
 	}
 }

@@ -125,7 +125,7 @@ func TestNormalizeInteractiveArgsIgnoresInvert(t *testing.T) {
 		Mode:        omode.TailClient,
 		QueryStr:    "from STATS select count(*)",
 		RegexInvert: true,
-	}, nil)
+	})
 	if err != nil {
 		t.Fatalf("normalizeInteractiveArgs() error = %v", err)
 	}

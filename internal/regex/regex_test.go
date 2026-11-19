@@ -117,13 +117,13 @@ func TestSerializeRoundTripAllFlags(t *testing.T) {
 		{name: "initialized noop", re: mustNew("hel+o", Noop),
 			wantWire: "regex:noop hel+o", matchInput: "nothing", wantMatch: true},
 		{name: "initialized literal default", re: mustNew("hello", Default),
-			wantWire: "regex:default,literal hello", matchInput: "hello world", wantMatch: true},
+			wantWire: "regex:default hello", matchInput: "hello world", wantMatch: true},
 		{name: "NewNoop", re: NewNoop(),
 			wantWire: "regex:noop ", matchInput: "anything", wantMatch: true},
 		{name: "New empty pattern with undefined flag is noop", re: mustNew("", Undefined),
 			wantWire: "regex:noop ", matchInput: "anything", wantMatch: true},
 		{name: "New inverted empty pattern", re: mustNew("", Invert),
-			wantWire: "regex:invert,literal ", matchInput: "anything", wantMatch: false},
+			wantWire: "regex:invert ", matchInput: "anything", wantMatch: false},
 		{name: "New inverted dot", re: mustNew(".", Invert),
 			wantWire: "regex:invert .", matchInput: "\n", wantMatch: true},
 		{name: "New inverted match all", re: mustNew(".*", Invert),
@@ -176,9 +176,10 @@ func TestSerializeRoundTripAllFlags(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Deserialize(%q) error = %v", wire, err)
 			}
-			// The literal hint is not compared: NewNoop leaves it unset while
-			// the receiver derives it from the (empty) pattern. Both only
-			// affect how a match is computed, not its result.
+			// The literal optimization (isLiteral) is not compared: NewNoop
+			// leaves it unset while the receiver derives it from the (empty)
+			// pattern. It only affects how a match is computed, not its
+			// result.
 			if got.Pattern() != tt.re.Pattern() || !got.initialized ||
 				len(got.flags) != len(tt.re.flags) || got.flags[0] != tt.re.flags[0] {
 				t.Fatalf("Deserialize(%q) = %v, want %v", wire, got, tt.re)

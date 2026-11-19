@@ -44,6 +44,7 @@ var _ FieldsIntoParser = (*csvParser)(nil)
 var _ queryAwareParser = (*csvParser)(nil)
 var _ SourceReleaser = (*csvParser)(nil)
 var _ WhitespacePreservingParser = (*csvParser)(nil)
+var _ Prober = (*csvParser)(nil)
 
 func newCSVParser(hostname, timeZoneName string, timeZoneOffset int) (*csvParser, error) {
 	defaultParser, err := newDefaultParser(hostname, timeZoneName, timeZoneOffset)

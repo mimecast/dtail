@@ -80,7 +80,7 @@ func TestMaprClientReloadDoesNotRaceWithSnapshots(t *testing.T) {
 	query := mustMaprClientQuery(t, queries[0])
 	spec := SessionSpec{Mode: omode.MapClient, Files: []string{"/var/log/app.log"},
 		Query: queries[0], Regex: maprRegexForQuery(query)}
-	conn := &interactiveReloadConnector{server: "srv1", supported: true,
+	conn := &interactiveReloadConnector{server: "srv1",
 		committedSpec: spec, liveSpec: spec, generation: 1}
 	client := &MaprClient{
 		baseClient: baseClient{
@@ -110,11 +110,11 @@ func TestMaprClientReloadDoesNotRaceWithSnapshots(t *testing.T) {
 
 	var last config.Args
 	for i := 0; i < 50; i++ {
-		command, err := parseInteractiveCommand(client.Args, ":reload --query '"+queries[(i+1)%2]+"'", nil)
+		command, err := parseInteractiveCommand(client.Args, ":reload --query '"+queries[(i+1)%2]+"'")
 		if err != nil {
 			t.Fatalf("parseInteractiveCommand() error = %v", err)
 		}
-		if err := client.applyInteractiveReload(command.next, command.spec); err != nil {
+		if _, err := client.applyInteractiveReload(command.next, command.spec); err != nil {
 			t.Fatalf("applyInteractiveReload() error = %v", err)
 		}
 		last = command.next

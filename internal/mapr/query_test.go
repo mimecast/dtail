@@ -2,6 +2,7 @@ package mapr
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,6 +58,43 @@ func TestParseQueryOutfileAppend(t *testing.T) {
 
 	if !q.Outfile.AppendMode {
 		t.Errorf("Expected append mode of outfile to be true: %s\n%v", queryStr, q)
+	}
+}
+
+// TestParseQueryOutfileRejectsAppendColon checks that an outfile path
+// starting with "append:" is rejected with a hint to the append syntax. No
+// release supported "outfile append:PATH", but it reads like an append and
+// used to write a new file literally named "append:PATH" (a scheduled job
+// with it would never append). A path of another form, also one only
+// containing "append:", stays a plain path.
+func TestParseQueryOutfileRejectsAppendColon(t *testing.T) {
+	for _, query := range []string{
+		"select foo outfile append:baz.csv",
+		`select foo outfile "append:baz.csv"`,
+		"select foo outfile append append:baz.csv",
+	} {
+		q, err := NewQuery(query, logging.NopLogger{})
+		if err == nil {
+			t.Errorf("NewQuery(%q) = %v, want an error", query, q.Outfile)
+			continue
+		}
+		if !strings.Contains(err.Error(), "outfile append PATH") {
+			t.Errorf("NewQuery(%q) error %q does not name the append syntax", query, err)
+		}
+	}
+	for query, want := range map[string]Outfile{
+		"select foo outfile ./append:baz.csv":        {FilePath: "./append:baz.csv"},
+		"select foo outfile append ./append:baz.csv": {FilePath: "./append:baz.csv", AppendMode: true},
+		"select foo outfile baz-append:x.csv":        {FilePath: "baz-append:x.csv"},
+	} {
+		q, err := NewQuery(query, logging.NopLogger{})
+		if err != nil {
+			t.Errorf("NewQuery(%q): %v", query, err)
+			continue
+		}
+		if *q.Outfile != want {
+			t.Errorf("NewQuery(%q) outfile = %v, want %v", query, q.Outfile, want)
+		}
 	}
 }
 

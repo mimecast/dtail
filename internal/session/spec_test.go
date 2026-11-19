@@ -95,8 +95,8 @@ func TestSpecCommands(t *testing.T) {
 				RegexInvert: true,
 			},
 			want: []string{
-				"grep:plain=true app.log regex:invert,literal DEBUG",
-				"grep:plain=true audit.log regex:invert,literal DEBUG",
+				"grep:plain=true app.log regex:invert DEBUG",
+				"grep:plain=true audit.log regex:invert DEBUG",
 			},
 		},
 		// Inverted, the match-all spellings "", "." and ".*" are real regexes
@@ -105,7 +105,7 @@ func TestSpecCommands(t *testing.T) {
 		{
 			name: "inverted empty pattern",
 			spec: Spec{Mode: omode.GrepClient, Files: []string{"app.log"}, Regex: "", RegexInvert: true},
-			want: []string{"grep: app.log regex:invert,literal "},
+			want: []string{"grep: app.log regex:invert "},
 		},
 		{
 			name: "inverted dot",
@@ -159,7 +159,7 @@ func TestSpecCommands(t *testing.T) {
 			},
 			want: []string{
 				"map:plain=true from STATS select count(*)",
-				"timeout 9 tail stats.log regex:default,literal WARN",
+				"timeout 9 tail stats.log regex:default WARN",
 			},
 		},
 		// A path containing a space, or starting with the encoded prefix, is
@@ -174,9 +174,9 @@ func TestSpecCommands(t *testing.T) {
 				Regex:   "ERROR",
 			},
 			want: []string{
-				"cat:plain=true " + encodedPath("/var/log/my app/a b.log") + " regex:default,literal ERROR",
-				"cat:plain=true /var/log/app.log regex:default,literal ERROR",
-				"cat:plain=true " + encodedPath("base64%x.log") + " regex:default,literal ERROR",
+				"cat:plain=true " + encodedPath("/var/log/my app/a b.log") + " regex:default ERROR",
+				"cat:plain=true /var/log/app.log regex:default ERROR",
+				"cat:plain=true " + encodedPath("base64%x.log") + " regex:default ERROR",
 			},
 		},
 		{
@@ -190,7 +190,7 @@ func TestSpecCommands(t *testing.T) {
 			},
 			want: []string{
 				"map: from STATS select count(*)",
-				"timeout 9 tail " + encodedPath("/var/log/my app/*.log") + " regex:default,literal WARN",
+				"timeout 9 tail " + encodedPath("/var/log/my app/*.log") + " regex:default WARN",
 			},
 		},
 		{
@@ -344,29 +344,6 @@ func TestSpecHasJournalFiles(t *testing.T) {
 			spec := Spec{Files: tc.files}
 			if got := spec.HasJournalFiles(); got != tc.want {
 				t.Fatalf("HasJournalFiles() = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestSpecHasEncodedFiles(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		files []string
-		want  bool
-	}{
-		{name: "plain files", files: []string{"/var/log/app.log", "journal:ssh.service", "-"}},
-		{name: "no files"},
-		{name: "path with a space", files: []string{"/var/log/app.log", "/var/log/my app.log"}, want: true},
-		{name: "path with the encoded prefix", files: []string{"base64%app.log"}, want: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := (Spec{Files: tc.files}).HasEncodedFiles(); got != tc.want {
-				t.Fatalf("HasEncodedFiles() = %v, want %v", got, tc.want)
 			}
 		})
 	}

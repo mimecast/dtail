@@ -78,12 +78,12 @@ func (s *globCapTestServer) readCommandDependencies() readCommandDependencies {
 		readerLogger: s.ReaderLogger(),
 		logContext:   s.LogContext(),
 		timings: readTimings{
-			globRetryInterval:         time.Millisecond,
-			readRetryInterval:         time.Millisecond,
-			outputEOFAckTimeout:       time.Millisecond,
-			legacyAggregateInputGrace: time.Millisecond,
-			maxLineLength:             1024 * 1024,
-			maxGlobTargets:            s.maxGlobTargets,
+			globRetryInterval:            time.Millisecond,
+			readRetryInterval:            time.Millisecond,
+			outputEOFAckTimeout:          time.Millisecond,
+			unbatchedAggregateInputGrace: time.Millisecond,
+			maxLineLength:                1024 * 1024,
+			maxGlobTargets:               s.maxGlobTargets,
 		},
 		newLineWriter: func(context.Context, uint64) LineWriter { return nopLineWriter{} },
 	}

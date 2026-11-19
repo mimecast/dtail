@@ -20,7 +20,7 @@ type handleCommandCb func(context.Context, lcontext.LContext, int, []string, str
 type prepareCommandContextCb func(context.Context, string) (context.Context, func())
 type commandRejectedCb func(context.Context, string)
 type frameRejectedCb func()
-type versionRejectedCb func()
+type versionRejectedCb func(mismatchedClient)
 type sessionClosingCb func() bool
 
 type commandCancelKeyType struct{}
@@ -48,10 +48,10 @@ type commandDispatcher struct {
 	frameRejectedCb frameRejectedCb
 	// versionRejectedCb, if set, runs after handleCommand rejected a command
 	// frame of another protocol version and queued its error
-	// (rejectProtocolVersion), unless the frame is of a legacy client
-	// (protocol <= 3, an unparsable version or no protocol prefix), whose
-	// session stays open. Such a session ends without
-	// the close handshake.
+	// (rejectProtocolVersion), with the kind of client that sent it. The
+	// handler decides whether the session stays open (older clients, see
+	// mismatchedClient) or ends without the close handshake. Without it the
+	// session stays open.
 	versionRejectedCb versionRejectedCb
 	// sessionClosingCb, if set, reports whether the session's end (with or
 	// without the close handshake) was already started or claimed. A frame
@@ -59,6 +59,13 @@ type commandDispatcher struct {
 	// that nothing of the session follows its ".syn close connection" or
 	// its end.
 	sessionClosingCb sessionClosingCb
+	// rejectionsDroppedCb, if set, reports whether a command frame of the
+	// session's protocol version that handleCommand rejects (undecodable
+	// frame or dispatchCommand error) is dropped without its error, failure
+	// report and frameRejectedCb. Only the health handler sets it, for the
+	// frames after its one command (HealthHandler.shutdownStarted), so that
+	// nothing but the close handshake follows that command's answer.
+	rejectionsDroppedCb sessionClosingCb
 	// versionErrorSent records that the session got its one protocol
 	// version mismatch error (rejectProtocolVersion); later frames of
 	// another version get none.
@@ -77,15 +84,15 @@ type commandDispatcher struct {
 	optionsOnce sync.Once
 	// quiet and plain are set by handleOptions on the command input
 	// goroutine, and read concurrently by the output goroutine
-	// (sessionFramer.readServerMessage frames the server messages, such as
-	// an AUTHKEY reply queued before the first command carrying options)
-	// and by the read command goroutines building their line writers
+	// (sessionFramer.readServerMessage frames the server messages queued
+	// before the first command carrying options) and by the read command
+	// goroutines building their line writers
 	// (ServerHandler.newReadLineWriter), some of which started before that
 	// command. Hence atomics; read them with quietMode and plainMode. A
 	// server message framed before the options were handled still goes out
-	// as a tagged server message, as it always could; clients recognise an
-	// AUTHKEY reply in either kind (parseAuthKeyMessage in
-	// internal/clients/handlers).
+	// as a tagged server message, as it always could. Control messages such
+	// as an AUTHKEY reply are marked control frames whatever the plain mode
+	// (sessionFramer.readServerMessage), so the options never change them.
 	quiet atomic.Bool
 	plain atomic.Bool
 	// serverless is set once when the handler is built (newBaseHandler) and
@@ -160,21 +167,16 @@ func (d *commandDispatcher) handleCommand(command string) {
 	h := d.handler
 	h.Logger().Debug(h.user, commandForLog(command))
 
-	// A command that can not switch the session framing settles it before
-	// it is handled, whenever it was not settled yet
-	// (sessionFramer.settleFramingBeforeCommand): handling it may wait for
-	// output, which Read must not hold back meanwhile. The framing requests
-	// settle it themselves, or after they were handled
-	// (sessionFramer.settleFramingAfterCommand).
-	args, argc, add, legacy, err := d.codec.handleProtocolVersion(strings.Split(command, " "))
+	args, argc, add, client, err := d.codec.handleProtocolVersion(strings.Split(command, " "))
 	if err != nil {
-		h.settleFramingBeforeCommand(false, argc, args)
-		d.rejectProtocolVersion(add, legacy, err)
+		d.rejectProtocolVersion(add, client, err)
 		return
 	}
 	args, argc, err = d.codec.handleBase64(args, argc)
-	h.settleFramingBeforeCommand(err == nil, argc, args)
 	if err != nil {
+		if d.dropRejection(err) {
+			return
+		}
 		h.sendln(h.serverMessages, logging.ErrorMessage(h.Logger(), h.user, err))
 		h.reportCommandFailure(commandFailureProtocol)
 		d.frameRejected()
@@ -185,6 +187,9 @@ func (d *commandDispatcher) handleCommand(command string) {
 	ctx = withCommandCancel(ctx, cancel)
 	if dispatchErr := d.dispatchCommand(ctx, args, argc); dispatchErr != nil {
 		cancel()
+		if d.dropRejection(dispatchErr) {
+			return
+		}
 		h.sendln(h.serverMessages, logging.ErrorMessage(h.Logger(), h.user, dispatchErr))
 		h.reportCommandFailure(commandFailureRejected)
 		d.frameRejected()
@@ -200,28 +205,24 @@ func (d *commandDispatcher) handleCommand(command string) {
 // failed-command message here: a client of another protocol version may not
 // know hidden messages or their framing.
 //
-// How the session goes on depends on legacy
-// (protocolCodec.handleProtocolVersion):
-//   - A legacy client (protocol major version <= 3, an unparsable version,
-//     or no protocol prefix at all, as v1.x clients send) keeps its
-//     session: the session ends when the client exits or at
-//     IdleSessionTimeoutS, as it always did. Such clients do not check the
-//     close handshake, and those that retry (dtail, dmap in tail mode
-//     without outfile; v1.x dtail too) reconnect 2 s after a session ended,
-//     so ending it would make them reconnect in a loop, each time with a
-//     full SSH handshake and server log lines.
-//   - Any other client of another version (e.g. a future 4.x+ client) gets
-//     the session ended without the close handshake (versionRejectedCb,
-//     ServerHandler.versionRejected): it can not be relied on to read the
-//     handshake's ".syn close connection" as such or to acknowledge it. A
-//     current client of another version has requested escaped and control
-//     framing in its own version, so the server rejected those requests and
-//     the session stays raw, while the client already chose marked framing
-//     from the capabilities frame: it prints the unmarked close request as
-//     payload and never acknowledges it, so the session would wait for the
-//     close acknowledgement timeout (5 s). Ending the session after the
-//     error instead shows it the error and an incomplete session at once.
-func (d *commandDispatcher) rejectProtocolVersion(add string, legacy bool, err error) {
+// How the session goes on is up to the handler (versionRejectedCb), which
+// learns the kind of client (protocolCodec.handleProtocolVersion):
+//   - Older clients keep their session (ServerHandler.versionRejected:
+//     protocol major version <= 4, an unparsable version, or no protocol
+//     prefix at all, as v1.x clients send; HealthHandler.versionRejected:
+//     the same without 4.x): the session ends when the client exits or at
+//     IdleSessionTimeoutS. Some of them reconnect after a
+//     session ended (see mismatchedClient), so ending it would make them
+//     reconnect in a loop, each time with a full SSH handshake and server
+//     log lines.
+//   - Any other client of another version (e.g. a future one) gets the
+//     session ended without the close handshake (closeWithoutHandshake): it
+//     can not be relied on to read the handshake's ".syn close connection"
+//     as such or to acknowledge it, as its framing may differ from this
+//     server's, so the session would wait for the close acknowledgement
+//     timeout (5 s). Ending the session after the error instead shows it
+//     the error and an incomplete session at once.
+func (d *commandDispatcher) rejectProtocolVersion(add string, client mismatchedClient, err error) {
 	h := d.handler
 	if d.sessionClosingCb != nil && d.sessionClosingCb() {
 		h.Logger().Debug(h.user, "Dropping frame of another protocol version after the close", err)
@@ -232,13 +233,20 @@ func (d *commandDispatcher) rejectProtocolVersion(add string, legacy bool, err e
 	} else {
 		h.Logger().Debug(h.user, "Dropping further frame of another protocol version", err)
 	}
-	if legacy {
-		h.Logger().Debug(h.user, "Keeping session of a legacy protocol version open", err)
-		return
-	}
 	if d.versionRejectedCb != nil {
-		d.versionRejectedCb()
+		d.versionRejectedCb(client)
 	}
+}
+
+// dropRejection reports whether a rejected command frame is dropped
+// silently (rejectionsDroppedCb) and logs it at debug level if so.
+func (d *commandDispatcher) dropRejection(err error) bool {
+	if d.rejectionsDroppedCb == nil || !d.rejectionsDroppedCb() {
+		return false
+	}
+	h := d.handler
+	h.Logger().Debug(h.user, "Dropping rejected command frame after the session's end", err)
+	return true
 }
 
 // frameRejected tells frameRejectedCb, if set, that handleCommand rejected a
@@ -252,20 +260,9 @@ func (d *commandDispatcher) frameRejected() {
 }
 
 func (d *commandDispatcher) dispatchCommand(ctx context.Context, args []string, argc int) error {
-	prefixedArgc := argc
 	ctx, args, argc, err := applyCommandTimeout(ctx, args, argc)
 	if err != nil {
 		return err
-	}
-	if argc != prefixedArgc && isFramingRequest(argc, args) {
-		// Clients send the framing requests exactly as
-		// protocol.EscapedFramingCommand and protocol.ControlFramesCommand.
-		// A timeout prefix makes one some other command, which is ignored
-		// like any request the session does not honour, so that only those
-		// exact frames can switch the session framing.
-		d.handler.Logger().Warn(d.handler.user, "Ignoring framing request with a timeout prefix")
-		cancelCommandContext(ctx)
-		return nil
 	}
 
 	parts := strings.SplitN(args[0], ":", 2)
@@ -299,15 +296,15 @@ func (d *commandDispatcher) dispatchCommand(ctx context.Context, args []string, 
 // handleRawCommand dispatches one command of a SESSION START/UPDATE spec,
 // which session.Spec.Commands built, without protocol or base64 framing.
 //
-// It splits on single spaces exactly like the base64-decoded legacy path in
+// It splits on single spaces exactly like the base64-decoded command path in
 // handleCommand, which gets the same commands from the same builder. A read
 // command's regex is the rejoined args[2:], so splitting on runs of
 // whitespace (strings.Fields) would drop trailing blanks, collapse blank runs
 // and turn tabs into spaces in the pattern. The builder emits single spaces
 // between fields, so it needs no tolerance for extra ones. An empty pattern
 // is serialized with a trailing space, "regex:noop " (every line) or, with
-// --invert, "regex:invert,literal " (no line), and its trailing empty field
-// rejoins to the same regex the legacy path gets; dropping that field would
+// --invert, "regex:invert " (no line), and its trailing empty field
+// rejoins to the same regex the command path gets; dropping that field would
 // leave readCommand.parseRegex to read the lone flags word as an empty
 // pattern. A read command's path is always the single word args[1]: the
 // builder encodes a path containing a space (protocol.EncodeReadPath) and

@@ -462,10 +462,35 @@ func TestDCatColors(t *testing.T) {
 		testDCatColorsServerless(t, testLogger)
 	})
 
+	// Serverless mode with --noColor: the payload goes straight to stdout,
+	// past the client logger, and used to stay colored (task v94).
+	t.Run("ServerlessNoColor", func(t *testing.T) {
+		testDCatNoColorServerless(t, testLogger)
+	})
+
 	// Test in server mode
 	t.Run("ServerMode", func(t *testing.T) {
 		testDCatColorsWithServer(t, testLogger)
 	})
+}
+
+// testDCatNoColorServerless checks that serverless dcat --noColor prints the
+// lines without terminal colors, byte-identical to server mode with
+// --noColor (dcatcolors.server.expected).
+func testDCatNoColorServerless(t *testing.T, logger *TestLogger) {
+	inFile := "dcatcolors.txt"
+	outFile := "dcatcolors_serverless_nocolor.tmp"
+	expectedFile := "dcatcolors.server.expected"
+	ctx := WithTestLogger(context.Background(), logger)
+
+	if _, err := runCommand(ctx, t, outFile,
+		"../dcat", "--logLevel", "error", "--cfg", "none", "--noColor", inFile); err != nil {
+		t.Error(err)
+		return
+	}
+	if err := compareFilesWithContext(ctx, t, outFile, expectedFile); err != nil {
+		t.Error(err)
+	}
 }
 
 func testDCatColorsServerless(t *testing.T, logger *TestLogger) {

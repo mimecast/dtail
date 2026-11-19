@@ -141,6 +141,28 @@ func TestNewValidatedJournalTargetRejectsAmbiguousUnits(t *testing.T) {
 			name: "control character",
 			spec: "journal:ssh.service\x00",
 		},
+		// journalctl -u treats a unit containing *, ? or [ as a glob over
+		// the journal's units, so these read sshd.service while the
+		// readfiles check saw another string.
+		{name: "star glob", spec: "journal:ssh*.service"},
+		{name: "question mark glob", spec: "journal:ssh?.service"},
+		{name: "bracket glob", spec: "journal:ssh[d].service"},
+		{name: "glob of every service", spec: "journal:*.service"},
+		{name: "glob in unit type", spec: "journal:sshd.servi*"},
+		// journalctl -u appends .service to a name without a unit type.
+		{name: "implicit service suffix", spec: "journal:sshd"},
+		{name: "unknown unit type", spec: "journal:sshd.log"},
+		{name: "empty unit type", spec: "journal:sshd."},
+		{name: "empty unit prefix", spec: "journal:.service"},
+		// journalctl -u of a slice reads every unit in the slice.
+		{name: "slice", spec: "journal:system.slice"},
+		// A template names no unit of its own.
+		{name: "template", spec: "journal:getty@.service"},
+		{name: "leading at", spec: "journal:@tty1.service"},
+		{name: "shell metacharacters", spec: "journal:ssh.service;touch$HOME`whoami`|cat"},
+		{name: "slash", spec: "journal:../sshd.service"},
+		{name: "non-ASCII letter", spec: "journal:sshé.service"},
+		{name: "longer than systemd allows", spec: "journal:" + strings.Repeat("a", 248) + ".service"},
 	}
 
 	for _, tt := range tests {
@@ -152,15 +174,41 @@ func TestNewValidatedJournalTargetRejectsAmbiguousUnits(t *testing.T) {
 	}
 }
 
-func TestNewValidatedJournalTargetAcceptsLiteralShellMetacharacters(t *testing.T) {
-	spec := "journal:ssh.service;touch$HOME`whoami`|cat"
-
-	target, err := NewValidatedJournalTarget(spec)
-	if err != nil {
-		t.Fatalf("NewValidatedJournalTarget(%q) error = %v", spec, err)
-	}
-	if target.Kind != JournalKind {
-		t.Fatalf("target.Kind = %v, want %v", target.Kind, JournalKind)
+// TestNewValidatedJournalTargetAcceptsUnitNames checks unit names systemd
+// takes as one literal unit: every unit type but slices, instances (whose
+// instance part may contain '@'), \x escapes and the longest name.
+func TestNewValidatedJournalTargetAcceptsUnitNames(t *testing.T) {
+	for _, unit := range []string{
+		"ssh.service",
+		"NetworkManager.service",
+		"dbus-broker.service",
+		"systemd-journald.socket",
+		"logrotate.timer",
+		"session-3.scope",
+		"init.scope",
+		"var-log.mount",
+		"proc-sys-fs-binfmt_misc.automount",
+		"dev-sda1.swap",
+		"multi-user.target",
+		"cups.path",
+		"dev-ttyS0.device",
+		"user@1000.service",
+		"getty@tty1.service",
+		"wg-quick@a@b.service",
+		`systemd-fsck@dev-disk-by\x2duuid-0f2a.service`,
+		"host:name.service",
+		"app.v2.service",
+		strings.Repeat("a", 247) + ".service",
+	} {
+		spec := JournalSpecPrefix + unit
+		target, err := NewValidatedJournalTarget(spec)
+		if err != nil {
+			t.Errorf("NewValidatedJournalTarget(%q) error = %v", spec, err)
+			continue
+		}
+		if target.Kind != JournalKind || target.ResolvedPath() != spec {
+			t.Errorf("NewValidatedJournalTarget(%q) = %+v", spec, target)
+		}
 	}
 }
 

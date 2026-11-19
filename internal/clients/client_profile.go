@@ -10,6 +10,16 @@ type clientProfile struct {
 	newHandler func(server string) handlers.Handler
 	retry      bool
 	commit     func(spec sessionspec.Spec, generation uint64) error
+	// switchWorkload is set for the client of interactive dtail, which can
+	// switch its running session between a tail read and a MapReduce query
+	// (see NewInteractiveTailClient, switchToQuery and switchToTail); its
+	// commit takes a spec with or without a query.
+	switchWorkload bool
+	// expectQuery, if set, is told that a switch to a query is pending
+	// (true) or failed (false), so that the handlers take frames for
+	// aggregate data from before the commit on (see
+	// maprclient.SessionState.ExpectAggregates).
+	expectQuery func(pending bool)
 	// failedCommandStatus is the least exit status of a connection whose
 	// server reported a failed command (see sessionStatus); 0 leaves the
 	// handler's status as it is, so that dtail's follow mode, dmap (whose

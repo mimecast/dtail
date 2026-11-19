@@ -68,10 +68,10 @@ func appendColoredLine(dst *bytes.Buffer, hostname string, content []byte, lineN
 		content = content[:len(content)-1]
 	}
 
-	// The colored line is terminal output, not a frame: RawFraming only
-	// borrows the frame layout, whose delimiter is cut off again below.
+	// The colored line is terminal output, not a frame: TerminalFraming
+	// only borrows the frame layout, whose delimiter is cut off again below.
 	var encoded bytes.Buffer
-	protocol.RawFraming.EncodeLine(&encoded, protocol.Line{
+	protocol.TerminalFraming.EncodeLine(&encoded, protocol.Line{
 		Hostname:           hostname,
 		TransmittedPercent: defaultTransmittedPerc,
 		Number:             lineNumber,

@@ -272,7 +272,7 @@ func writeTestStatsFile(t *testing.T, lines int) string {
 }
 
 // TestServerModeMapCommandCompletesSession runs a non-interactive dmap
-// workload (legacy "map" + "cat" command stream) against a output-enabled
+// workload (plain "map" + "cat" command stream) against a output-enabled
 // handler and asserts that the session terminates on its own and delivers
 // the aggregated result. Before the fix the session hung forever: the map
 // command stayed blocked in Aggregate.Start after all input had been

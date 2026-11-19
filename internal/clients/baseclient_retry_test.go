@@ -178,10 +178,10 @@ func TestApplyInteractiveReloadConcurrentWithReconnect(t *testing.T) {
 	}()
 
 	for i := 0; i < 200; i++ {
-		if err := client.applyInteractiveReload(nextArgs, nextSpec); err != nil {
+		if _, err := client.applyInteractiveReload(nextArgs, nextSpec); err != nil {
 			t.Fatalf("applyInteractiveReload() error = %v", err)
 		}
-		if err := client.applyInteractiveReload(originalArgs, originalSpec); err != nil {
+		if _, err := client.applyInteractiveReload(originalArgs, originalSpec); err != nil {
 			t.Fatalf("applyInteractiveReload() error = %v", err)
 		}
 	}
@@ -195,12 +195,11 @@ func newReloadRetryConnector(server string, spec SessionSpec) *reloadRetryConnec
 	return &reloadRetryConnector{
 		interactiveReloadConnector: interactiveReloadConnector{
 			server:        server,
-			supported:     true,
 			committedSpec: spec,
 			liveSpec:      spec,
 			generation:    1,
 		},
-		handler: &retryTestHandler{},
+		handler: &liveRetryTestHandler{done: make(chan struct{})},
 	}
 }
 
@@ -208,6 +207,15 @@ type reloadRetryConnector struct {
 	interactiveReloadConnector
 	handler handlers.Handler
 }
+
+// liveRetryTestHandler is a retryTestHandler whose session is up: its Done
+// channel stays open, so a :reload updates its connection.
+type liveRetryTestHandler struct {
+	retryTestHandler
+	done chan struct{}
+}
+
+func (h *liveRetryTestHandler) Done() <-chan struct{} { return h.done }
 
 func (c *reloadRetryConnector) Handler() handlers.Handler { return c.handler }
 
@@ -223,8 +231,6 @@ func (c *retryTestConnector) Server() string { return c.server }
 
 func (c *retryTestConnector) Handler() handlers.Handler { return c.handler }
 
-func (*retryTestConnector) SupportsQueryUpdates(time.Duration) bool { return false }
-
 func (*retryTestConnector) ApplySessionSpec(SessionSpec, time.Duration) error { return nil }
 
 func (*retryTestConnector) ApplySessionSpecWithGeneration(SessionSpec, uint64, time.Duration) error {
@@ -234,6 +240,9 @@ func (*retryTestConnector) ApplySessionSpecWithGeneration(SessionSpec, uint64, t
 func (*retryTestConnector) CommittedSession() (SessionSpec, uint64, bool) {
 	return SessionSpec{}, 0, false
 }
+
+func (*retryTestConnector) ReplaceStartSessionSpec(SessionSpec) (bool, error) { return false, nil }
+func (*retryTestConnector) RestoreStartSessionSpec(SessionSpec) (bool, error) { return false, nil }
 
 func (*retryTestConnector) RestoreCommittedSession(SessionSpec, uint64, bool) {}
 
@@ -265,6 +274,6 @@ func (*retryTestHandler) Done() <-chan struct{} {
 
 func (*retryTestHandler) WaitForCapabilities(time.Duration) bool { return false }
 
-func (*retryTestHandler) WaitForSessionAck(time.Duration) (handlers.SessionAck, bool) {
+func (*retryTestHandler) WaitForSessionAck(time.Duration, time.Duration) (handlers.SessionAck, bool) {
 	return handlers.SessionAck{}, false
 }

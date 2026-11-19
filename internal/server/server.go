@@ -16,6 +16,7 @@ import (
 	"github.com/mimecast/dtail/internal/ctxutil"
 	"github.com/mimecast/dtail/internal/handlers"
 	"github.com/mimecast/dtail/internal/io/fs/readhub"
+	"github.com/mimecast/dtail/internal/io/journal"
 	"github.com/mimecast/dtail/internal/logging"
 	user "github.com/mimecast/dtail/internal/sessionuser"
 	"github.com/mimecast/dtail/internal/ssh/server"
@@ -44,6 +45,9 @@ type Server struct {
 	// readHub lets sessions tailing the same file share one reader of it; nil
 	// when shared reads are turned off.
 	readHub *readhub.Hub
+	// journalUnits caches the journal unit list of the path listings for
+	// all sessions (handlers.NewJournalUnitCache).
+	journalUnits *journal.UnitCache
 	// Background jobs are composed by cmd/dserver so this package does not depend on clients.
 	backgroundJobs BackgroundJobs
 	// Capabilities are detected once during construction and passed to every session handler.
@@ -129,6 +133,7 @@ func New(cfg config.RuntimeConfig, loggers handlers.HandlerLoggers, backgroundJo
 		catLimiter:     make(chan struct{}, cfg.Server.MaxConcurrentCats),
 		tailLimiter:    make(chan struct{}, cfg.Server.MaxConcurrentTails),
 		readHub:        handlers.NewReadHub(cfg.Server, logger),
+		journalUnits:   handlers.NewJournalUnitCache(),
 		backgroundJobs: backgroundJobs,
 		capabilities:   handlers.DetectCapabilities(),
 		authKeyStore: authkey.New(
@@ -428,6 +433,7 @@ func (s *Server) handleShellRequest(ctx context.Context, sshConn gossh.Conn,
 		CatLimiter:   s.catLimiter,
 		TailLimiter:  s.tailLimiter,
 		ReadHub:      s.readHub,
+		JournalUnits: s.journalUnits,
 		AuthKeyStore: s.authKeyStore,
 		Loggers: handlers.HandlerLoggers{
 			Diagnostics: s.log(),

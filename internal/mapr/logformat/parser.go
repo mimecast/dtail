@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -136,6 +137,22 @@ func RegisterParser(logFormatName string, factory ParserFactory) error {
 	defer parserFactoriesMu.Unlock()
 	parserFactories[name] = factory
 	return nil
+}
+
+// Names returns the names of all registered log formats, sorted. It lists
+// every registration, also formats whose factory fails in this build (the
+// custom1/custom2 templates, the mimecast stubs of the open source build), so
+// a caller that needs working parsers has to build them (see Probe, which
+// leaves such formats out of its result).
+func Names() []string {
+	parserFactoriesMu.RLock()
+	names := make([]string, 0, len(parserFactories))
+	for name := range parserFactories {
+		names = append(names, name)
+	}
+	parserFactoriesMu.RUnlock()
+	slices.Sort(names)
+	return names
 }
 
 func getParserFactory(logFormatName string) (ParserFactory, bool) {

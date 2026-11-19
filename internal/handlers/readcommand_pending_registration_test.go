@@ -265,7 +265,6 @@ func TestInvalidReadOptionsReleaseDispatchReservation(t *testing.T) {
 
 func TestUppercaseReadCommandDoesNotSuppressIdleShutdown(t *testing.T) {
 	handler := newMapTestHandler(t)
-	readServerMessage(t, handler.serverMessages) // Initial capability advertisement.
 
 	dispatchDone := make(chan error, 1)
 	go func() {
@@ -304,7 +303,6 @@ func TestUppercaseReadCommandDoesNotSuppressIdleShutdown(t *testing.T) {
 
 func TestAdmittedUnclaimedReadReservationRunsIdleShutdown(t *testing.T) {
 	handler := newMapTestHandler(t)
-	readServerMessage(t, handler.serverMessages) // Initial capability advertisement.
 	handler.commands["cat"] = func(_ context.Context, _ lcontext.LContext, _ int,
 		_ []string, commandFinished func()) {
 
@@ -401,7 +399,7 @@ func TestMarkerlessReadRechecksForDelayedOldClientFrame(t *testing.T) {
 	coordinator := newShutdownCoordinator(server, server, readTimings{}, true, aggregate)
 	waiting := make(chan struct{})
 	release := make(chan struct{})
-	coordinator.legacyInputWait = func(ctx context.Context, _ time.Duration) bool {
+	coordinator.unbatchedInputWait = func(ctx context.Context, _ time.Duration) bool {
 		close(waiting)
 		select {
 		case <-release:
@@ -449,7 +447,7 @@ func TestMarkerlessReadRecheckStopsOnContextCancellation(t *testing.T) {
 	}
 	coordinator := newShutdownCoordinator(server, server, readTimings{}, true, aggregate)
 	entered := make(chan struct{})
-	coordinator.legacyInputWait = func(ctx context.Context, _ time.Duration) bool {
+	coordinator.unbatchedInputWait = func(ctx context.Context, _ time.Duration) bool {
 		close(entered)
 		<-ctx.Done()
 		return false

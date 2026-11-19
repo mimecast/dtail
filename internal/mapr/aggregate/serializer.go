@@ -227,9 +227,9 @@ func (s *serializer) aggregateLocked(fields map[string]string, groupKey []byte) 
 		}
 		addedSample = true
 	}
-	// Samples counts the line once whichever fields it had. avg() does not
-	// divide by it but by its own value count (see mapr.AggregateSet); it is
-	// still sent for older clients, which divide avg() by it.
+	// Samples counts the line once whichever fields it had. It is part of
+	// the wire format; avg() divides by its own value count, not by it (see
+	// mapr.AggregateSet).
 	if addedSample {
 		set.Samples++
 		return

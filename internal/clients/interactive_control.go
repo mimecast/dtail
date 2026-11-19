@@ -1,13 +1,13 @@
 package clients
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,17 +16,31 @@ import (
 
 	"github.com/mimecast/dtail/internal/clients/connectors"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/mapr"
 	"github.com/mimecast/dtail/internal/omode"
 )
 
 const interactiveControlTimeout = 2 * time.Second
 
+// interactiveBanner is written to the control TTY when the control loop
+// starts.
+const interactiveBanner = "Interactive query control enabled. Press Enter to pause the output. " +
+	"Type :help for examples of changing the filter or query on the fly (Tab completes), :quit to end."
+
+// interactivePlainBanner is the banner without the line editor (the control
+// TTY is no terminal), where Tab does not complete.
+const interactivePlainBanner = "Interactive query control enabled. Press Enter to pause the output. " +
+	"Type :help for examples of changing the filter or query on the fly, :quit to end."
+
 type interactiveCommand struct {
 	spec SessionSpec
 	kind string
 	next config.Args
+	// table is the optional table name of :fields.
+	table string
+	// value is the argument of :query (the query) and :tail (the regex,
+	// empty for the one followed before), as typed.
+	value string
 }
 
 type interactiveReloadState struct {
@@ -35,6 +49,10 @@ type interactiveReloadState struct {
 	rollbackGeneration uint64
 }
 
+// startInteractiveControl runs the connections, the control loop on the
+// control TTY and the background prober (interactiveProber) of an
+// --interactive-query session until the connections end or the control loop
+// ends (:quit, end of the TTY), and returns the session's exit status.
 func (c *baseClient) startInteractiveControl(ctx context.Context, statsCh <-chan string) int {
 	controlTTY, err := os.OpenFile(c.ControlTTYPath, os.O_RDWR, 0)
 	if err != nil {
@@ -48,7 +66,14 @@ func (c *baseClient) startInteractiveControl(ctx context.Context, statsCh <-chan
 	}()
 
 	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	// The background prober is set before the goroutines that read it
+	// start, and it stops with the session: it is waited for once runCtx
+	// ended, which ends every wait of it at once.
+	c.prober = c.newInteractiveProber()
+	defer func() {
+		cancel()
+		c.prober.wait()
+	}()
 
 	// Must be set before runConnections starts the host key prompt.
 	answers := c.routePromptAnswers()
@@ -57,13 +82,21 @@ func (c *baseClient) startInteractiveControl(ctx context.Context, statsCh <-chan
 	go func() {
 		statusCh <- c.runConnections(runCtx, statsCh)
 	}()
+	c.prober.start(runCtx)
 
 	controlErrCh := make(chan error, 1)
 	go func() {
 		defer answers.close()
 		controlErrCh <- c.runInteractiveControl(runCtx, cancel, controlTTY, answers)
 	}()
+	return c.awaitInteractiveEnd(cancel, statusCh, controlErrCh)
+}
 
+// awaitInteractiveEnd waits until the connections (statusCh) or the control
+// loop (controlErrCh) end, cancels the other one, waits for it too, and
+// returns the connections' status.
+func (c *baseClient) awaitInteractiveEnd(cancel context.CancelFunc, statusCh <-chan int,
+	controlErrCh <-chan error) int {
 	select {
 	case status := <-statusCh:
 		// The connections ended first: stop the control loop and wait for
@@ -125,7 +158,7 @@ func (c *baseClient) routePromptAnswers() *promptAnswers {
 // take passes line on to the prompt and reports true if a question is being
 // asked; otherwise the line is the control loop's.
 func (a *promptAnswers) take(line string) bool {
-	if a == nil || !a.router.Prompting() {
+	if !a.prompting() {
 		return false
 	}
 	select {
@@ -152,6 +185,12 @@ func (a *promptAnswers) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// prompting reports whether the host key question is asked, so that a line
+// typed now answers it; false for nil answers.
+func (a *promptAnswers) prompting() bool {
+	return a != nil && a.router.Prompting()
+}
+
 // close ends the answers: a prompt still waiting gets io.EOF.
 func (a *promptAnswers) close() {
 	if a != nil {
@@ -159,57 +198,134 @@ func (a *promptAnswers) close() {
 	}
 }
 
+// runInteractiveControl reads control lines from the TTY until :quit, the
+// end of the TTY or the cancellation of ctx, through the line editor on a
+// terminal (Tab completion, history, pause while typing; see
+// interactiveEditor) or plain lines otherwise. Each line answers a pending
+// host key question, or is handled by handleInteractiveLine: an empty line
+// pauses or resumes the output, anything else is a control command.
 func (c *baseClient) runInteractiveControl(ctx context.Context, cancel context.CancelFunc, tty *os.File,
 	answers *promptAnswers) error {
-	if _, err := fmt.Fprintf(tty,
-		"Interactive query control enabled. Commands: :reload <flags>, :show, :help, :quit\n"); err != nil {
+	// Output paused by an empty line or by typing is resumed whenever the
+	// loop ends, so that writers blocked by the pause can finish and the
+	// client shuts down.
+	pause := c.newInteractivePause()
+	defer pause.resume()
+	lines, closeLines := c.openControlLines(ctx, tty, pause, answers)
+	defer closeLines()
+	// Written once the terminal mode is set, so that the user's first keys
+	// already reach the line editor.
+	if err := c.writeControlBanner(lines); err != nil {
 		return err
 	}
 
-	reader := bufio.NewScanner(tty)
-	reader.Buffer(make([]byte, 0, 1024), 1024*1024)
-
-	go func() {
-		<-ctx.Done()
-		_ = tty.Close()
-	}()
-
-	for reader.Scan() {
+	for {
 		// The line is passed on untrimmed: parseInteractiveCommand trims it
 		// only to recognise the command, so that an escaped trailing blank of
 		// a :reload value (`--regex foo\ `) survives.
-		line := reader.Text()
-		// A line typed while the host key question is asked answers it.
-		if answers.take(line) {
-			continue
-		}
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-
-		currentArgs, _ := c.snapshotConnectionState()
-		command, err := parseInteractiveCommand(currentArgs, line, c.clientLogger())
-		if err != nil {
-			if writeErr := writeControlLine(tty, "interactive query error: "+err.Error()); writeErr != nil {
+		line, err := lines.ReadLine()
+		if errors.Is(err, errControlLineTooLong) {
+			if writeErr := c.rejectControlLine(lines.Writer(), err, pause); writeErr != nil {
 				return writeErr
 			}
 			continue
 		}
-
-		quit, runErr := c.runInteractiveCommand(tty, command)
-		if runErr != nil {
-			return runErr
+		if err != nil {
+			if errors.Is(err, io.EOF) || ctx.Err() != nil || errors.Is(err, os.ErrClosed) {
+				return nil
+			}
+			return err
+		}
+		quit, err := c.dispatchControlLine(lines.Writer(), line, pause, answers)
+		if err != nil {
+			return err
 		}
 		if quit {
 			cancel()
 			return nil
 		}
 	}
+}
 
-	if err := reader.Err(); err != nil && ctx.Err() == nil && !errors.Is(err, os.ErrClosed) {
+// openControlLines opens the control lines of tty: the line editor (cbreak
+// mode, completion, history) when tty allows it, plain lines otherwise. The
+// returned close, which the control loop defers, restores the terminal mode;
+// so does the cancellation of ctx, before it closes tty to end a pending
+// read. While the editor runs, the statistics printed on Ctrl-C go through
+// it (stats.setInterruptOutput): written straight to stdout they ran over
+// the line being edited, which the Terminal did not draw again, and its
+// cursor bookkeeping was off for the later edits.
+func (c *baseClient) openControlLines(ctx context.Context, tty *os.File, pause *interactivePause,
+	answers *promptAnswers) (controlLines, func()) {
+
+	lines := c.newControlLines(tty, pause, answers)
+	_, editing := lines.(*interactiveEditor)
+	routeStats := editing && c.stats != nil
+	if routeStats {
+		c.stats.setInterruptOutput(lines.Writer())
+	}
+	// The statistics go to stdout again before the TTY is closed.
+	closeLines := func() {
+		if routeStats {
+			c.stats.setInterruptOutput(nil)
+		}
+		lines.close()
+	}
+	go func() {
+		<-ctx.Done()
+		closeLines()
+		_ = tty.Close()
+	}()
+	return lines, closeLines
+}
+
+// dispatchControlLine passes a line typed while the host key question is
+// asked to that question, and any other line to handleInteractiveLine. An
+// answer's keys paused the output for typing like a command's, so it is
+// resumed then too.
+func (c *baseClient) dispatchControlLine(w io.Writer, line string, pause *interactivePause,
+	answers *promptAnswers) (bool, error) {
+
+	if answers.take(line) {
+		if pause.typing {
+			pause.resume()
+		}
+		return false, nil
+	}
+	return c.handleInteractiveLine(w, line, pause)
+}
+
+// rejectControlLine reports a control line that is not run (reason) and
+// resumes the output its keys paused for typing, as an entered line does.
+func (c *baseClient) rejectControlLine(w io.Writer, reason error, pause *interactivePause) error {
+	if pause.typing {
+		pause.resume()
+	}
+	return writeControlLine(w, styleOf(w).failure("interactive query error: "+reason.Error()))
+}
+
+// writeControlBanner writes the banner (controlBanner) and, for a session
+// that reads no files, the hint how to give it some (noFilesHint), as
+// without files nothing is read and no field data can ever arrive.
+func (c *baseClient) writeControlBanner(lines controlLines) error {
+	w := lines.Writer()
+	if err := writeControlLine(w, styleOf(w).banner(controlBanner(lines))); err != nil {
 		return err
 	}
+	_, plain := lines.(*scannerLines)
+	if hint := c.prober.noFilesHint(!plain); hint != "" {
+		return writeControlLine(w, styleOf(w).hint(hint))
+	}
 	return nil
+}
+
+// controlBanner is the banner for lines: it mentions Tab only where the line
+// editor completes.
+func controlBanner(lines controlLines) string {
+	if _, plain := lines.(*scannerLines); plain {
+		return interactivePlainBanner
+	}
+	return interactiveBanner
 }
 
 // runInteractiveCommand runs one parsed control command and writes its
@@ -217,131 +333,188 @@ func (c *baseClient) runInteractiveControl(ctx context.Context, cancel context.C
 // cancels the interactive session. A failed reload is answered on the TTY and
 // is no error: only a failed TTY write ends the control loop.
 func (c *baseClient) runInteractiveCommand(tty io.Writer, command interactiveCommand) (quit bool, err error) {
+	style := styleOf(tty)
 	switch command.kind {
 	case "help":
 		return false, c.writeInteractiveHelp(tty)
 	case "show":
 		return false, c.writeInteractiveState(tty)
+	case "fields":
+		return false, c.writeFieldsCommand(tty, command.table)
+	case "probe":
+		return false, c.runProbeCommand(tty)
 	case "quit":
-		return true, writeControlLine(tty, "quitting interactive session")
+		return true, writeControlLine(tty, style.hint("quitting interactive session"))
 	case "reload":
-		if reloadErr := c.applyInteractiveReload(command.next, command.spec); reloadErr != nil {
-			return false, writeControlLine(tty, "reload failed: "+reloadErr.Error())
+		outcome, reloadErr := c.applyInteractiveReload(command.next, command.spec)
+		if reloadErr != nil {
+			return false, writeControlLine(tty, style.failure("reload failed: "+reloadErr.Error()))
 		}
-		return false, writeControlLine(tty, "reload applied successfully")
+		return false, writeControlLine(tty, reloadAppliedMessage(style, command.spec.Query)+
+			outcome.message(style, c.profile.retry))
+	case "query":
+		return false, c.runQueryCommand(tty, command.value)
+	case "showquery":
+		return false, c.writeQueryState(tty)
+	case "tail":
+		return false, c.runTailCommand(tty, command.value)
 	default:
-		return false, writeControlLine(tty, "unsupported command")
+		return false, writeControlLine(tty, style.failure("unsupported command"))
 	}
 }
 
-// applyInteractiveReload switches every connection to nextSpec. Before it
-// updates any connection it checks that all of them support query updates and
-// every capability the read targets of nextSpec need (see
-// checkReloadCapabilities), so that a reload one server cannot run is
-// rejected as a whole and leaves the workload untouched. A failure after
-// that rolls the already updated connections back to their previous spec.
-func (c *baseClient) applyInteractiveReload(nextArgs config.Args, nextSpec SessionSpec) error {
+// reloadAppliedMessage answers an applied :reload. A reload with a query
+// (MapReduce mode) echoes the query it applied, highlighted with colors, so
+// a mistyped word shows in another color than the one meant.
+func reloadAppliedMessage(style *interactiveStyle, query string) string {
+	message := style.success("reload applied successfully")
+	if query == "" {
+		return message
+	}
+	return message + "\n" + style.hint("query: ") + style.query(query)
+}
+
+// applyInteractiveReload switches every connection whose session is up to
+// nextSpec, all or nothing, and the connections without an active session
+// as far as they can be (see partitionReloadConnections and
+// reloadRun.updateInactive). Before it updates any connection it checks
+// that all connections that are up support the journal targets nextSpec
+// reads, if any (see checkReloadJournalCapability), so that a reload one of
+// them cannot run is rejected as a whole and leaves the workload untouched.
+// A failure after that rolls the changed connections back to their
+// previous spec (reloadRun.rollback). With no session up at all the reload
+// is rejected: there is no generation to commit it at. A server that is
+// down therefore no longer fails every reload; it starts with the reloaded
+// spec should it (re)connect. Every connection is changed before the
+// profile commit switches the client to the new generation (for dmap, the
+// query its aggregation runs): a connection still sending results of the
+// replaced workload after the commit would have them merged into the new
+// one. The reload holds the reload lock throughout, so a reconnect creates its
+// connection before or after it (see recreateConnection). A reload that was
+// applied asks the background prober for a new round
+// (interactiveProber.request).
+//
+// The connections are updated, and rolled back, one after the other, each
+// wait capped at connectors' sessionUpdateAckMaxWait (10 s): a reload that
+// fails at its last connection and whose servers all stall can take about
+// 20 s per connection (update plus rollback), during which the control
+// loop answers nothing. They are not changed concurrently, as the
+// all-or-nothing rule needs to know which connections were changed when
+// one fails, and a total budget would leave connections half updated with
+// nothing to roll them back; the bound is only reached with servers that
+// all stall, as one that answers does so in a round trip.
+func (c *baseClient) applyInteractiveReload(nextArgs config.Args, nextSpec SessionSpec) (reloadOutcome, error) {
+	reloadMu := c.reloadLock()
+	reloadMu.Lock()
+	defer reloadMu.Unlock()
+
 	prevArgs, prevSpec, connections := c.snapshotMutableState()
 	if len(connections) == 0 {
-		return errors.New("no active connections")
+		return reloadOutcome{}, errors.New("no active connections")
 	}
-	if err := checkReloadCapabilities(connections, nextSpec); err != nil {
-		return err
+	active, inactive := partitionReloadConnections(connections)
+	if len(active) == 0 {
+		return reloadOutcome{}, fmt.Errorf("no server has an active session: %s", serverNames(inactive))
+	}
+	if err := checkReloadJournalCapability(active, nextSpec); err != nil {
+		return reloadOutcome{}, err
 	}
 
-	applied, generation, err := c.applyInteractiveReloadConnections(connections, nextSpec)
+	run := &reloadRun{nextSpec: nextSpec, prevSpec: prevSpec, base: highestCommittedGeneration(active)}
+	for _, conn := range active {
+		if err := run.update(conn); err != nil {
+			return reloadOutcome{}, c.rollbackInteractiveReload(run, prevArgs, err)
+		}
+	}
+	outcome, err := run.updateInactive(inactive)
 	if err != nil {
-		return c.rollbackInteractiveReload(applied, prevArgs, prevSpec, err)
+		return reloadOutcome{}, c.rollbackInteractiveReload(run, prevArgs, err)
 	}
 
 	if c.profile.commit != nil {
-		if commitErr := c.profile.commit(nextSpec, generation); commitErr != nil {
-			return c.rollbackInteractiveReload(applied, prevArgs, prevSpec,
+		if commitErr := c.profile.commit(nextSpec, run.generation); commitErr != nil {
+			return reloadOutcome{}, c.rollbackInteractiveReload(run, prevArgs,
 				fmt.Errorf("commit session state: %w", commitErr))
 		}
 	}
 
 	c.storeReloadState(nextArgs, nextSpec)
-	return nil
+	// The fields of the new files, or of the same files read anew.
+	c.prober.request()
+	return outcome, nil
 }
 
-// checkReloadCapabilities returns an error naming the servers among
-// connections that cannot run nextSpec: those not advertising query updates,
-// or else those lacking the first missing capability that the read targets of
-// nextSpec need (journal targets, or paths containing spaces or starting with
-// base64%, see connectors.CheckSpecCapabilities). Without this up-front check
-// a server lacking such a capability would fail the reload only after others
-// already switched, and the rollback would re-run the previous workload on
-// them, which repeats its output.
-func checkReloadCapabilities(connections []connectors.Connector, nextSpec SessionSpec) error {
+// checkReloadJournalCapability returns an error naming the servers among
+// connections without journal support, if nextSpec reads a journal target
+// (see connectors.CheckJournalCapability). Journal support is the only
+// capability a reload can lack: every protocol 5 server supports SESSION
+// UPDATE and encoded read paths. Without this up-front check a server
+// lacking it would fail the reload only after others already switched, and
+// the rollback would re-run the previous workload on them, which repeats its
+// output.
+func checkReloadJournalCapability(connections []connectors.Connector, nextSpec SessionSpec) error {
 	var unsupported []string
 	for _, conn := range connections {
-		if !conn.SupportsQueryUpdates(interactiveControlTimeout) {
+		if connectors.CheckJournalCapability(conn, nextSpec, interactiveControlTimeout) != nil {
 			unsupported = append(unsupported, conn.Server())
 		}
 	}
 	if len(unsupported) > 0 {
-		return fmt.Errorf("%w: %s", connectors.ErrSessionUnsupported, strings.Join(unsupported, ", "))
-	}
-
-	var missing error
-	for _, conn := range connections {
-		err := connectors.CheckSpecCapabilities(conn, nextSpec, interactiveControlTimeout)
-		if err == nil {
-			continue
-		}
-		if missing == nil {
-			missing = err
-		}
-		if errors.Is(err, missing) {
-			unsupported = append(unsupported, conn.Server())
-		}
-	}
-	if missing != nil {
-		return fmt.Errorf("%w: %s", missing, strings.Join(unsupported, ", "))
+		return fmt.Errorf("%w: %s", connectors.ErrJournalUnsupported, strings.Join(unsupported, ", "))
 	}
 	return nil
 }
 
-func (c *baseClient) applyInteractiveReloadConnections(connections []connectors.Connector, nextSpec SessionSpec) ([]interactiveReloadState, uint64, error) {
-	var generation uint64
-	baseGeneration := highestCommittedGeneration(connections)
-	applied := make([]interactiveReloadState, 0, len(connections))
-	for _, conn := range connections {
-		prevSpec, prevGeneration, _ := conn.CommittedSession()
-		if err := applyReloadSpec(conn, nextSpec, prevGeneration, baseGeneration); err != nil {
-			if shouldRollbackFailedReload(err) {
-				rollbackGeneration := generation
-				if rollbackGeneration == 0 {
-					rollbackGeneration = prevGeneration
-				}
-				applied = append(applied, interactiveReloadState{
-					conn:               conn,
-					spec:               prevSpec,
-					rollbackGeneration: rollbackGeneration,
-				})
-			}
-			return applied, 0, fmt.Errorf("%s: %w", conn.Server(), err)
-		}
-		applied = append(applied, interactiveReloadState{
-			conn: conn,
-			spec: prevSpec,
-		})
+// reloadRun is one :reload in progress: the connections it updated
+// (applied, with what a rollback restores), the connecting ones whose start
+// spec it replaced (replaced), and the generation they all committed.
+type reloadRun struct {
+	nextSpec SessionSpec
+	prevSpec SessionSpec
+	// base is the highest generation the active connections committed
+	// before the reload; every connection is updated on top of it, so all
+	// commit base+1.
+	base uint64
+	// generation is the generation the updated connections committed, 0
+	// before the first update.
+	generation uint64
+	applied    []interactiveReloadState
+	replaced   []connectors.Connector
+}
 
-		_, committedGeneration, ok := conn.CommittedSession()
-		if !ok || committedGeneration == 0 {
-			return applied, 0, fmt.Errorf("%s: missing committed session generation", conn.Server())
+// update updates conn, whose session is committed, to nextSpec on top of
+// base and records it for a rollback. It fails if the update failed or conn
+// committed another generation than the connections before it. A
+// connection whose update was sent but not acknowledged as expected is
+// rolled back too, on top of the reload's generation (or its own previous
+// one if it was the first), as the server may have applied it.
+func (r *reloadRun) update(conn connectors.Connector) error {
+	prevSpec, prevGeneration, _ := conn.CommittedSession()
+	if err := applyReloadSpec(conn, r.nextSpec, prevGeneration, r.base); err != nil {
+		if shouldRollbackFailedReload(err) {
+			rollbackGeneration := r.generation
+			if rollbackGeneration == 0 {
+				rollbackGeneration = prevGeneration
+			}
+			r.applied = append(r.applied, interactiveReloadState{conn: conn, spec: prevSpec,
+				rollbackGeneration: rollbackGeneration})
 		}
-		applied[len(applied)-1].rollbackGeneration = committedGeneration
-		if generation == 0 {
-			generation = committedGeneration
-			continue
-		}
-		if generation != committedGeneration {
-			return applied, 0, fmt.Errorf("mismatched committed generations: got %d and %d", generation, committedGeneration)
-		}
+		return fmt.Errorf("%s: %w", conn.Server(), err)
 	}
-	return applied, generation, nil
+	_, committedGeneration, ok := conn.CommittedSession()
+	r.applied = append(r.applied, interactiveReloadState{conn: conn, spec: prevSpec,
+		rollbackGeneration: committedGeneration})
+	if !ok || committedGeneration == 0 {
+		return fmt.Errorf("%s: missing committed session generation", conn.Server())
+	}
+	if r.generation == 0 {
+		r.generation = committedGeneration
+		return nil
+	}
+	if r.generation != committedGeneration {
+		return fmt.Errorf("mismatched committed generations: got %d and %d", r.generation, committedGeneration)
+	}
+	return nil
 }
 
 // highestCommittedGeneration returns the highest session generation any of
@@ -356,18 +529,20 @@ func highestCommittedGeneration(connections []connectors.Connector) uint64 {
 	return highest
 }
 
-// applyReloadSpec updates conn to nextSpec on top of baseGeneration, the
-// highest generation of all connections, so that every connection commits
+// applyReloadSpec updates conn, whose session is committed at
+// committedGeneration, to nextSpec on top of baseGeneration, the highest
+// generation of the active connections, so that every connection commits
 // the same next generation. A connection that reconnected meanwhile started
 // its session over at generation 1 while the others kept theirs; updating
 // each on top of its own generation then gave mismatched generations, and
 // every later :reload was rejected and rolled back. dserver accepts any
-// generation the client numbers an update with. A connection without a
-// committed session starts one as before.
+// generation the client numbers an update with. A reload updates committed
+// sessions only: a connection still connecting gets the reloaded spec for
+// its SESSION START instead (see reloadRun.updateInactive).
 func applyReloadSpec(conn connectors.Connector, nextSpec SessionSpec,
 	committedGeneration, baseGeneration uint64) error {
 
-	if committedGeneration == 0 || committedGeneration == baseGeneration {
+	if committedGeneration == baseGeneration {
 		return conn.ApplySessionSpec(nextSpec, interactiveControlTimeout)
 	}
 	return conn.ApplySessionSpecWithGeneration(nextSpec, baseGeneration, interactiveControlTimeout)
@@ -378,20 +553,28 @@ func shouldRollbackFailedReload(err error) bool {
 		errors.Is(err, connectors.ErrUnexpectedSessionAck)
 }
 
-func (c *baseClient) rollbackInteractiveReload(applied []interactiveReloadState, prevArgs config.Args, prevSpec SessionSpec, err error) error {
-	rollbackErr := c.rollbackInteractiveReloadConnections(applied)
-	c.storeReloadState(prevArgs, prevSpec)
+// rollbackInteractiveReload rolls back the connections run changed (see
+// reloadRun.rollback), restores the client state of before the reload and
+// returns err together with any rollback failure.
+func (c *baseClient) rollbackInteractiveReload(run *reloadRun, prevArgs config.Args, err error) error {
+	rollbackErr := run.rollback()
+	c.storeReloadState(prevArgs, run.prevSpec)
 	if rollbackErr != nil {
 		return errors.Join(err, rollbackErr)
 	}
 	return err
 }
 
-func (*baseClient) rollbackInteractiveReloadConnections(applied []interactiveReloadState) error {
-	var rollbackErr error
-	for i := len(applied) - 1; i >= 0; i-- {
-		if err := applied[i].conn.ApplySessionSpecWithGeneration(applied[i].spec, applied[i].rollbackGeneration, interactiveControlTimeout); err != nil {
-			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("%s: rollback session spec: %w", applied[i].conn.Server(), err))
+// rollback gives the connecting connections back the previous spec as
+// their start spec (see restoreStartSpecs) and updates the updated
+// connections, in reverse order, back to their previous spec.
+func (r *reloadRun) rollback() error {
+	rollbackErr := restoreStartSpecs(r.replaced, r.prevSpec)
+	for i := len(r.applied) - 1; i >= 0; i-- {
+		state := r.applied[i]
+		if err := state.conn.ApplySessionSpecWithGeneration(state.spec, state.rollbackGeneration,
+			interactiveControlTimeout); err != nil {
+			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("%s: rollback session spec: %w", state.conn.Server(), err))
 		}
 	}
 	return rollbackErr
@@ -402,60 +585,137 @@ func (*baseClient) rollbackInteractiveReloadConnections(applied []interactiveRel
 // for the flags of the current mode (see interactiveHelpText).
 func (c *baseClient) writeInteractiveHelp(writer io.Writer) error {
 	args, _ := c.snapshotConnectionState()
-	return writeControlLine(writer, interactiveHelpText(args))
+	return writeControlLine(writer, styleOf(writer).help(interactiveHelpText(args)))
 }
 
-// interactiveHelpText returns the :help line for the given arguments. The
-// example matches the flags parseInteractiveReloadArgs accepts in that mode,
-// so that e.g. dmap or dcat do not suggest a --regex they would reject. The
-// --files examples contain no spaces, as a path with a space needs servers
-// advertising encoded-read-path-v1 (see doc/interactive-query.md for how to
-// quote one).
+// interactiveHelpText returns the :help text for the given arguments: the
+// commands, then examples of changing the workload on the fly with :reload.
+// The examples match the flags parseInteractiveReloadArgs accepts in that
+// mode, so that e.g. dmap or dcat do not suggest a --regex they would reject,
+// and the query examples are valid queries. The --files examples contain no
+// spaces (see doc/interactive-query.md for how to quote such a path). The
+// commands line names :query and :tail only in the modes that have them,
+// and the examples show switching between following lines and a query in
+// dtail (helpSwitchExamples).
 func interactiveHelpText(args config.Args) string {
-	const prefix = "Commands: :reload <flags>, :show, :help, :quit. Quote values as in a shell: "
+	head := helpCommandsLine(args) + " An empty line pauses or resumes the output.\n" +
+		"On a terminal typing pauses the output until the line is entered, Tab completes commands, " +
+		"flags, after a filter, query or files flag its current value, inside a query the query language " +
+		"and probed fields, inside --files remote paths; " +
+		"Up/Down recall earlier lines; Alt-E (or Alt-V) edits the line in $VISUAL/$EDITOR; " +
+		"--edit-mode vi (or Client.EditMode) adds vi normal mode keys after Esc.\n" +
+		":fields lists the tables, fields and sample values the background probe of the servers found " +
+		"(Tab completes them in a query); :probe probes now.\n"
+	const tail = "Flags not given keep their value; :show prints the current ones. " +
+		"Quote :reload values as in a shell; the query of :query and the regex of :tail are " +
+		"the rest of the line, unquoted (see doc/interactive-query.md)."
+	files := [2]string{":reload --files /var/log/a.log,/var/log/b.log", "other files (comma-separated)"}
 	switch {
 	case isInteractiveQueryMode(args):
-		return prefix + "--query \"select count(status) from stats\" (double quotes keep spaces), " +
-			"--files /var/log/a.log,/var/log/b.log (comma-separated)."
+		return head + "Change the MapReduce query on the fly, e.g.:\n" + helpExamples(append(
+			helpSwitchExamples(args),
+			[2]string{":reload --query 'from STATS select count($line) group by $hostname interval 10'", ""},
+			files)...) + tail
 	case args.Mode == omode.GrepClient || args.Mode == omode.TailClient:
-		return prefix + "--regex '\\d+' (single quotes keep backslashes), " +
-			"--regex '' (empty value, matches every line, or none with --invert)."
+		return head + "Change the grep filter on the fly, e.g.:\n" + helpExamples(append(
+			helpSwitchExamples(args),
+			[2]string{":reload --grep ERROR", "only lines matching ERROR"},
+			[2]string{":reload --grep 'WARN|ERROR' --before 2 --after 2", "a regex, with context lines"},
+			[2]string{`:reload --regex '\d+ ms'`, "single quotes keep backslashes"},
+			[2]string{":reload --grep DEBUG --invert", "every line but DEBUG (--invert=false undoes it)"},
+			[2]string{":reload --regex ''", "every line again (none with --invert)"},
+			files)...) + tail
 	default:
-		return prefix + "--files /var/log/a.log,/var/log/b.log (comma-separated)."
+		return head + "Change what is read on the fly, e.g.:\n" + helpExamples(files) + tail
 	}
 }
 
-// writeInteractiveState answers :show with the current session spec. It
-// shows invert as well as regex, because --invert carries over between
-// reloads and decides what the empty regex matches (every line, or none).
+// helpCommandsLine returns the first line of :help, naming the commands of
+// the mode of args.
+func helpCommandsLine(args config.Args) string {
+	commands := []string{":reload <flags>"}
+	if hasQueryCommand(args) {
+		commands = append(commands, ":query [query]")
+	}
+	if hasTailCommand(args) {
+		commands = append(commands, ":tail [regex]")
+	}
+	commands = append(commands, ":show", ":fields [table]", ":probe", ":help", ":quit")
+	return "Commands: " + strings.Join(commands, ", ") + "."
+}
+
+// helpSwitchExamples returns the :query and :tail examples of the mode of
+// args: in dtail following lines the switch to a query, in dtail running a
+// query other queries and the way back to following lines, in dmap other
+// queries; none in dgrep and dcat.
+func helpSwitchExamples(args config.Args) [][2]string {
+	// Short enough for the explanation column of helpExamples.
+	const query = ":query from STATS select count($line)"
+	switch {
+	case !hasQueryCommand(args):
+		return nil
+	case !isInteractiveQueryMode(args):
+		return [][2]string{{query, "switch to a MapReduce query (Tab completes it)"}}
+	}
+	examples := [][2]string{
+		{query, "another query (:query alone shows the current one)"},
+		{":query from STATS select $hostname,max($goroutines) group by $hostname order by max($goroutines)", ""},
+	}
+	if hasTailCommand(args) {
+		examples = append(examples,
+			[2]string{":tail", "follow lines again, with the regex followed before"},
+			[2]string{":tail ERROR", "follow lines matching ERROR"})
+	}
+	return examples
+}
+
+// helpExamples formats :help example lines, each a command and an optional
+// explanation, the explanations aligned in one column.
+func helpExamples(examples ...[2]string) string {
+	var sb strings.Builder
+	for _, example := range examples {
+		if example[1] == "" {
+			fmt.Fprintf(&sb, "  %s\n", example[0])
+			continue
+		}
+		fmt.Fprintf(&sb, "  %-50s %s\n", example[0], example[1])
+	}
+	return sb.String()
+}
+
+// writeInteractiveState answers :show with the workload (workload=: query
+// while a MapReduce query runs, else the mode), the current session spec, the
+// number of servers (servers=) and the number of them whose session is up
+// (sessions=, see partitionReloadConnections), which a :reload updates; the
+// others start with the reloaded spec if they still connect. It shows
+// invert as well as regex, because --invert carries over between reloads and
+// decides what the empty regex matches (every line, or none). With colors
+// the query is highlighted (interactiveStyle.quotedQuery), which leaves the
+// text as it is.
 func (c *baseClient) writeInteractiveState(writer io.Writer) error {
 	args, spec, connections := c.snapshotMutableState()
-	ready := 0
-	for _, conn := range connections {
-		if conn.SupportsQueryUpdates(0) {
-			ready++
-		}
+	active, _ := partitionReloadConnections(connections)
+	style := styleOf(writer)
+	pairs := []keyValue{
+		{key: "mode", value: args.Mode.String()},
+		{key: "workload", value: workloadName(args)},
+		{key: "files", value: strings.Join(spec.Files, ",")},
+		{key: "query", value: style.quotedQuery(spec.Query), painted: style != nil},
+		{key: "regex", value: strconv.Quote(spec.Regex)},
+		{key: "invert", value: strconv.FormatBool(spec.RegexInvert)},
+		{key: "options", value: strconv.Quote(spec.Options)},
+		{key: "timeout", value: strconv.Itoa(spec.Timeout)},
+		{key: "servers", value: strconv.Itoa(len(connections))},
+		{key: "sessions", value: strconv.Itoa(len(active))},
 	}
-
-	line := fmt.Sprintf(
-		"mode=%s files=%s query=%q regex=%q invert=%t options=%q timeout=%d capable=%d/%d",
-		args.Mode,
-		strings.Join(spec.Files, ","),
-		spec.Query,
-		spec.Regex,
-		spec.RegexInvert,
-		spec.Options,
-		spec.Timeout,
-		ready,
-		len(connections),
-	)
-	return writeControlLine(writer, line)
+	return writeControlLine(writer, style.keyValues(pairs))
 }
 
 // parseInteractiveCommand parses one control line. The line is trimmed only
 // to recognise the command; the flags of a :reload line are tokenized as
-// typed, see parseInteractiveReload.
-func parseInteractiveCommand(current config.Args, line string, logger logging.Logger) (interactiveCommand, error) {
+// typed, see parseInteractiveReload, and the argument of :query and :tail is
+// the rest of the line (parseQueryCommand, parseTailCommand).
+func parseInteractiveCommand(current config.Args, line string) (interactiveCommand, error) {
 	trimmed := strings.TrimSpace(line)
 
 	switch {
@@ -465,19 +725,34 @@ func parseInteractiveCommand(current config.Args, line string, logger logging.Lo
 		return interactiveCommand{kind: "show"}, nil
 	case trimmed == ":quit":
 		return interactiveCommand{kind: "quit"}, nil
+	case trimmed == ":probe":
+		return interactiveCommand{kind: "probe"}, nil
+	case isCommandLine(trimmed, ":probe"):
+		return interactiveCommand{}, errors.New(":probe takes no arguments")
+	case isCommandLine(trimmed, ":fields"):
+		return parseFieldsCommand(trimmed)
+	case isCommandLine(trimmed, queryCommand):
+		return parseQueryCommand(current, line)
+	case isCommandLine(trimmed, tailCommand):
+		return parseTailCommand(current, line)
 	case isInteractiveReloadLine(trimmed):
-		return parseInteractiveReload(current, line, logger)
+		return parseInteractiveReload(current, line)
 	default:
 		return interactiveCommand{}, fmt.Errorf("unknown command %q", trimmed)
 	}
 }
 
 // isInteractiveReloadLine reports whether the trimmed control line is the
-// :reload command: ":reload" alone or followed by a blank (a space or a tab,
-// the separators of splitInteractiveArgs). Anything else starting with
+// :reload command (see isCommandLine). Anything else starting with
 // ":reload", such as ":reloadx" or ":reload--regex=x", is an unknown command.
 func isInteractiveReloadLine(trimmed string) bool {
-	const command = ":reload"
+	return isCommandLine(trimmed, ":reload")
+}
+
+// isCommandLine reports whether the trimmed control line is command alone
+// or followed by a blank (a space or a tab, the separators of
+// splitInteractiveArgs) and its arguments.
+func isCommandLine(trimmed, command string) bool {
 	rest, found := strings.CutPrefix(trimmed, command)
 	return found && (rest == "" || rest[0] == ' ' || rest[0] == '\t')
 }
@@ -491,7 +766,7 @@ func isInteractiveReloadLine(trimmed string) bool {
 // A line that is not valid UTF-8 is rejected: the SESSION UPDATE payload is
 // the JSON encoding of the spec, and encoding/json would silently replace
 // each invalid byte with U+FFFD, so e.g. a file path would change.
-func parseInteractiveReload(current config.Args, line string, logger logging.Logger) (interactiveCommand, error) {
+func parseInteractiveReload(current config.Args, line string) (interactiveCommand, error) {
 	if !utf8.ValidString(line) {
 		return interactiveCommand{}, errors.New("reload line is not valid UTF-8")
 	}
@@ -508,7 +783,7 @@ func parseInteractiveReload(current config.Args, line string, logger logging.Log
 	if err != nil {
 		return interactiveCommand{}, err
 	}
-	nextArgs, nextSpec, err := buildInteractiveSessionSpec(nextArgs, logger)
+	nextArgs, nextSpec, err := buildInteractiveSessionSpec(nextArgs)
 	if err != nil {
 		return interactiveCommand{}, err
 	}
@@ -525,22 +800,9 @@ func parseInteractiveReload(current config.Args, line string, logger logging.Log
 // unchanged together with the error.
 func parseInteractiveReloadArgs(current config.Args, tokens []string) (config.Args, error) {
 	next := current
-	fs := flag.NewFlagSet("reload", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	bindInteractiveSharedFlags(fs, &next, current)
-
-	var grep *string
-	switch {
-	case isInteractiveQueryMode(current):
-		fs.StringVar(&next.QueryStr, "query", current.QueryStr, "Map reduce query")
-		// Bound only so that validateInteractiveReloadArgs can reject it
-		// with a reason instead of the flag package's "not defined".
-		fs.Bool("invert", false, "Rejected: a query selects its own lines")
-	case current.Mode == omode.GrepClient || current.Mode == omode.TailClient:
-		grep = bindInteractiveGrepFlags(fs, &next, current)
-	case current.Mode == omode.CatClient:
-	default:
-		return current, fmt.Errorf("interactive reload is unsupported for mode %s", current.Mode)
+	fs, grep, err := newInteractiveReloadFlagSet(current, &next)
+	if err != nil {
+		return current, err
 	}
 
 	if err := fs.Parse(tokens); err != nil {
@@ -561,6 +823,31 @@ func parseInteractiveReloadArgs(current config.Args, tokens []string) (config.Ar
 		return current, err
 	}
 	return next, nil
+}
+
+// newInteractiveReloadFlagSet returns the :reload flag set of the mode of
+// current, its flags bound to next (initialised from current). It is the one
+// definition of which flags a mode accepts, used by the parser and by the
+// Tab completion (interactiveReloadFlags). grep is the --grep alias value of
+// the grep-driven modes, nil otherwise.
+func newInteractiveReloadFlagSet(current config.Args, next *config.Args) (fs *flag.FlagSet, grep *string, err error) {
+	fs = flag.NewFlagSet("reload", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	bindInteractiveSharedFlags(fs, next, current)
+
+	switch {
+	case isInteractiveQueryMode(current):
+		fs.StringVar(&next.QueryStr, "query", current.QueryStr, "Map reduce query")
+		// Bound only so that validateInteractiveReloadArgs can reject it
+		// with a reason instead of the flag package's "not defined".
+		fs.Bool("invert", false, "Rejected: a query selects its own lines")
+	case current.Mode == omode.GrepClient || current.Mode == omode.TailClient:
+		grep = bindInteractiveGrepFlags(fs, next, current)
+	case current.Mode == omode.CatClient:
+	default:
+		return nil, nil, fmt.Errorf("interactive reload is unsupported for mode %s", current.Mode)
+	}
+	return fs, grep, nil
 }
 
 // bindInteractiveSharedFlags binds the :reload flags every mode accepts.
@@ -641,8 +928,8 @@ func quoteInteractiveArgs(args []string) string {
 // built from them, after checking that the spec yields valid commands. The
 // caller stores both, so the client's args (read by reconnects and :show)
 // carry the same line filter as the spec sent to the servers.
-func buildInteractiveSessionSpec(args config.Args, logger logging.Logger) (config.Args, SessionSpec, error) {
-	normalizedArgs, err := normalizeInteractiveArgs(args, logger)
+func buildInteractiveSessionSpec(args config.Args) (config.Args, SessionSpec, error) {
+	normalizedArgs, err := normalizeInteractiveArgs(args)
 	if err != nil {
 		return args, SessionSpec{}, err
 	}
@@ -656,13 +943,17 @@ func buildInteractiveSessionSpec(args config.Args, logger logging.Logger) (confi
 
 // normalizeInteractiveArgs derives the line filter of an interactive query
 // from the query (applyQueryRegex), so a reloaded query reads the lines of its
-// own table, never inverted. Other modes keep their args unchanged.
-func normalizeInteractiveArgs(args config.Args, logger logging.Logger) (config.Args, error) {
+// own table, never inverted. Other modes keep their args unchanged. The query
+// is parsed without a logger (parsing does not log, the logger of a Query
+// serves only its evaluation and this one is discarded), so a :reload is
+// parsed while the output is paused without blocking on the paused client
+// logger (handleInteractiveLine).
+func normalizeInteractiveArgs(args config.Args) (config.Args, error) {
 	if !isInteractiveQueryMode(args) {
 		return args, nil
 	}
 
-	query, err := mapr.NewQuery(args.QueryStr, logging.OrNop(logger))
+	query, err := mapr.NewQuery(args.QueryStr, nil)
 	if err != nil {
 		return args, err
 	}

@@ -338,6 +338,9 @@ func (a *Aggregate) Start(ctx context.Context, maprMessages chan<- string) {
 	// already published this same destination before exposing the aggregate to
 	// graceful shutdown; repeating the atomic store is harmless.
 	a.PrepareOutput(ctx, maprMessages)
+	// The query's interval (5 s unless the query sets one) paces the
+	// periodic serialization; "interval 0" falls back to 1 s, as the
+	// client's report delay does (MaprClient.reportDelay).
 	interval := a.query.Interval
 	if interval <= 0 {
 		interval = time.Second

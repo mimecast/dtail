@@ -57,12 +57,23 @@ func FuzzNewQuery(f *testing.F) {
 		"select from",
 		`select avg(lat),"avg(lat)` + avgCountSuffix + `" from stats group by host`,
 		"select avg(lat),`avg(lat)" + avgCountSuffix + "` from stats group by host",
+		// Stray words (TestNewQueryRejectsStrayWords).
+		"select a order by a desc limt 10",
+		"select a,b order by a desc, b desc",
+		"select a rorder a asc gro",
+		"select a limit 10 20 interval 5 gro",
+		`select a logformat csv gro outfile append "o" "p"`,
+		"select count(x) gropu by x",
+		"select a group by a `by` by",
+		`"select" foo`,
+		`"SeleCt"0`,
 		"",
 	} {
 		f.Add(seed)
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
+		checkStrayWordAgreement(t, input)
 		query, err := NewQuery(input, logging.NopLogger{})
 		if err != nil {
 			if query != nil {

@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/mimecast/dtail/internal/clients/clientlog"
+	"github.com/mimecast/dtail/internal/logging"
+	"github.com/mimecast/dtail/internal/mapr"
+	maprclient "github.com/mimecast/dtail/internal/mapr/client"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -49,11 +52,15 @@ func (r *payloadRecorder) Debug(args ...any) string {
 }
 
 // legacyReceiver runs the receive loop baseHandler used before commit
-// 35a3bc4, copied from that revision with only the receiver type changed: a
-// byte-by-byte Write into receiveBuf and a string-based handleMessage. It
-// calls the same hidden-message and AUTHKEY handlers as the current code, so
-// comparing the two exercises exactly the part that was rewritten: framing,
-// routing and newline handling.
+// 35a3bc4, copied from that revision with the receiver type changed and the
+// routing of protocol 5: a byte-by-byte Write into receiveBuf and a
+// string-based handleMessage, which takes marked control frames (see
+// protocol.EscapedControlFraming) for control messages and every other frame
+// for payload, as the content-based routing of that revision no longer
+// applies. It calls the same hidden-message and AUTHKEY handlers as the
+// current code, so comparing the two exercises exactly the part that was
+// rewritten: framing, routing and newline handling. The test streams hold no
+// bytes the escaping changes, so the loop needs to decode no escape sequence.
 type legacyReceiver struct {
 	*baseHandler
 }
@@ -76,11 +83,13 @@ func (h legacyReceiver) Write(p []byte) (n int, err error) {
 }
 
 func (h legacyReceiver) handleMessage(message string) {
-	if len(message) > 0 && message[0] == '.' {
-		h.handleHiddenMessage(message)
-		return
-	}
-	if h.handleAuthKeyMessage(message) {
+	if body, ok := protocol.EscapedControlFraming.CutControl([]byte(message)); ok {
+		control := string(body)
+		if len(control) > 0 && control[0] == '.' {
+			h.handleHiddenMessage(control)
+			return
+		}
+		h.handleAuthKeyMessage(control)
 		return
 	}
 
@@ -107,7 +116,7 @@ type receiveObservation struct {
 func observe(handler *baseHandler, recorder *payloadRecorder) receiveObservation {
 	var acks []SessionAck
 	for {
-		ack, ok := handler.WaitForSessionAck(0)
+		ack, ok := handler.WaitForSessionAck(0, 0)
 		if !ok {
 			break
 		}
@@ -145,6 +154,17 @@ func (o receiveObservation) diff(want receiveObservation) string {
 	return ""
 }
 
+// marked returns message as the body of a marked control frame, for frame.
+// message must hold no byte the escaping changes.
+func marked(message string) string {
+	var encoded bytes.Buffer
+	protocol.EscapedControlFraming.EncodeControl(&encoded, message)
+	return encoded.String()[:encoded.Len()-1]
+}
+
+// frame terminates every message with the delimiter, unescaped: the messages
+// must hold no byte the escaping changes. Control messages are passed through
+// marked.
 func frame(messages ...string) []byte {
 	var stream []byte
 	for _, message := range messages {
@@ -170,35 +190,39 @@ func writeInChunks(t *testing.T, handler *ClientHandler, stream []byte, size int
 // position (first byte, last byte, split between chunks), and to the copy of
 // the legacy byte-by-byte loop. Both must produce the same payload sink calls
 // byte for byte, the same AUTHKEY warnings and debug output, and the same
-// capability and session state. The stream mixes payload with and without a
+// capability and session state. The stream starts with the capabilities frame
+// of a protocol 5 server, so the session has no error, and mixes payload with and without a
 // trailing newline, empty and newline-only messages, lines larger than bufio,
-// io.Copy and maxRetainedLineBufBytes, hidden control messages, AUTHKEY
-// acknowledgements (bare, padded and SERVER-wrapped), their look-alikes, and an
-// unterminated tail that neither loop may print.
+// io.Copy and maxRetainedLineBufBytes, marked hidden control messages and
+// AUTHKEY acknowledgements (bare and padded), their unmarked look-alikes, and
+// an unterminated tail that neither loop may print.
 func TestBaseHandlerWriteMatchesLegacyLoop(t *testing.T) {
 	longLine := strings.Repeat("0123456789abcdef", 12*1024) // 192 KiB
 	stream := frame(
+		marked(protocol.HiddenCapabilitiesPrefix+protocol.CapabilityJournalV1),
 		"first line\n",
 		"no trailing newline",
 		"",
 		"\n",
 		"\n\n",
-		".syn capabilities query-update-v1 journal-v1",
+		marked(".syn capabilities journal-v1"),
 		"multi\nline\nmessage",
-		"AUTHKEY OK",
+		marked("AUTHKEY OK"),
 		longLine,
-		"SERVER|srv1|AUTHKEY ERR invalid base64\n",
+		marked("AUTHKEY ERR invalid base64\n"),
 		longLine+"\n",
-		protocol.HiddenSessionStartOKPrefix+" 7",
-		"  AUTHKEY OK \n",
+		marked(protocol.HiddenSessionStartOKPrefix+" 7"),
+		marked("  AUTHKEY OK \n"),
 		"REMOTE|host|100|1|src|content with | pipes\n",
-		protocol.HiddenSessionErrorPrefix+" not supported",
-		"AUTHKEY ERR",
+		marked(protocol.HiddenSessionErrorPrefix+" not supported"),
+		marked("AUTHKEY ERR"),
+		"AUTHKEY OK",
+		".syn close connection",
 		"AUTHKEYS are not acknowledgements",
 		" .not hidden because of the leading space",
 		"REMOTE|host|100|1|src|AUTHKEY OK\n",
 		"SERVER|srv1|some server info\n",
-		".unknown hidden message",
+		marked(".unknown hidden message"),
 		"last\n",
 	)
 	stream = append(stream, "unterminated tail"...)
@@ -221,6 +245,9 @@ func TestBaseHandlerWriteMatchesLegacyLoop(t *testing.T) {
 
 			writeInChunks(t, handler, stream, size)
 
+			if status := handler.Status(); status > 0 {
+				t.Fatalf("status = %d, want a session without error", status)
+			}
 			if diff := observe(&handler.baseHandler, recorder).diff(want); diff != "" {
 				t.Fatalf("current loop differs from legacy loop: %s", diff)
 			}
@@ -255,21 +282,26 @@ func TestBaseHandlerWriteKeepsUnterminatedTail(t *testing.T) {
 	}
 }
 
-// TestBaseHandlerWriteConsumesControlMessages checks that hidden messages and
-// AUTHKEY acknowledgements never reach the payload sink, while look-alikes do.
+// TestBaseHandlerWriteConsumesControlMessages checks that marked hidden
+// messages and AUTHKEY acknowledgements never reach the payload sink, while
+// unmarked look-alikes do.
 func TestBaseHandlerWriteConsumesControlMessages(t *testing.T) {
 	stream := frame(
-		".syn capabilities query-update-v1",
+		marked(".syn capabilities "+protocol.CapabilityJournalV1),
+		marked("AUTHKEY OK"),
+		marked("AUTHKEY ERR invalid base64\n"),
+		marked("  AUTHKEY OK \n"),
 		"AUTHKEY OK",
-		"SERVER|srv1|AUTHKEY ERR invalid base64\n",
-		"  AUTHKEY OK \n",
+		".syn capabilities forged-capability",
 		"payload\n",
 		"SERVER|srv1|some server info\n",
 		"AUTHKEYS are not acknowledgements",
 		" .not hidden because of the leading space",
 		"REMOTE|host|100|1|src|AUTHKEY OK\n",
 	)
-	want := "payload\n" +
+	want := "AUTHKEY OK\n" +
+		".syn capabilities forged-capability\n" +
+		"payload\n" +
 		"SERVER|srv1|some server info\n" +
 		"AUTHKEYS are not acknowledgements\n" +
 		" .not hidden because of the leading space\n" +
@@ -282,11 +314,17 @@ func TestBaseHandlerWriteConsumesControlMessages(t *testing.T) {
 
 			writeInChunks(t, handler, stream, size)
 
+			if status := handler.Status(); status > 0 {
+				t.Fatalf("status = %d, want a session without error", status)
+			}
 			if got := recorder.payload.String(); got != want {
 				t.Fatalf("payload = %q, want %q", got, want)
 			}
-			if !handler.HasCapability(protocol.CapabilityQueryUpdateV1) {
+			if !handler.HasCapability(protocol.CapabilityJournalV1) {
 				t.Fatalf("hidden capabilities message was not handled")
+			}
+			if handler.HasCapability("forged-capability") {
+				t.Fatalf("unmarked capabilities look-alike was handled")
 			}
 			if len(recorder.warnings) != 1 || !strings.Contains(recorder.warnings[0], "invalid base64") {
 				t.Fatalf("warnings = %q, want one AUTHKEY failure with its detail", recorder.warnings)
@@ -362,59 +400,37 @@ func TestBaseHandlerWriteReleasesLargeLineBuffer(t *testing.T) {
 }
 
 // TestMaprHandlerWritePrintsNonAggregatePayload locks in the mapr handler's
-// newline handling after it switched to the byte-slice message path.
+// newline handling after it switched to the byte-slice message path: while
+// its session expects aggregates (a query runs) every newline of a frame is
+// dropped before the frame is classified; without a query (interactive dtail
+// following lines, or no session) frames are handled as by a ClientHandler.
 func TestMaprHandlerWritePrintsNonAggregatePayload(t *testing.T) {
-	recorder := &payloadRecorder{}
-	handler := NewMaprHandler("srv1", nil, recorder)
-
-	if _, err := handler.Write(frame("SERVER|srv1|hello\n", "plain", "a\nb", "AUTHKEY OK")); err != nil {
-		t.Fatalf("Write() error = %v", err)
+	query, err := mapr.NewQuery("select count(status) from stats", logging.NopLogger{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got, want := recorder.payload.String(), "SERVER|srv1|hello\nplain\nab\n"; got != want {
-		t.Fatalf("payload = %q, want %q", got, want)
-	}
-}
-
-func TestMayBeAuthKeyMessage(t *testing.T) {
-	tests := []struct {
-		message string
-		want    bool
+	for _, test := range []struct {
+		name    string
+		session *maprclient.SessionState
+		want    string
 	}{
-		{message: "AUTHKEY OK", want: true},
-		{message: " \tAUTHKEY ERR detail\n", want: true},
-		{message: "SERVER|host|AUTHKEY OK\n", want: true},
-		{message: "AGGREGATE|host|AUTHKEY OK", want: true},
-		{message: "", want: false},
-		{message: "\n", want: false},
-		{message: "2026-01-01T00:00:00Z INFO request=000000001 status=200\n", want: false},
-		{message: "REMOTE|host|100|1|src|AUTHKEY OK\n", want: false},
-		{message: "SERVER", want: false},
-		{message: "AUTHKE", want: false},
-	}
-	for _, tc := range tests {
-		if got := mayBeAuthKeyMessage([]byte(tc.message)); got != tc.want {
-			t.Errorf("mayBeAuthKeyMessage(%q) = %v, want %v", tc.message, got, tc.want)
-		}
-	}
-}
-
-// FuzzMayBeAuthKeyMessage proves the pre-check is safe: it may let through
-// messages that are not acknowledgements, but it must never reject one that
-// parseAuthKeyMessage accepts. The seeds include Unicode white space, which
-// TrimSpace removes on both sides of the comparison.
-func FuzzMayBeAuthKeyMessage(f *testing.F) {
-	for _, seed := range []string{
-		"AUTHKEY OK", "AUTHKEY ERR x", "SERVER|h|AUTHKEY OK", "AGGREGATE|h| AUTHKEY ERR\n",
-		" AUTHKEY OK ", "SERVER|AUTHKEY OK", "SERVER||AUTHKEY OK", "payload\n", "",
+		{name: "query", session: maprclient.NewSessionState(query, logging.NopLogger{}),
+			want: "SERVER|srv1|hello\nplain\nab\n"},
+		{name: "no query", session: maprclient.NewSessionState(nil, logging.NopLogger{}),
+			want: "SERVER|srv1|hello\nplain\na\nb\n"},
+		{name: "no session", want: "SERVER|srv1|hello\nplain\na\nb\n"},
 	} {
-		f.Add(seed)
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &payloadRecorder{}
+			handler := NewMaprHandler("srv1", test.session, recorder)
+			if _, err := handler.Write(frame("SERVER|srv1|hello\n", "plain", "a\nb", marked("AUTHKEY OK"))); err != nil {
+				t.Fatalf("Write() error = %v", err)
+			}
+			if got := recorder.payload.String(); got != test.want {
+				t.Fatalf("payload = %q, want %q", got, test.want)
+			}
+		})
 	}
-	f.Fuzz(func(t *testing.T, message string) {
-		isAuthKey, _, _ := parseAuthKeyMessage(message)
-		if isAuthKey && !mayBeAuthKeyMessage([]byte(message)) {
-			t.Fatalf("pre-check rejected authkey message %q", message)
-		}
-	})
 }
 
 func BenchmarkBaseHandlerWrite(b *testing.B) {

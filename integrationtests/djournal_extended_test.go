@@ -140,8 +140,8 @@ func testDJournalExtendedPermissions(t *testing.T, logger *TestLogger) {
 	denyServer := startDJournalExtendedServer(t, logger, denyEnv.configFile, denyEnv.mock.Env(), "debug", false)
 	denyOut := "djournal_extended_permission_deny.stdout.tmp"
 	// A permission-denied dcat exits with status 2 after receiving the server
-	// WARN and its failed command report (the server advertises
-	// command-failure-v1); the other assertions are on the server logs.
+	// WARN and its failed command report; the other assertions are on the
+	// server logs.
 	denyExit, denyErr := runCommand(denyServer.ctx, t, denyOut, "../dcat",
 		"--cfg", "none",
 		"--logLevel", "error",

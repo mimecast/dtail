@@ -9,16 +9,16 @@ import (
 )
 
 // mapQueryFailures remembers the command stream whose map command failed,
-// e.g. an older client's query that this dserver no longer accepts (such as
-// one selecting count(x) twice). A client sends the map command before its
-// read commands; without an aggregate those reads would stream every line as
-// plain payload to a client waiting for MapReduce results (an older dmap
-// writes a header-only outfile and exits 0, an older dtail --query or
-// continuous job streams for ever). So every later read of that stream is
+// e.g. a query of a client of another DTail release that this dserver does
+// not accept (such as one selecting count(x) twice). A client sends the map
+// command before its read commands; without an aggregate those reads would
+// stream every line as plain payload to a client waiting for MapReduce
+// results (a dmap would write a header-only outfile, a dtail --query or
+// continuous job would stream for ever). So every later read of that stream is
 // rejected instead, and the session ends with its normal close handshake once
 // no command is left.
 //
-// A command stream is one session generation: generation 0 for the legacy
+// A command stream is one session generation: generation 0 for the plain
 // command stream of a connection, and each SESSION START or UPDATE generation
 // of an interactive session. A failure of one generation therefore does not
 // affect the reads of another, e.g. of a later successful :reload. A map

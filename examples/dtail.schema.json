@@ -38,6 +38,19 @@
       "type": "string",
       "description": "Terminal text attribute, matched case-insensitively: None, Bold, Dim, Italic, Underline, Blink, SlowBlink, RapidBlink, Reverse or Hidden. An empty string is the same as None. For compatibility with older config files dtail still accepts the deprecated prefixed spellings of released example configs (e.g. \"AttrDim\", \"AttrNone\") and raw ANSI SGR escape sequences (ESC[...m) such as \"\\u001b[1m\" (used unchanged); this schema reports both forms. Any other value is not fatal: dtail warns on stderr and uses the default attribute.",
       "pattern": "^(?:[Nn][Oo][Nn][Ee]|[Bb][Oo][Ll][Dd]|[Dd][Ii][Mm]|[Ii][Tt][Aa][Ll][Ii][Cc]|[Uu][Nn][Dd][Ee][Rr][Ll][Ii][Nn][Ee]|[Bb][Ll][Ii][Nn][Kk]|[Ss][Ll][Oo][Ww][Bb][Ll][Ii][Nn][Kk]|[Rr][Aa][Pp][Ii][Dd][Bb][Ll][Ii][Nn][Kk]|[Rr][Ee][Vv][Ee][Rr][Ss][Ee]|[Hh][Ii][Dd][Dd][Ee][Nn])?$"
+    },
+    "termStyle": {
+      "type": "object",
+      "description": "Foreground color and attribute of one kind of interactive control output; the background stays the terminal's own.",
+      "additionalProperties": false,
+      "properties": {
+        "Fg": {
+          "$ref": "#/definitions/color"
+        },
+        "Attr": {
+          "$ref": "#/definitions/attribute"
+        }
+      }
     }
   },
   "type": "object",
@@ -259,7 +272,7 @@
             },
             "MaprTable": {
               "type": "object",
-              "description": "Colors for MapReduce result tables.",
+              "description": "Colors for MapReduce result tables. RawQueryFg, RawQueryBg and RawQueryAttr color the raw query printed above the table: when stdout is a terminal and no payload is written to a log file, the text between its words, which are highlighted with the Interactive candidate styles; otherwise the whole query as one run of text, so a search finds it in piped output.",
               "additionalProperties": false,
               "properties": {
                 "DataAttr": {
@@ -314,6 +327,73 @@
                   "$ref": "#/definitions/color"
                 }
               }
+            },
+            "Interactive": {
+              "type": "object",
+              "description": "Styles of the interactive control output of dtail and --interactive-query: control messages, :help, :show, :fields, the prompt shown while the output is paused and the kinds of Tab completion candidates. Used by the line editor on a terminal and, for the candidate styles, by the MapReduce queries highlighted elsewhere (the raw query above result tables on a terminal, see MaprTable); only with terminal colors enabled.",
+              "additionalProperties": false,
+              "properties": {
+                "Banner": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "Hint": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "Paused": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "Success": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "Error": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "Heading": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "Command": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "Example": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "Key": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "Value": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "Prompt": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "CandidateKeyword": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "CandidateField": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "CandidateVariable": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "CandidateFunction": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "CandidateOperator": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "CandidateValue": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "CandidateTable": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "CandidatePath": {
+                  "$ref": "#/definitions/termStyle"
+                },
+                "CandidateDirectory": {
+                  "$ref": "#/definitions/termStyle"
+                }
+              }
             }
           }
         },
@@ -334,6 +414,12 @@
           "type": "boolean",
           "description": "Tee the full retrieved payload into the daily client log file of the default fout logger (same as --log-payload). Default false: the file keeps diagnostics only; payload always goes to stdout.",
           "default": false
+        },
+        "EditMode": {
+          "type": "string",
+          "enum": ["emacs", "vi"],
+          "description": "Keys of the interactive line editor: emacs (default) or vi, a vi insert/normal mode (same as --edit-mode).",
+          "default": "emacs"
         }
       }
     },
@@ -373,6 +459,11 @@
         "SharedReadsDisable": {
           "type": "boolean",
           "description": "Turn shared reads off, both shared follow reads and the shared one-shot reads of scheduled job groups. By default, sessions that tail the same uncompressed file share one reader of it in dserver; every session still checks its own permissions, uses its own read slot, starts at the end of the file as of its join and filters and processes the lines on its own. A session that falls behind the shared reader moves to a reader of its own at the line where it stopped, so it does not delay the others, and rejoins the shared reader once it caught up. Scheduled jobs that start together on the same files of this dserver read each file once for the group (at most MaxConcurrentCats members per group read). When true, every session reads the file with a reader of its own and the scheduler runs its jobs one at a time.",
+          "default": false
+        },
+        "PathCompletionDisable": {
+          "type": "boolean",
+          "description": "Turn off the path listing of the probe command, which the interactive path completion of the clients uses. A listing offers only the files the session user may read (readfiles permissions, symlinks resolved) and the directories the permissions do not rule out (a directory is hidden when no allow rule can match beneath it or a deny rule matches the directory path itself; a deny rule matching only the files beneath does not hide its name); journal: prefixes list the systemd units the user may read. When true, a listing request is answered with the error \"probe: path listing disabled\" and lists nothing.",
           "default": false
         },
         "MaxLineLength": {
@@ -589,7 +680,7 @@
         },
         "OutputBufferMaxBytes": {
           "type": "integer",
-          "description": "Maximum payload backing memory retained by the output buffer per SSH session; producers apply backpressure at the cap. Must be at least MaxLineLength + 131072 (two 64 KiB writer batches), otherwise dserver refuses to start. A session using escaped wire framing (current clients and servers) raises its own cap to at least 2 * MaxLineLength + 131072, as escaping can almost double a line frame, so the configured value does not need to cover that. 0 or less uses the 2 MiB default.",
+          "description": "Maximum payload backing memory retained by the output buffer per SSH session; producers apply backpressure at the cap. Must be at least MaxLineLength + 131072 (two 64 KiB writer batches), otherwise dserver refuses to start. Every session escapes its wire frames and so raises its own cap to at least 2 * MaxLineLength + 131072, as escaping can almost double a line frame, so the configured value does not need to cover that. 0 or less uses the 2 MiB default.",
           "default": 2097152
         },
         "OutputFlushTimeoutMs": {
@@ -638,8 +729,13 @@
         },
         "SSHConnectTimeoutMs": {
           "type": "integer",
-          "description": "Client SSH connection timeout in milliseconds. 0 or less uses the default.",
+          "description": "Client TCP connect timeout in milliseconds. 0 or less uses the default.",
           "default": 2000
+        },
+        "SSHHandshakeTimeoutMs": {
+          "type": "integer",
+          "description": "Client SSH handshake timeout (after the TCP connect) in milliseconds, not counting the host key check (e.g. the unknown host question); SSH agent signing counts (confirm touch- or confirm-per-signature keys promptly). 0 or less uses the default.",
+          "default": 30000
         },
         "ExperimentalFeaturesEnable": {
           "type": "boolean",

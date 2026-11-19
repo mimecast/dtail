@@ -1,6 +1,9 @@
 package funcs
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFunctionStackValid(t *testing.T) {
 	t.Parallel()
@@ -88,5 +91,44 @@ func TestFunctionStackMalformed(t *testing.T) {
 				t.Errorf("expected error for malformed input %q but got none (stack %v)", input, fs)
 			}
 		})
+	}
+}
+
+// TestNamesResolve checks that every name Names lists (the ones the
+// interactive completer offers) is a function NewFunctionStack accepts, and
+// that names are case sensitive and unknown names are rejected.
+func TestNamesResolve(t *testing.T) {
+	t.Parallel()
+
+	// The result of each function for the input "a1b2", written down
+	// independently of functionTable so that a name mapped to the wrong
+	// callback fails.
+	want := map[string]string{
+		"md5sum":     "f2e49af795161e14acf9d9245473a368",
+		"maskdigits": "a.b.",
+	}
+	names := Names()
+	if len(names) != len(want) {
+		t.Errorf("Names() = %v, want the %d functions of the expected results", names, len(want))
+	}
+	for _, name := range names {
+		fs, arg, err := NewFunctionStack(name + "($line)")
+		if err != nil {
+			t.Errorf("NewFunctionStack(%s($line)): %v", name, err)
+			continue
+		}
+		if len(fs) != 1 || fs[0].Name != name || arg != "$line" {
+			t.Errorf("NewFunctionStack(%s($line)) = %v, %q", name, fs, arg)
+		}
+		if result, ok := want[name]; !ok || fs.Call("a1b2") != result {
+			t.Errorf("%s(\"a1b2\") = %q, want %q (expected result known: %v)",
+				name, fs.Call("a1b2"), result, ok)
+		}
+		if _, _, err := NewFunctionStack(strings.ToUpper(name) + "($line)"); err == nil {
+			t.Errorf("upper case %s was accepted, want case sensitive names", name)
+		}
+	}
+	if _, _, err := NewFunctionStack("sha1($line)"); err == nil {
+		t.Error("unknown function sha1 was accepted")
 	}
 }

@@ -52,7 +52,9 @@ func NewSpec(parameters Parameters) Spec {
 	}
 }
 
-// Commands returns the legacy command stream for this session specification.
+// Commands returns the plain command stream for this session specification,
+// which a non-interactive client sends as it is (an --interactive-query
+// client sends the spec with SESSION START instead).
 func (s Spec) Commands() ([]string, error) {
 	switch {
 	case s.Mode == omode.HealthClient:
@@ -68,19 +70,6 @@ func (s Spec) Commands() ([]string, error) {
 func (s Spec) HasJournalFiles() bool {
 	for _, file := range s.Files {
 		if strings.HasPrefix(strings.TrimSpace(file), "journal:") {
-			return true
-		}
-	}
-	return false
-}
-
-// HasEncodedFiles reports whether a read command of this session carries an
-// encoded path (protocol.ReadPathNeedsEncoding), which only servers
-// advertising protocol.CapabilityEncodedReadPathV1 can read: a path that
-// contains a space, or one that starts with protocol.EncodedReadPathPrefix.
-func (s Spec) HasEncodedFiles() bool {
-	for _, file := range s.Files {
-		if protocol.ReadPathNeedsEncoding(file) {
 			return true
 		}
 	}
@@ -117,9 +106,9 @@ func (s Spec) UpdateCommand(generation uint64) (string, error) {
 // RegexInvert is ignored here: inverted, the filter would feed the other
 // tables' lines (or, for every-line tables, only the empty lines) into the
 // aggregation. Ignoring it in this one place covers both sides, as the client
-// builds its legacy command stream and dserver its SESSION START/UPDATE
-// commands with it, so a dserver also reads the right lines for an older
-// client that sends regex_invert with a query.
+// builds its plain command stream and dserver its SESSION START/UPDATE
+// commands with it, so a dserver also reads the right lines for a client
+// that sends regex_invert with a query.
 func (s Spec) queryCommands() ([]string, error) {
 	if s.Mode != omode.MapClient && s.Mode != omode.TailClient {
 		return nil, fmt.Errorf("session spec query mode requires map or tail mode, got %s", s.Mode)

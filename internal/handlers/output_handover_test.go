@@ -28,7 +28,7 @@ type capturedBatch struct {
 func newCapturingNetworkWriter(t *testing.T) (*NetworkWriter, *[]capturedBatch) {
 	t.Helper()
 	var batches []capturedBatch
-	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
 		0, nil, handlerTestLogger)
 	writer.enqueueOutput = func(_ context.Context, _ uint64, data []byte, _ func() uint64) error {
 		batches = append(batches, capturedBatch{data: data, snapshot: append([]byte(nil), data...)})
@@ -221,7 +221,7 @@ func writerBacking(writer *NetworkWriter) []byte {
 // a 128 KiB backing for a batch of about 64 KiB.
 func TestNetworkWriterFirstBatchHasExactBatchCapacity(t *testing.T) {
 	manager := newHandoverTestManager(0)
-	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
 		0, nil, handlerTestLogger)
 	var handed [][]byte
 	writer.enqueueOutput = func(ctx context.Context, generation uint64, data []byte,
@@ -597,7 +597,7 @@ var errTestBackpressure = errors.New("output queue full")
 // early with the queue far from full.
 func fillUntilBackpressure(t *testing.T, manager *outputManager, plain bool, lineLen int) (retained, buffered, entries int) {
 	t.Helper()
-	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
+	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
 	writer.enqueueOutput = func(_ context.Context, generation uint64, payload []byte, _ func() uint64) error {
 		manager.mu.Lock()
 		defer manager.mu.Unlock()
@@ -667,7 +667,7 @@ func TestOutputChargeBoundedForLongLines(t *testing.T) {
 // NetworkWriter into manager, whose cap must not be reached.
 func fillBytes(t *testing.T, manager *outputManager, plain bool, lineLen, total int) (retained, buffered, entries int) {
 	t.Helper()
-	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
+	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
 	writer.enqueueOutput = manager.enqueue
 	writeLinesN(t, writer, total/lineLen+1, lineLen, 'x')
 	return managerAccounting(manager)
@@ -727,7 +727,7 @@ func TestNetworkWriterDropsRegrownBufferOnSmallFlush(t *testing.T) {
 func TestNetworkWriterHandoverRespectsCapEndToEnd(t *testing.T) {
 	const maxBytes = 3 * 72 * 1024
 	manager := newHandoverTestManager(maxBytes)
-	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
 		0, nil, handlerTestLogger)
 	writer.enqueueOutput = manager.enqueue
 
@@ -799,7 +799,7 @@ type reloadTest struct {
 // until it wrote them all, its generation became stale or the test stops.
 func (r *reloadTest) write(generation uint64, lines int, tag string) {
 	defer r.writers.Done()
-	w := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
+	w := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
 		generation, r.state.currentGeneration, handlerTestLogger)
 	w.enqueueOutput = r.manager.enqueue
 	for i := 0; i < lines && r.state.currentGeneration() == generation; i++ {
@@ -1001,7 +1001,7 @@ func TestSessionUpdatePublishesGenerationBeforeCancellingPrevious(t *testing.T) 
 	payload := mustSessionPayload(t, session.Spec{Mode: omode.TailClient, Files: []string{"/var/log/a.log"}})
 	handler.handleSessionCommand(context.Background(), lcontext.LContext{}, 3,
 		[]string{"SESSION", "START", payload}, func() {})
-	readServerMessage(t, handler.serverMessages)
+	readSessionAck(t, handler)
 	first := recorder.waitForStart(t)
 
 	// Read without taking mu: update may still hold it when it cancels.
@@ -1016,7 +1016,7 @@ func TestSessionUpdatePublishesGenerationBeforeCancellingPrevious(t *testing.T) 
 
 	handler.handleSessionCommand(context.Background(), lcontext.LContext{}, 3,
 		[]string{"SESSION", "UPDATE", payload}, func() {})
-	readServerMessage(t, handler.serverMessages)
+	readSessionAck(t, handler)
 	recorder.waitForStart(t)
 
 	// update has returned, so the wrapper ran on this goroutine if at all.
@@ -1037,7 +1037,7 @@ var errHandoverTestSentinel = errors.New("sentinel")
 // batch must get a fresh allocation.
 func TestNetworkWriterDoesNotReuseBatchAfterFailedEnqueue(t *testing.T) {
 	var handed [][]byte
-	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
 		0, nil, handlerTestLogger)
 	writer.enqueueOutput = func(_ context.Context, _ uint64, data []byte, _ func() uint64) error {
 		handed = append(handed, data)
@@ -1067,7 +1067,7 @@ func BenchmarkNetworkWriterToOutputManager(b *testing.B) {
 	manager := &outputManager{}
 	manager.configure(outputManagerConfig{}, handlerTestLogger)
 	manager.enable()
-	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
 		1, state.currentGeneration, handlerTestLogger)
 	writer.enqueueOutput = manager.enqueue
 	shouldDrop := func(generation uint64) bool { return generation != state.currentGeneration() }
@@ -1105,7 +1105,7 @@ func backpressuredAdoption(t *testing.T, plain bool, maxBytes, lineLen, lines, r
 	user := &userserver.User{Name: "handover-test"}
 	readBuf := make([]byte, readSize)
 	var got []byte
-	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
+	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
 	writer.enqueueOutput = func(_ context.Context, generation uint64, data []byte, _ func() uint64) error {
 		waited := false
 		for {
@@ -1136,7 +1136,7 @@ func backpressuredAdoption(t *testing.T, plain bool, maxBytes, lineLen, lines, r
 	}
 
 	var want bytes.Buffer
-	capture := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
+	capture := NewNetworkWriter(context.Background(), nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
 	capture.enqueueOutput = func(_ context.Context, _ uint64, data []byte, _ func() uint64) error {
 		want.Write(data)
 		return nil

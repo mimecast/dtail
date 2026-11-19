@@ -86,13 +86,14 @@ func TestAggregateMergeKeepsMessagesWhileLocked(t *testing.T) {
 	addMessage(t, aggregate, countMessage("ERROR", aggregateCountStorage(t, query), "3"))
 
 	global := state.Snapshot().GlobalGroup
-	global.Update(func(*mapr.GroupSet) {
-		// Merge must not wait for the lock this callback holds.
+	global.Update(func(group *mapr.GroupSet) {
+		// Merge must not wait for the lock this callback holds. (Checked
+		// while it is held: afterwards the retry merges the messages.)
 		mergeMessages(t, aggregate)
+		if !group.IsEmpty() {
+			t.Error("the merge that missed the lock merged its messages")
+		}
 	})
-	if got := global.NumSets(); got != 0 {
-		t.Fatalf("NumSets() = %d after a merge that missed the lock, want 0", got)
-	}
 	if err := aggregate.Flush(); err != nil {
 		t.Fatalf("Flush() error = %v", err)
 	}
@@ -332,4 +333,120 @@ func aggregateCountStorage(t *testing.T, query *mapr.Query) string {
 	}
 	t.Fatalf("query %q does not contain count() storage", query.RawQuery)
 	return ""
+}
+
+// TestAggregateDropsMessagesWithoutQuery queues aggregate messages while the
+// session has no query (interactive dtail following lines, see
+// SessionState.ClearQuery): Merge and Flush drop them without an error, and
+// after a query is committed again its messages are merged into its own
+// empty group set.
+func TestAggregateDropsMessagesWithoutQuery(t *testing.T) {
+	query := mustSessionStateQuery(t, "select status,count(status) from stats group by status")
+	state := NewSessionState(query, logging.NopLogger{})
+	aggregate := NewAggregate("srv1", state, logging.NopLogger{})
+	countStorage := aggregateCountStorage(t, query)
+
+	state.ClearQuery(2)
+	for _, merge := range []func() error{aggregate.Merge, aggregate.Flush} {
+		addMessage(t, aggregate, countMessage("ERROR", countStorage, "1"))
+		if err := merge(); err != nil {
+			t.Fatalf("merge without a query: %v", err)
+		}
+	}
+
+	if _, err := state.CommitQuery(query.RawQuery, 3); err != nil {
+		t.Fatalf("CommitQuery() error = %v", err)
+	}
+	addMessage(t, aggregate, countMessage("WARN", countStorage, "1"))
+	mergeMessages(t, aggregate)
+	if got := state.Snapshot().GlobalGroup.NumSets(); got != 1 {
+		t.Fatalf("NumSets() = %d, want only the message of the new query", got)
+	}
+}
+
+// TestAggregateArrivalSignalsFirstMergePerGeneration checks
+// SessionSnapshot.AggregatesArrived: signaled by each server's first merge
+// of a message of its generation, not by queueing it, by a merge that
+// missed the lock or by a server's later merges, renewed for a new
+// generation, and nil without a query.
+func TestAggregateArrivalSignalsFirstMergePerGeneration(t *testing.T) {
+	query := mustSessionStateQuery(t, "select status,count(status) from stats group by status")
+	state := NewSessionState(query, logging.NopLogger{})
+	aggregate := NewAggregate("srv1", state, logging.NopLogger{})
+	snapshot := state.Snapshot()
+	addMessage(t, aggregate, countMessage("ERROR", aggregateCountStorage(t, query), "3"))
+	snapshot.GlobalGroup.Update(func(*mapr.GroupSet) { mergeMessages(t, aggregate) })
+	assertArrived(t, snapshot.AggregatesArrived, false)
+	if err := aggregate.Flush(); err != nil {
+		t.Fatalf("Flush() error = %v", err)
+	}
+	assertArrived(t, snapshot.AggregatesArrived, true)
+	addMessage(t, aggregate, countMessage("WARN", aggregateCountStorage(t, query), "1"))
+	mergeMessages(t, aggregate) // srv1's second merge signals nothing
+	assertArrived(t, snapshot.AggregatesArrived, false)
+	other := NewAggregate("srv2", state, logging.NopLogger{})
+	addMessage(t, other, countMessage("WARN", aggregateCountStorage(t, query), "1"))
+	mergeMessages(t, other) // srv2's first merge does
+	assertArrived(t, snapshot.AggregatesArrived, true)
+
+	if _, err := state.CommitQuery(query.RawQuery, 2); err != nil {
+		t.Fatalf("CommitQuery() error = %v", err)
+	}
+	next := state.Snapshot()
+	assertArrived(t, next.AggregatesArrived, false)
+	addMessage(t, aggregate, countMessage("ERROR", aggregateCountStorage(t, next.Query), "1"))
+	mergeMessages(t, aggregate)
+	assertArrived(t, next.AggregatesArrived, true)
+
+	state.ClearQuery(3)
+	if cleared := state.Snapshot(); cleared.AggregatesArrived != nil {
+		t.Fatal("AggregatesArrived is not nil without a query")
+	}
+	if NewSessionState(nil, logging.NopLogger{}).Snapshot().AggregatesArrived != nil {
+		t.Fatal("AggregatesArrived of a session started without a query is not nil")
+	}
+}
+
+func assertArrived(t *testing.T, arrived <-chan struct{}, want bool) {
+	t.Helper()
+	select {
+	case <-arrived:
+		if !want {
+			t.Fatal("AggregatesArrived signaled without a new server merging")
+		}
+	default:
+		if want {
+			t.Fatal("AggregatesArrived not signaled after a server's first merge")
+		}
+	}
+}
+
+// TestAggregateMergeRetriesAfterMissingTheLock is the regression test of a
+// server missing from a query's first table: its Merge lost the global
+// group set's lock to another connection merging at the same moment, and
+// its messages then stayed queued until its next aggregate messages, one
+// interval later. Now they are merged shortly after the lock is free, with
+// no further Merge or Flush, and the server's arrival is signaled.
+func TestAggregateMergeRetriesAfterMissingTheLock(t *testing.T) {
+	query := mustSessionStateQuery(t, "select status,count(status) from stats group by status")
+	state := NewSessionState(query, logging.NopLogger{})
+	aggregate := NewAggregate("srv1", state, logging.NopLogger{})
+	addMessage(t, aggregate, countMessage("ERROR", aggregateCountStorage(t, query), "3"))
+
+	snapshot := state.Snapshot()
+	snapshot.GlobalGroup.Update(func(*mapr.GroupSet) {
+		mergeMessages(t, aggregate)
+		// Held across several retries: each misses and schedules the next.
+		time.Sleep(5 * mergeRetryDelay)
+	})
+	deadline := time.Now().Add(10 * time.Second)
+	for snapshot.GlobalGroup.NumSets() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the queued messages were not merged after the lock was free")
+		}
+		time.Sleep(mergeRetryDelay)
+	}
+	if !snapshot.ArrivedFrom("srv1") {
+		t.Fatal("the retried merge did not signal the server's arrival")
+	}
 }

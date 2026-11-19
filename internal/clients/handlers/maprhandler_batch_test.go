@@ -24,8 +24,7 @@ const batchTestQuery = "from STATS select count(user),sum(v),avg(v),min(v),max(v
 func batchTestStream(t *testing.T, query *mapr.Query) ([]byte, []batchTestSet) {
 	t.Helper()
 	var stream bytes.Buffer
-	protocol.RawFraming.EncodeControl(&stream, protocol.HiddenCapabilitiesPrefix+
-		protocol.CapabilityEscapedFramingV1+" "+protocol.CapabilityControlFramesV1)
+	protocol.EscapedControlFraming.EncodeControl(&stream, protocol.HiddenCapabilitiesPrefix)
 	framing := protocol.EscapedControlFraming
 	var sets []batchTestSet
 	seed := uint64(1)
@@ -140,8 +139,9 @@ func renderBatchResult(t *testing.T, query *mapr.Query, group *mapr.GlobalGroupS
 
 // TestMaprHandlerWriteDropsNewlinesOfFrames verifies the newline handling of
 // the mapr handler: newline bytes anywhere in a frame are dropped before it
-// is classified, a frame of newlines only is ignored (it does not even decide
-// the session framing), and a payload frame is written with one newline.
+// is classified, a frame of newlines only is ignored (it is not even the
+// session's first frame, which must be the capabilities frame), and a
+// payload frame is written with one newline.
 func TestMaprHandlerWriteDropsNewlinesOfFrames(t *testing.T) {
 	query, err := mapr.NewQuery("select count(status) from stats group by status", logging.NopLogger{})
 	if err != nil {
@@ -155,7 +155,7 @@ func TestMaprHandlerWriteDropsNewlinesOfFrames(t *testing.T) {
 	var stream bytes.Buffer
 	stream.WriteString("\n\n")
 	stream.WriteByte(protocol.MessageDelimiter)
-	protocol.RawFraming.EncodeControl(&stream, protocol.HiddenCapabilitiesPrefix+protocol.CapabilityEscapedFramingV1)
+	protocol.EscapedControlFraming.EncodeControl(&stream, protocol.HiddenCapabilitiesPrefix)
 	stream.WriteString("\nAGG\nREGATE|srv1|ERROR∥2∥" + countStorage + "≔\n2∥\n")
 	stream.WriteByte(protocol.MessageDelimiter)
 	stream.WriteString("pay\nload\n\n")
@@ -165,8 +165,8 @@ func TestMaprHandlerWriteDropsNewlinesOfFrames(t *testing.T) {
 	}
 	handler.Shutdown()
 
-	if got := handler.framing(); got != protocol.EscapedFraming {
-		t.Fatalf("framing = %v, want %v (decided by the capabilities frame)", got, protocol.EscapedFraming)
+	if got := handler.Status(); got > 0 {
+		t.Fatalf("status = %d, want the capabilities frame accepted as the first frame", got)
 	}
 	if got, want := recorder.payload.String(), "payload\n"; got != want {
 		t.Fatalf("payload = %q, want %q", got, want)

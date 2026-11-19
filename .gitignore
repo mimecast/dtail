@@ -5,7 +5,6 @@
 .serena
 Test*.log
 *.query
-append:*
 cache/
 log/
 tags

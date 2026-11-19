@@ -130,46 +130,36 @@ func checkCloseAcknowledgement(t *testing.T, ackCloseReceived <-chan struct{},
 // a session sent its failure report but no close handshake and stayed open
 // until IdleSessionTimeoutS. The session must end well under a second
 // (runFailingFramesSession), with the report before exactly one close
-// handshake and nothing after it, for older, escaped-only and control-frame
-// clients. A command of another protocol version ends the session as
+// handshake and nothing after it. A command of another protocol version ends the session as
 // quickly, after its error but without the close handshake
 // (commandDispatcher.rejectProtocolVersion); see also
 // TestServerHandlerVersionMismatchEndsSessionWithoutHandshake.
 func TestServerHandlerRejectedOnlyCommandEndsSession(t *testing.T) {
-	clients := map[string][]string{
-		"control-frame client": {protocol.EscapedFramingCommand, protocol.ControlFramesCommand},
-	}
-	for client, first := range settleTestClients {
-		clients[client] = first
-	}
-	for client, first := range clients {
-		for name, rejected := range rejectedFrames() {
-			t.Run(client+"/"+name, func(t *testing.T) {
-				handler := newFramingTestServerHandler(t, ServerCapabilities("linux", false))
-				stream := runFailingFramesSessionAcking(t, handler, protocol.HiddenCapabilitiesPrefix,
-					encodeTestCommands(first...)+rejected.frame, rejected.ack)
-				checkRejectedFrameSession(t, stream, rejected)
-				checkCloseAcknowledgement(t, handler.ackCloseReceived, rejected, stream)
-			})
-		}
+	for name, rejected := range rejectedFrames() {
+		t.Run(name, func(t *testing.T) {
+			handler := newFramingTestServerHandler(t, ServerCapabilities("linux", false))
+			stream := runFailingFramesSessionAcking(t, handler, protocol.HiddenCapabilitiesPrefix,
+				rejected.frame, rejected.ack)
+			checkRejectedFrameSession(t, stream, rejected)
+			checkCloseAcknowledgement(t, handler.ackCloseReceived, rejected, stream)
+		})
 	}
 }
 
 // TestServerHandlerVersionMismatchEndsSessionWithoutHandshake: every frame
-// of a client of another protocol version is rejected, including the
-// framing requests a current client sends first, so the session stays raw
-// while such a client already chose marked framing from the capabilities
-// frame: it would print an unmarked ".syn close connection" as payload and
-// never acknowledge it, so the session waited for the close acknowledgement
-// timeout (5 s). The server must instead send the mismatch error once and
-// end the session at once without the close handshake
-// (ServerHandler.versionRejected), for older, escaped-only and control-frame
-// clients of that version, which then see an incomplete session.
+// of a client of another, not older protocol version (here 99.0) is
+// rejected. Such a client may frame and acknowledge differently from this
+// server, so it can not be relied on to acknowledge the close handshake, and
+// the session would wait for the close acknowledgement timeout (5 s). The
+// server must instead send the mismatch error once and end the session at
+// once without the close handshake (ServerHandler.versionRejected), also
+// when the client first sends requests this server does not know, like the
+// framing requests of protocol 4.1. Older clients keep their session
+// (TestOlderVersionMismatchKeepsSessionOpen).
 func TestServerHandlerVersionMismatchEndsSessionWithoutHandshake(t *testing.T) {
 	clients := map[string][]string{
-		"older client":         nil,
-		"escaped-only client":  {protocol.EscapedFramingCommand},
-		"control-frame client": {protocol.EscapedFramingCommand, protocol.ControlFramesCommand},
+		"no framing request":         nil,
+		"4.1-style framing requests": {".ack framing escaped-v1", ".ack framing control-v1"},
 	}
 	for client, first := range clients {
 		t.Run(client, func(t *testing.T) {
@@ -182,9 +172,6 @@ func TestServerHandlerVersionMismatchEndsSessionWithoutHandshake(t *testing.T) {
 				frames.String(), encodeMismatchCommand(".ack close connection"))
 			_, afterCapabilities, _ := strings.Cut(stream, protocol.HiddenCapabilitiesPrefix)
 			checkMismatchSession(t, afterCapabilities)
-			if handler.framing() != protocol.RawFraming {
-				t.Fatalf("framing %v after rejected framing requests, want raw", handler.framing())
-			}
 		})
 	}
 }
@@ -327,41 +314,83 @@ func encodeV1Command(command string) string {
 	return command + ";"
 }
 
-// legacyClient is how a legacy client frames its commands and the mismatch
-// error the server answers them with.
-type legacyClient struct {
-	encode func(command string) string
-	report string
+// protocol41MismatchReport is the error message of a frame of protocol
+// version 4.1, followed by no newline (only protocol 3 and lower get one).
+const protocol41MismatchReport = "does not match client protocol version '4.1', please update DTail client"
+
+// encodeProtocol41Command frames command like a client of protocol version
+// 4.1.
+func encodeProtocol41Command(command string) string {
+	return "protocol 4.1 base64 " + base64.StdEncoding.EncodeToString([]byte(command)) + ";"
 }
 
-// TestOlderVersionMismatchKeepsSessionOpen: a session of a legacy client
-// (protocol <= 3, or a v1.x client sending no protocol prefix at all) whose
+// olderClient is how an older client frames its commands, the mismatch
+// error the server answers them with, and whether the health handler keeps
+// its session open too.
+type olderClient struct {
+	encode     func(command string) string
+	report     string
+	healthOpen bool
+}
+
+// TestOlderVersionMismatchKeepsSessionOpen: a session of an older client
+// (protocol <= 4, or a v1.x client sending no protocol prefix at all) whose
 // frames are all rejected for their protocol version gets the mismatch
 // error once, followed by the separator such a client expects (a newline
-// for protocol 2-3, none for v1.x), and then stays open, as it did before
-// (commandDispatcher.rejectProtocolVersion): it ends when the client exits
-// or at IdleSessionTimeoutS. Legacy clients that retry (dtail of every such
-// version, dmap in tail mode without outfile) reconnect 2 s after their
-// session ended, so ending it at once would make them reconnect in a loop.
-// Both the server and the health handler must keep such a session open with
-// no close handshake.
+// for protocol 2-3, none for 4.x and v1.x), and then stays open, as it did
+// before (ServerHandler.versionRejected): it ends when the client exits or
+// at IdleSessionTimeoutS. Older clients that retry (dtail of every such
+// version, dmap in tail mode without outfile up to v3) reconnect a few
+// seconds after their session ended, so ending it at once would make them
+// reconnect in a loop. The health handler keeps the session of a protocol
+// 3 or v1.x client open as well, but not of a 4.x client
+// (TestHealthHandlerEndsProtocol4Session).
 func TestOlderVersionMismatchKeepsSessionOpen(t *testing.T) {
-	clients := map[string]legacyClient{
-		"protocol 3.9":       {encode: encodeOlderMismatchCommand, report: olderMismatchReport},
-		"no protocol prefix": {encode: encodeV1Command, report: noVersionReport},
+	clients := map[string]olderClient{
+		"protocol 3.9":       {encode: encodeOlderMismatchCommand, report: olderMismatchReport, healthOpen: true},
+		"protocol 4.1":       {encode: encodeProtocol41Command, report: protocol41MismatchReport},
+		"no protocol prefix": {encode: encodeV1Command, report: noVersionReport, healthOpen: true},
 	}
 	for clientName, client := range clients {
-		for handlerName, newHandler := range legacyTestHandlers() {
+		for handlerName, newHandler := range olderClientTestHandlers() {
+			if handlerName == "health" && !client.healthOpen {
+				continue
+			}
 			t.Run(clientName+"/"+handlerName, func(t *testing.T) {
-				checkLegacySessionStaysOpen(t, client, newHandler)
+				checkOlderSessionStaysOpen(t, client, newHandler)
 			})
 		}
 	}
 }
 
-// legacyTestHandlers returns constructors of the server and the health
+// TestHealthHandlerEndsProtocol4Session: unlike ServerHandler, the health
+// handler ends the session of a protocol 4.x client after the mismatch
+// error, without the close handshake (HealthHandler.versionRejected): a 4.x
+// dtailhealth does not reconnect, and its check must fail at once.
+func TestHealthHandlerEndsProtocol4Session(t *testing.T) {
+	handler, err := NewHealthHandler(context.Background(), &userserver.User{Name: "health"},
+		config.DefaultMaxCommandFrameSize, "testhost", handlerTestLogger)
+	if err != nil {
+		t.Fatalf("NewHealthHandler: %v", err)
+	}
+	frame := encodeProtocol41Command("health")
+	stream := runFailingFramesSessionAcking(t, handler, "", frame+frame,
+		encodeProtocol41Command(".ack close connection"))
+	if strings.Contains(stream, ".syn close connection") {
+		t.Fatalf("close handshake in a health session of a 4.1 client: %q", stream)
+	}
+	if reports := strings.Count(stream, protocol41MismatchReport); reports != 1 {
+		t.Fatalf("%d mismatch errors, want 1: %q", reports, stream)
+	}
+	_, afterReport, _ := strings.Cut(stream, protocol41MismatchReport)
+	if want := string([]byte{protocol.MessageDelimiter}); afterReport != want {
+		t.Fatalf("output after the mismatch error %q, want %q", afterReport, want)
+	}
+}
+
+// olderClientTestHandlers returns constructors of the server and the health
 // handler, each with the function that shuts it down.
-func legacyTestHandlers() map[string]func(t *testing.T) (io.ReadWriter, func()) {
+func olderClientTestHandlers() map[string]func(t *testing.T) (io.ReadWriter, func()) {
 	return map[string]func(t *testing.T) (io.ReadWriter, func()){
 		"server": func(t *testing.T) (io.ReadWriter, func()) {
 			handler := newFramingTestServerHandler(t, ServerCapabilities("linux", false))
@@ -378,10 +407,10 @@ func legacyTestHandlers() map[string]func(t *testing.T) (io.ReadWriter, func()) 
 	}
 }
 
-// checkLegacySessionStaysOpen sends two command frames of client to a new
+// checkOlderSessionStaysOpen sends two command frames of client to a new
 // handler and checks that its session stays open with a single mismatch
 // error, and that it ends once the handler shuts down.
-func checkLegacySessionStaysOpen(t *testing.T, client legacyClient,
+func checkOlderSessionStaysOpen(t *testing.T, client olderClient,
 	newHandler func(t *testing.T) (io.ReadWriter, func())) {
 	t.Helper()
 	handler, shutdown := newHandler(t)
@@ -401,7 +430,7 @@ func checkLegacySessionStaysOpen(t *testing.T, client legacyClient,
 	}
 }
 
-// checkOlderMismatchSessionOpen fails unless the session of a legacy client
+// checkOlderMismatchSessionOpen fails unless the session of an older client
 // whose frames were all of another protocol version is still open 500 ms
 // after its mismatch error report, which it got exactly once, and sent no
 // close handshake.
@@ -410,14 +439,20 @@ func checkOlderMismatchSessionOpen(t *testing.T, output *testOutput,
 	t.Helper()
 	select {
 	case <-readerDone:
-		t.Fatalf("session of a legacy client ended after the mismatch error: %q", output.String())
+		t.Fatalf("session of an older client ended after the mismatch error: %q", output.String())
 	case <-time.After(500 * time.Millisecond):
 	}
 	stream := output.String()
 	if strings.Contains(stream, ".syn close connection") {
-		t.Fatalf("close handshake in a session of a legacy client: %q", stream)
+		t.Fatalf("close handshake in a session of an older client: %q", stream)
 	}
 	if reports := strings.Count(stream, report); reports != 1 {
 		t.Fatalf("%d mismatch errors, want 1: %q", reports, stream)
+	}
+	// The report (with its newline, for protocol 2-3 only) is followed
+	// directly by the message delimiter: no newline for 4.x or v1.x.
+	_, afterReport, _ := strings.Cut(stream, report)
+	if !strings.HasPrefix(afterReport, string([]byte{protocol.MessageDelimiter})) {
+		t.Fatalf("mismatch error %q not followed by the message delimiter: %q", report, afterReport)
 	}
 }

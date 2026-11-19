@@ -317,11 +317,13 @@ not mean one was found. Per-run execution totals and a ~50 s figure for the
 64 KiB pair recorded in earlier revisions of this note did not reproduce and are
 withdrawn.
 
-The `literal` hint in the serialized form is now only emitted for patterns which
-are their own literal: an older peer trusts that hint verbatim and would search
-for the backslashes, while peers of this version derive the literal from the
-pattern themselves, so server-mode dmap gets the same optimization without the
-hint.
+(Since protocol 5, which rejects peers of other versions, the hint is no longer
+sent at all; receivers still ignore it.) At the time, the `literal` hint in the serialized
+form was only emitted for patterns which
+were their own literal: an older peer trusted that hint verbatim and would have
+searched for the backslashes, while peers of that version derived the literal
+from the pattern themselves, so server-mode dmap got the same optimization
+without the hint.
 
 `25` notes: the before binary was built from `7491087` and both binaries ran
 alternately in each round against the same 100 MiB `_generate_stats_data` file,

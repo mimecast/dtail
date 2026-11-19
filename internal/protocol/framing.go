@@ -10,41 +10,42 @@ import (
 //
 // MessageDelimiter is the single byte 0xAC. That byte is also a UTF-8
 // continuation byte: it occurs in every character whose code point is 0x2C
-// modulo 64, for example '¬' (C2 AC), '€' (E2 82 AC) and 'Ь' (D0 AC). Raw
-// framing therefore cuts a log line containing such a character into two
-// messages and loses the 0xAC byte. Escaped framing removes every 0xAC byte
-// from frame bodies, so MessageDelimiter only ever terminates a frame.
+// modulo 64, for example '¬' (C2 AC), '€' (E2 82 AC) and 'Ь' (D0 AC). A frame
+// body written verbatim would therefore cut a log line containing such a
+// character into two messages and lose the 0xAC byte. EscapedControlFraming
+// removes every 0xAC byte from frame bodies, so MessageDelimiter only ever
+// terminates a frame, and marks control frames, so that no payload frame can
+// be taken for one (see control_frames.go).
 //
-// Which framing a session uses is negotiated per session so that clients and
-// servers of different versions keep working together (see
-// CapabilityEscapedFramingV1 and EscapedFramingCommand): only when the server
-// advertises the capability and the client asks for it are frames escaped.
-// EscapedControlFraming additionally marks control frames, so that no
-// payload frame can be taken for one (see CapabilityControlFramesV1 and
-// control_frames.go).
+// Since protocol 5 every session uses EscapedControlFraming for every frame,
+// from its first one (the capabilities frame) on; there is nothing to
+// negotiate. A peer of another protocol version is rejected by the server's
+// version check. TerminalFraming is no wire framing: it only lends the frame
+// layout to terminal output (serverless mode's direct writer, colored lines).
 type Framing uint8
 
 const (
-	// RawFraming writes frame bodies verbatim. It is the legacy framing of
-	// protocol 4.1 and stays in use with every peer that did not negotiate
-	// EscapedFraming.
-	RawFraming Framing = iota
-	// EscapedFraming replaces each MessageDelimiter byte of a frame body with
-	// FrameEscape followed by escapedDelimiterCode, and each FrameEscape byte
-	// with FrameEscape followed by escapedEscapeCode. All other bytes, and so
-	// all UTF-8 text without 0xAC, stay unchanged.
-	EscapedFraming
-	// EscapedControlFraming escapes every frame body like EscapedFraming and
-	// starts the body of every control frame (hidden ".syn ..." messages and
-	// AUTHKEY replies, see EncodeControl) with FrameEscape followed by
-	// controlFrameCode. A body escaped this way never starts with that
-	// sequence, so a frame without it is never a control frame, whatever its
-	// content (e.g. a --plain log line ".syn close connection").
-	EscapedControlFraming
+	// EscapedControlFraming is the framing of every frame on the wire. It
+	// replaces each MessageDelimiter byte of a frame body with FrameEscape
+	// followed by escapedDelimiterCode, and each FrameEscape byte with
+	// FrameEscape followed by escapedEscapeCode; all other bytes, and so all
+	// UTF-8 text without 0xAC, stay unchanged. It also starts the body of
+	// every control frame (hidden ".syn ..." messages and AUTHKEY replies,
+	// see EncodeControl) with FrameEscape followed by controlFrameCode. A body
+	// escaped this way never starts with that sequence, so a frame without it
+	// is never a control frame, whatever its content (e.g. a --plain log line
+	// ".syn close connection"). It is the zero value, so a Framing left unset
+	// is the wire framing.
+	EscapedControlFraming Framing = iota
+	// TerminalFraming writes bodies verbatim and marks no control frame. It
+	// is never sent to a client: it serves terminal output that borrows the
+	// frame layout, whose delimiter is then cut off or never parsed again.
+	TerminalFraming
 )
 
 const (
-	// FrameEscape introduces an escape sequence in an EscapedFraming body.
+	// FrameEscape introduces an escape sequence in an EscapedControlFraming
+	// body.
 	// 0xFF never occurs in valid UTF-8, so escaping it costs nothing for
 	// UTF-8 logs and keeps the escaped body of ASCII frames byte-identical to
 	// the raw one.
@@ -64,7 +65,7 @@ const (
 )
 
 // Write appends body bytes of a frame to dst in framing f. It does not
-// terminate the frame. Under EscapedFraming it takes time linear in
+// terminate the frame. Under EscapedControlFraming it takes time linear in
 // len(body), whatever the share of bytes to escape (see writeEscaped).
 func (f Framing) Write(dst *bytes.Buffer, body []byte) {
 	if !f.escapes() {
@@ -96,13 +97,13 @@ func (f Framing) EncodePayload(dst *bytes.Buffer, payload []byte) {
 
 // DecodeFrame returns the body of a frame received in framing f, with its
 // MessageDelimiter already removed. When the frame holds no escape sequence
-// (always under RawFraming) it is returned as it is, without copying, and
+// (always under TerminalFraming) it is returned as it is, without copying, and
 // frame is never modified; otherwise the decoded body is built in *scratch,
 // which keeps the grown buffer for the next frame, and the result is only
 // valid until scratch is used again. Malformed sequences (an unknown code or
 // a FrameEscape at the end) are kept verbatim; no encoder produces them.
-// Under EscapedControlFraming the control frame marker must be cut off first
-// (CutControl): a decoded body may start with the same two bytes.
+// The control frame marker must be cut off first (CutControl): a decoded
+// body may start with the same two bytes.
 func (f Framing) DecodeFrame(frame []byte, scratch *[]byte) []byte {
 	if !f.escapes() {
 		return frame
@@ -136,22 +137,18 @@ func (f Framing) DecodeFrame(frame []byte, scratch *[]byte) []byte {
 
 // String returns the name of the framing for diagnostics.
 func (f Framing) String() string {
-	switch f {
-	case EscapedFraming:
-		return "escaped"
-	case EscapedControlFraming:
-		return "escaped-control"
-	default:
-		return "raw"
+	if f == TerminalFraming {
+		return "terminal"
 	}
+	return "escaped-control"
 }
 
 // escapes reports whether f escapes frame bodies.
 func (f Framing) escapes() bool {
-	return f == EscapedFraming || f == EscapedControlFraming
+	return f == EscapedControlFraming
 }
 
-// writeEscaped appends body to dst in EscapedFraming. The escaped body is
+// writeEscaped appends body to dst escaped (EscapedControlFraming). The escaped body is
 // appended to the spare capacity of dst and committed with one Write, which
 // is cheaper than a Write per run and escape sequence. A longer body is
 // sized exactly first: two vectorised bytes.Count passes give the number of
@@ -196,7 +193,7 @@ var (
 	frameEscapeByte = []byte{FrameEscape}
 )
 
-// appendEscapedShort appends body in EscapedFraming to out; it is the plain
+// appendEscapedShort appends body escaped to out; it is the plain
 // loop writeEscaped uses for bodies of at most shortBodyLen bytes.
 func appendEscapedShort(out, body []byte) []byte {
 	start := 0

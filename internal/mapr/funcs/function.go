@@ -19,6 +19,16 @@ type Function struct {
 // FunctionStack is a list of functions stacked each other
 type FunctionStack []Function
 
+// functionTable lists every function of a set condition (e.g. the maskdigits
+// of "set $foo = maskdigits($bar)") with its callback, in the order of
+// doc/querylanguage.md. The parser (lookupCallback) and Names, which the
+// interactive query completer reads, share this one table so that they
+// cannot drift apart.
+var functionTable = [...]Function{
+	{Name: "md5sum", call: Md5Sum},
+	{Name: "maskdigits", call: MaskDigits},
+}
+
 // NewFunctionStack parses the input string, e.g. foo(bar("arg")) and returns
 // a corresponding function stack. It returns an error for malformed inputs
 // such as unbalanced parentheses (e.g. "foo(", "foo(bar)baz").
@@ -54,18 +64,27 @@ func NewFunctionStack(in string) (FunctionStack, string, error) {
 	return fs, aux, nil
 }
 
-// lookupCallback maps a function name to its CallbackFunc implementation.
-// It returns an error for unrecognised names so callers get a clear message.
-func lookupCallback(name string) (CallbackFunc, error) {
-	switch name {
-	case "md5sum":
-		return Md5Sum, nil
-	case "maskdigits":
-		return MaskDigits, nil
-	default:
-		var zero CallbackFunc
-		return zero, fmt.Errorf("unknown function '%s'", name)
+// Names returns the names of the functions a set condition can call, in the
+// order of the parser's table. The names are case sensitive. The result is a
+// new slice, which the caller may change.
+func Names() []string {
+	names := make([]string, len(functionTable))
+	for i, entry := range functionTable {
+		names[i] = entry.Name
 	}
+	return names
+}
+
+// lookupCallback maps a function name (case sensitive) to its CallbackFunc
+// implementation, looked up in functionTable. It returns an error for
+// unrecognised names so callers get a clear message.
+func lookupCallback(name string) (CallbackFunc, error) {
+	for _, entry := range functionTable {
+		if entry.Name == name {
+			return entry.call, nil
+		}
+	}
+	return nil, fmt.Errorf("unknown function '%s'", name)
 }
 
 // validateParenBalance checks that the remaining argument string contains no

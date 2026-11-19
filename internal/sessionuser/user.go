@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/fs"
@@ -22,6 +23,26 @@ type User struct {
 	// The permissions the user has.
 	permissions []string
 	logger      logging.Logger
+
+	// compileOnce compiles the permissions into compiled the first time a
+	// check needs them (compiledPermissions), so that a check compiles no
+	// regex: a probe checks up to thousands of paths per round. The
+	// permissions of a User never change.
+	compileOnce sync.Once
+	compiled    []compiledPermission
+}
+
+// compiledPermission is one permission rule "[<type>:][!]<regex>" in the
+// form iteratePaths matches paths with.
+type compiledPermission struct {
+	typeStr string
+	// rule is the rule without its type, as logged ("!" kept).
+	rule string
+	deny bool
+	re   *regexp.Regexp
+	// err is set when the regex does not compile; iteratePaths fails the
+	// check when it reaches the rule, as it did compiling it per check.
+	err error
 }
 
 // PermissionLookup resolves permissions for a given SSH user.
@@ -81,53 +102,80 @@ func (u *User) ValidateReadTarget(filePath, permissionType string) (fs.Validated
 // no regular file (e.g. a directory). The permissions are checked first, so a
 // denied path gives the same error whatever it is; for users the permissions
 // apply to, a path that can not be resolved is denied too.
+//
+// It logs the check at the levels documented for reads, e.g. two info lines
+// for a path the OS and a rule permit.
 func (u *User) ResolveReadTarget(filePath, permissionType string) (fs.ValidatedReadTarget, error) {
-	u.log().Debug(u, filePath, permissionType, "Checking config permissions")
+	return u.resolveReadTarget(filePath, permissionType, u.checkLog(false))
+}
+
+// ResolveReadTargetQuietly is ResolveReadTarget, with the same result, but
+// logs the lines about the path at debug level only (checkLog). It is for
+// callers that check many paths at once and log a summary themselves: the
+// probe command's field probe and path listing.
+func (u *User) ResolveReadTargetQuietly(filePath,
+	permissionType string) (fs.ValidatedReadTarget, error) {
+
+	return u.resolveReadTarget(filePath, permissionType, u.checkLog(true))
+}
+
+func (u *User) resolveReadTarget(filePath, permissionType string,
+	log checkLog) (fs.ValidatedReadTarget, error) {
+
+	log.debug(u, filePath, permissionType, "Checking config permissions")
 	if fs.IsJournalSpec(filePath) {
-		return u.validateJournalReadTarget(filePath, permissionType)
+		return u.validateJournalReadTarget(filePath, permissionType, log)
 	}
 
-	cleanPath, err := filepath.EvalSymlinks(filePath)
+	cleanPath, err := u.cleanReadPath(filePath, permissionType, log)
 	if err != nil {
-		u.log().Error(u, filePath, permissionType,
-			"Unable to evaluate symlinks", err)
-		if u.permissionChecked() {
-			// The permissions of a path that can not be resolved can not
-			// be checked; a user gets the same error for it as for any
-			// other path the permissions deny.
-			return fs.ValidatedReadTarget{}, ErrReadPermissionDenied
-		}
-		return fs.ValidatedReadTarget{}, fmt.Errorf("evaluate symlinks: %w", err)
+		return fs.ValidatedReadTarget{}, err
 	}
 
-	cleanPath, err = filepath.Abs(cleanPath)
-	if err != nil {
-		u.log().Error(u, cleanPath, permissionType,
-			"Unable to make file path absolute", err)
-		return fs.ValidatedReadTarget{}, fmt.Errorf("make file path absolute: %w", err)
-	}
-
-	if cleanPath != filePath {
-		u.log().Info(u, filePath, cleanPath, permissionType,
-			"Calculated new clean path from original file path (possibly symlink)")
-	}
-
-	if u.permissionChecked() && !u.hasAnyFilePermission(cleanPath, permissionType) {
+	if u.permissionChecked() && !u.hasAnyFilePermission(cleanPath, permissionType, log) {
 		return fs.ValidatedReadTarget{}, ErrReadPermissionDenied
 	}
 
 	target, err := fs.NewValidatedReadTarget(cleanPath)
 	if errors.Is(err, fs.ErrNotRegularFile) {
 		// E.g. a directory a glob matched: the read command skips it.
-		u.log().Debug(u, cleanPath, permissionType, "Read target is not a regular file", err)
+		log.debug(u, cleanPath, permissionType, "Read target is not a regular file", err)
 		return fs.ValidatedReadTarget{}, err
 	}
 	if err != nil {
-		u.log().Warn(u, cleanPath, permissionType, "Unable to validate read target", err)
+		log.warn(u, cleanPath, permissionType, "Unable to validate read target", err)
 		return fs.ValidatedReadTarget{}, err
 	}
 
 	return target, nil
+}
+
+// cleanReadPath returns filePath as an absolute path with its symlinks
+// evaluated: the path the permissions are checked against.
+func (u *User) cleanReadPath(filePath, permissionType string, log checkLog) (string, error) {
+	cleanPath, err := filepath.EvalSymlinks(filePath)
+	if err != nil {
+		log.error(u, filePath, permissionType, "Unable to evaluate symlinks", err)
+		if u.permissionChecked() {
+			// The permissions of a path that can not be resolved can not
+			// be checked; a user gets the same error for it as for any
+			// other path the permissions deny.
+			return "", ErrReadPermissionDenied
+		}
+		return "", fmt.Errorf("evaluate symlinks: %w", err)
+	}
+
+	cleanPath, err = filepath.Abs(cleanPath)
+	if err != nil {
+		log.error(u, cleanPath, permissionType, "Unable to make file path absolute", err)
+		return "", fmt.Errorf("make file path absolute: %w", err)
+	}
+
+	if cleanPath != filePath {
+		log.info(u, filePath, cleanPath, permissionType,
+			"Calculated new clean path from original file path (possibly symlink)")
+	}
+	return cleanPath, nil
 }
 
 // permissionChecked reports whether the read permissions apply to u: they do
@@ -137,19 +185,19 @@ func (u *User) permissionChecked() bool {
 }
 
 // hasAnyFilePermission reports whether the read permissions permit path.
-func (u *User) hasAnyFilePermission(path, permissionType string) bool {
-	hasPermission, permissionErr := u.hasFilePermission(path, permissionType)
+func (u *User) hasAnyFilePermission(path, permissionType string, log checkLog) bool {
+	hasPermission, permissionErr := u.hasFilePermission(path, permissionType, log)
 	if permissionErr != nil {
-		u.log().Warn(u, path, permissionErr)
+		log.warn(u, path, permissionErr)
 	}
 	return hasPermission
 }
 
-func (u *User) validateJournalReadTarget(spec, permissionType string) (fs.ValidatedReadTarget, error) {
+func (u *User) validateJournalReadTarget(spec, permissionType string, log checkLog) (fs.ValidatedReadTarget, error) {
 	if u.permissionChecked() {
-		hasPermission, permissionErr := u.iteratePaths(spec, permissionType)
+		hasPermission, permissionErr := u.iteratePaths(spec, permissionType, log)
 		if permissionErr != nil {
-			u.log().Warn(u, spec, permissionErr)
+			log.warn(u, spec, permissionErr)
 		}
 		if !hasPermission {
 			return fs.ValidatedReadTarget{}, ErrReadPermissionDenied
@@ -158,21 +206,20 @@ func (u *User) validateJournalReadTarget(spec, permissionType string) (fs.Valida
 
 	target, err := fs.NewValidatedJournalTarget(spec)
 	if err != nil {
-		u.log().Warn(u, spec, permissionType, "Unable to validate journal read target", err)
+		log.warn(u, spec, permissionType, "Unable to validate journal read target", err)
 		return fs.ValidatedReadTarget{}, err
 	}
 	return target, nil
 }
 
-func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error) {
+func (u *User) hasFilePermission(cleanPath, permissionType string, log checkLog) (bool, error) {
 	// First check file system Linux/UNIX permission.
 	if _, err := permissions.ToRead(u.Name, cleanPath, u.log()); err != nil {
 		return false, fmt.Errorf("User without OS file system permissions to read path: %w", err)
 	}
-	u.log().Info(u, cleanPath, permissionType,
-		"User with OS file system permissions to path")
+	log.info(u, cleanPath, permissionType, "User with OS file system permissions to path")
 
-	hasPermission, err := u.iteratePaths(cleanPath, permissionType)
+	hasPermission, err := u.iteratePaths(cleanPath, permissionType, log)
 	if err != nil {
 		return false, err
 	}
@@ -200,6 +247,28 @@ func splitPermissionType(permission string) (typeStr, rule string) {
 	return prefix, rest
 }
 
+// compiledPermissions returns u's permissions compiled, in their order;
+// they are compiled once per User, on the first call.
+func (u *User) compiledPermissions() []compiledPermission {
+	u.compileOnce.Do(func() {
+		u.compiled = make([]compiledPermission, 0, len(u.permissions))
+		for _, permission := range u.permissions {
+			typeStr, rule := splitPermissionType(permission)
+			compiled := compiledPermission{typeStr: typeStr, rule: rule}
+			compiled.deny = strings.HasPrefix(rule, "!")
+			regexStr := strings.TrimPrefix(rule, "!")
+			re, err := regexp.Compile(regexStr)
+			if err != nil {
+				compiled.err = fmt.Errorf("permission test failed, can't compile regex "+
+					"'%s': %w", regexStr, err)
+			}
+			compiled.re = re
+			u.compiled = append(u.compiled, compiled)
+		}
+	})
+	return u.compiled
+}
+
 // iteratePaths evaluates the user's permission list against cleanPath for the
 // given permissionType and returns whether access is granted.
 //
@@ -211,45 +280,40 @@ func splitPermissionType(permission string) (typeStr, rule string) {
 //     ACL lists from accidentally granting access to sensitive paths.
 //   - If no deny rule matches but at least one allow rule does, access is granted.
 //   - If no rule matches at all, access is denied (deny-by-default).
-func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
+//   - A rule of the type whose regex does not compile fails the check with
+//     an error when the scan reaches it.
+//
+// The rules are compiled once per User (compiledPermissions), not per check.
+func (u *User) iteratePaths(cleanPath, permissionType string, log checkLog) (bool, error) {
 	// Default: no permission until a matching allow rule is found.
 	hasPermission := false
 
-	for _, permission := range u.permissions {
-		// Determine the permission type prefix; default is "readfiles".
-		typeStr, permission := splitPermissionType(permission)
-
-		u.log().Debug(u, cleanPath, typeStr, permission)
-		if typeStr != permissionType {
+	for _, permission := range u.compiledPermissions() {
+		if log.debugOn {
+			log.debug(u, cleanPath, permission.typeStr, permission.rule)
+		}
+		if permission.typeStr != permissionType {
 			continue
 		}
-
-		// Detect deny rules (prefixed with '!') and strip the prefix before
-		// compiling the regex.
-		negate := strings.HasPrefix(permission, "!")
-		regexStr := permission
-		if negate {
-			regexStr = permission[1:]
+		if permission.err != nil {
+			return false, permission.err
 		}
-
-		re, err := regexp.Compile(regexStr)
-		if err != nil {
-			return false, fmt.Errorf("permission test failed, can't compile regex "+
-				"'%s': %w", regexStr, err)
+		if !permission.re.MatchString(cleanPath) {
+			continue
 		}
-
-		if negate && re.MatchString(cleanPath) {
+		if permission.deny {
 			// Deny rule matched: return false immediately (deny wins).
 			// A subsequent allow rule must never override an explicit deny.
-			u.log().Info(u, cleanPath, "Permission denied: matching deny pattern", permission)
+			if log.infoWritten() {
+				log.info(u, cleanPath, "Permission denied: matching deny pattern", permission.rule)
+			}
 			return false, nil
 		}
-
-		if !negate && re.MatchString(cleanPath) {
-			u.log().Info(u, cleanPath, "Permission test passed partially, "+
-				"matching positive pattern", permission)
-			hasPermission = true
+		if log.infoWritten() {
+			log.info(u, cleanPath, "Permission test passed partially, "+
+				"matching positive pattern", permission.rule)
 		}
+		hasPermission = true
 	}
 
 	return hasPermission, nil

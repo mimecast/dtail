@@ -18,11 +18,13 @@ func DetectCapabilities() []string {
 	return ServerCapabilities(runtime.GOOS, err == nil)
 }
 
-// ServerCapabilities returns capabilities for an operating system and journalctl availability.
+// ServerCapabilities returns the capabilities for an operating system and
+// journalctl availability. Only runtime properties of the server are
+// capabilities; what every protocol 5 server supports is not listed (see
+// protocol.HiddenCapabilitiesPrefix). The list is empty, never nil, on a
+// host without journal support, and the capabilities frame is sent anyway.
 func ServerCapabilities(goos string, journalctlAvailable bool) []string {
-	capabilities := []string{protocol.CapabilityQueryUpdateV1, protocol.CapabilityCommandFailureV1,
-		protocol.CapabilityEscapedFramingV1, protocol.CapabilityEncodedReadPathV1,
-		protocol.CapabilityControlFramesV1}
+	capabilities := []string{}
 	if goos == "linux" && journalctlAvailable {
 		capabilities = append(capabilities, protocol.CapabilityJournalV1)
 	}

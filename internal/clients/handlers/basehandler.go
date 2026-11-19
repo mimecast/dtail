@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -31,16 +33,19 @@ const maxRetainedLineBufBytes = 64 * 1024
 type frameKind uint8
 
 const (
-	// frameUnmarked is a frame of a session that does not mark control
-	// frames (protocol.Framing.MarksControl): its content tells whether it
-	// is a control message.
-	frameUnmarked frameKind = iota
-	// framePayload is an unmarked frame of a session that marks control
-	// frames: it is never a control message, whatever its content.
-	framePayload
-	// frameControl is a marked control frame of such a session.
+	// framePayload is an unmarked frame: it is never a control message,
+	// whatever its content.
+	framePayload frameKind = iota
+	// frameControl is a marked control frame.
 	frameControl
+	// frameIgnored is the unmarked hidden first frame of a server of an
+	// older protocol version (see checkFirstFrame): reported, not printed.
+	frameIgnored
 )
+
+// sessionFraming is the framing of every frame a protocol 5 server sends,
+// from the session's first frame on; there is no negotiation.
+const sessionFraming = protocol.EscapedControlFraming
 
 type baseHandler struct {
 	done         *internal.Done
@@ -54,8 +59,7 @@ type baseHandler struct {
 	// the buffer io.Copy hands to Read (32KB), so the remainder is kept here
 	// and drained by subsequent Read calls instead of being dropped, which
 	// would corrupt the server-side command stream. Only touched by Read
-	// (single output-copy goroutine), and by requestFraming before the
-	// handler is used.
+	// (single output-copy goroutine).
 	pendingCommand []byte
 	// lineBuf is scratch space for appending the newline to a payload message
 	// that lacks one. It is released after a message that grew it beyond
@@ -65,22 +69,21 @@ type baseHandler struct {
 	// frameBuf is scratch space for decoding an escaped frame (see
 	// decodeFrame); released like lineBuf. Only touched by Write.
 	frameBuf []byte
-	status   int
+	// status is the handler's exit status so far (see Status): -1 (none
+	// yet) for client and mapreduce sessions, 2 (CRITICAL) for health
+	// checks until the server answers OK. It is atomic, as it is written by
+	// the goroutine copying the server's output into Write (checkFirstFrame,
+	// the health check's OK) and by the dial goroutine (ReportServerError,
+	// e.g. a missing journal-v1 capability), and read by the client.
+	status atomic.Int32
 
-	// framingRequested is set when the handler sends
-	// protocol.EscapedFramingCommand and protocol.ControlFramesCommand as
-	// its first two frames. framingState holds the protocol.Framing of every
-	// frame after the session's first one, decided from that first frame
-	// (see decideFraming): RawFraming, EscapedFraming when it is the server's
-	// capabilities frame listing protocol.CapabilityEscapedFramingV1, or
-	// EscapedControlFraming when it also lists
-	// protocol.CapabilityControlFramesV1. framingDecided is set once the
-	// first frame was seen, so no later frame changes the framing (a later
-	// frame may well be a log line of a raw session that happens to read like
-	// a capabilities frame). framingDecided is only touched by Write.
-	framingRequested bool
-	framingState     atomic.Uint32
-	framingDecided   bool
+	// expectCapabilities is set for the sessions whose first frame must be
+	// the server's capabilities frame (client and mapreduce sessions, not
+	// health checks; see checkFirstFrame). firstFrameSeen is set once the
+	// first frame was received, so only that frame is checked. It is only
+	// touched by Write.
+	expectCapabilities bool
+	firstFrameSeen     bool
 
 	capabilitiesMu sync.RWMutex
 	capabilities   map[string]struct{}
@@ -88,7 +91,17 @@ type baseHandler struct {
 	capabilitiesOk sync.Once
 
 	sessionAcks chan SessionAck
-	logger      clientlog.Logger
+	// busy measures the time Write spends handling received frames, during
+	// which no further frame, e.g. a session acknowledgement, is read (see
+	// WaitForSessionAck).
+	busy busyClock
+	// probeAnswers queues the probe answers the server sent (see
+	// handleProbeMessage and Probe); nil for handlers that never probe
+	// (health checks). probeSlot (capacity 1) lets one Probe call send
+	// and wait at a time; the others wait for it (see Probe).
+	probeAnswers chan protocol.ProbeAnswer
+	probeSlot    chan struct{}
+	logger       clientlog.Logger
 
 	// closeReceived is set when the server started the session's close
 	// handshake, i.e. the session ended normally (see Outcome).
@@ -115,8 +128,7 @@ type SessionOutcome struct {
 	Completed bool
 	// Failures are the distinct reasons of the commands the server reported
 	// as failed (protocol.HiddenCommandFailedPrefix), in the order of their
-	// first report. Only servers advertising
-	// protocol.CapabilityCommandFailureV1 report failures. Any failure makes
+	// first report. Any failure makes
 	// dcat and dgrep exit with status 2 (see clients.ExitStatusFailedCommand).
 	Failures []string
 }
@@ -133,7 +145,7 @@ func (h *baseHandler) String() string {
 		h.done,
 		h.server,
 		h.shellStarted,
-		h.status,
+		h.status.Load(),
 		h,
 	)
 }
@@ -142,8 +154,10 @@ func (h *baseHandler) Server() string {
 	return h.server
 }
 
+// Status returns the handler's exit status so far (see baseHandler.status);
+// safe for concurrent use.
 func (h *baseHandler) Status() int {
-	return h.status
+	return int(h.status.Load())
 }
 
 func (h *baseHandler) log() clientlog.Logger {
@@ -181,10 +195,13 @@ func (h *baseHandler) Outcome() SessionOutcome {
 	return SessionOutcome{Completed: h.closeReceived.Load(), Failures: slices.Clone(h.failures)}
 }
 
+// ReportServerError reports a server error to the user and raises a status
+// of 0 or less (none yet, or OK) to 1; a higher status (a health check's
+// CRITICAL) is kept. It is safe for concurrent use: the stdout-copy goroutine
+// (checkFirstFrame) and the dial goroutine (requireJournalCapability) may
+// both report an error of the same session.
 func (h *baseHandler) ReportServerError(message string) {
-	if h.status <= 0 {
-		h.status = 1
-	}
+	h.raiseStatusToFailed()
 	// Route through the DIAGNOSTIC (Log) sink, not Raw: a server-error report is
 	// an audit line, not bulk payload. Via Raw it would be gated out of the
 	// client log file whenever Client.LogPayload is false (the default), silently
@@ -194,8 +211,27 @@ func (h *baseHandler) ReportServerError(message string) {
 	clientlog.RawDiagnostic(h.log(), formatServerErrorMessage(h.server, message))
 }
 
-// SendMessage to the server.
+// raiseStatusToFailed sets the status to 1 unless it is above 0 already, in
+// one atomic step, so a concurrent higher status is never overwritten.
+func (h *baseHandler) raiseStatusToFailed() {
+	for {
+		current := h.status.Load()
+		if current > 0 || h.status.CompareAndSwap(current, 1) {
+			return
+		}
+	}
+}
+
+// SendMessage to the server. It waits up to 5 seconds for the session to
+// take the command and returns nil without sending it once the handler is
+// done.
 func (h *baseHandler) SendMessage(command string) error {
+	return h.sendMessage(context.Background(), command)
+}
+
+// sendMessage is SendMessage, which also gives up when ctx ends (with ctx's
+// error).
+func (h *baseHandler) sendMessage(ctx context.Context, command string) error {
 	encoded := base64.StdEncoding.EncodeToString([]byte(command))
 	// A scheduled job's read share stays out of the log, in the command and
 	// in its encoding.
@@ -205,32 +241,19 @@ func (h *baseHandler) SendMessage(command string) error {
 	}
 	h.log().Debug("Sending command", h.server, loggedCommand, loggedEncoded)
 
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
 	select {
 	case h.commands <- commandFrame(encoded):
-	case <-time.After(time.Second * 5):
+	case <-timer.C:
 		return fmt.Errorf("timed out sending command '%s' (base64: '%s')", loggedCommand, loggedEncoded)
 	case <-h.Done():
 		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
 	return nil
-}
-
-// requestFraming makes protocol.EscapedFramingCommand and
-// protocol.ControlFramesCommand the first two frames Read sends, in one
-// piece, ahead of every command passed to SendMessage (e.g. AUTHKEY and the
-// read commands), whichever connector drives the handler. Servers that do not
-// advertise protocol.CapabilityEscapedFramingV1 may close on these unknown
-// commands before reading the workload; decideFraming reports them as unsupported.
-// The session then keeps raw framing; servers that advertise escaped framing but not
-// protocol.CapabilityControlFramesV1 ignore the second one, so the session is
-// escaped without marked control frames. It must be called before the
-// handler is used.
-func (h *baseHandler) requestFraming() {
-	h.framingRequested = true
-	h.pendingCommand = []byte(
-		commandFrame(base64.StdEncoding.EncodeToString([]byte(protocol.EscapedFramingCommand))) +
-			commandFrame(base64.StdEncoding.EncodeToString([]byte(protocol.ControlFramesCommand))))
 }
 
 // commandFrame frames a base64-encoded command for the server.
@@ -238,85 +261,74 @@ func commandFrame(encodedCommand string) string {
 	return fmt.Sprintf("protocol %s base64 %v;", protocol.ProtocolCompat, encodedCommand)
 }
 
-// framing returns the framing of the frames received from now on.
-func (h *baseHandler) framing() protocol.Framing {
-	return protocol.Framing(h.framingState.Load())
-}
-
 // decodeFrame returns the body of a received frame (without its delimiter)
-// in the session framing, and how to handle it (see frameKind). The result
-// aliases frame or frameBuf and is only valid until the next decodeFrame
-// call; frame itself is never modified. The session's first frame decides
-// the framing of all later ones (see decideFraming). The control frame
-// marker is cut off before the frame is decoded, as a decoded body may start
-// with the same bytes.
+// in the session framing (sessionFraming), and how to handle it (see
+// frameKind). The result aliases frame or frameBuf and is only valid until
+// the next decodeFrame call; frame itself is never modified. The control
+// frame marker is cut off before the frame is decoded, as a decoded body may
+// start with the same bytes. The session's first frame is checked
+// (checkFirstFrame).
 func (h *baseHandler) decodeFrame(frame []byte) ([]byte, frameKind) {
-	framing := h.framing()
-	kind := frameUnmarked
-	if framing.MarksControl() {
-		var control bool
-		frame, control = framing.CutControl(frame)
-		kind = framePayload
-		if control {
-			kind = frameControl
-		}
+	frame, control := sessionFraming.CutControl(frame)
+	kind := framePayload
+	if control {
+		kind = frameControl
 	}
-	decoded := framing.DecodeFrame(frame, &h.frameBuf)
+	decoded := sessionFraming.DecodeFrame(frame, &h.frameBuf)
 	if cap(h.frameBuf) > maxRetainedLineBufBytes {
 		// decoded stays valid: only the handler's reference is dropped, so
 		// an oversized frame does not pin its buffer (same policy as lineBuf).
 		h.frameBuf = nil
 	}
-	if !h.framingDecided {
-		h.framingDecided = true
-		h.decideFraming(decoded)
+	if !h.firstFrameSeen {
+		h.firstFrameSeen = true
+		kind = h.checkFirstFrame(decoded, kind)
 	}
 	return decoded, kind
 }
 
-// decideFraming switches the session to escaped framing when the session
-// asked for it and its first frame, which is always raw, is the server's
-// capabilities frame listing protocol.CapabilityEscapedFramingV1, and on to
-// marked control frames (protocol.EscapedControlFraming) when that frame
-// also lists protocol.CapabilityControlFramesV1. Such a server sends that
-// frame first and frames every later frame so; this runs on the Write
-// goroutine before the next frame is decoded. Any other first frame keeps
-// raw framing for good: a server without the capability, or one that sends
-// something else first, never escapes.
-func (h *baseHandler) decideFraming(first []byte) {
-	if !h.framingRequested {
-		return
+// checkFirstFrame checks the session's first frame, of the given kind, and
+// returns how to handle it. A protocol 5 server starts every client and
+// mapreduce session with its capabilities frame, a marked control frame
+// starting with protocol.HiddenCapabilitiesPrefix (which may list no
+// capability at all). Any other first frame comes from a server of an older
+// protocol version, which frames nothing the way this client decodes it and
+// may finish the session before reading the workload: the session is
+// reported as failed (status 1), so that it never looks like a successful
+// empty query. Such a server's unmarked hidden message (e.g. its unmarked
+// capabilities frame) is ignored instead of printed; any other first frame,
+// e.g. the server's version mismatch error, is handled as usual. Health check
+// sessions have no capabilities frame and are not checked.
+func (h *baseHandler) checkFirstFrame(first []byte, kind frameKind) frameKind {
+	if !h.expectCapabilities {
+		return kind
 	}
-	capabilities, ok := bytes.CutPrefix(first, []byte(protocol.HiddenCapabilitiesPrefix))
-	fields := strings.Fields(string(capabilities))
-	if !ok || !slices.Contains(fields, protocol.CapabilityEscapedFramingV1) {
-		// Older protocol-4.1 servers account unknown .ack commands as work.
-		// Either a framing request or an input-batch marker can therefore
-		// finish the session before its reads, even with a normal close
-		// handshake. Never let that look like a successful empty query.
-		h.ReportServerError("unsupported DTail server: missing capability " +
-			protocol.CapabilityEscapedFramingV1 + "; please update DTail server")
-		return
+	if kind == frameControl && bytes.HasPrefix(first, []byte(protocol.HiddenCapabilitiesPrefix)) {
+		return kind
 	}
-	switch {
-	case slices.Contains(fields, protocol.CapabilityControlFramesV1):
-		h.framingState.Store(uint32(protocol.EscapedControlFraming))
-	default:
-		h.framingState.Store(uint32(protocol.EscapedFraming))
+	h.ReportServerError("unsupported DTail server: not a protocol " + protocol.ProtocolCompat +
+		" server (no capabilities frame first); please update DTail server")
+	if kind == framePayload && protocol.IsHiddenMessage(string(first)) {
+		return frameIgnored
 	}
+	return kind
 }
 
 // Write receives data from the dtail server via the io.Writer interface.
 //
 // The stream is a sequence of messages terminated by protocol.MessageDelimiter;
 // newlines are ordinary payload bytes. Each message is decoded in the session
-// framing (decodeFrame) before it is handled; under escaped framing no
+// framing (decodeFrame) before it is handled; as every frame is escaped, no
 // payload byte equals the delimiter, so a line containing e.g. '€' (whose
 // UTF-8 encoding ends in the delimiter byte 0xAC) stays one message. The
 // frames are cut out of the stream by scanFrames. handleMessage and
 // everything below it must not retain the slice (io.Writer forbids retaining
 // p).
 func (h *baseHandler) Write(p []byte) (n int, err error) {
+	// Measured as busy time for WaitForSessionAck (busyClock), a payload
+	// write blocked by the paused output included.
+	h.busy.begin()
+	defer h.busy.end()
 	h.scanFrames(p, h.handleFrame)
 	return len(p), nil
 }
@@ -328,8 +340,8 @@ func (h *baseHandler) handleFrame(frame []byte) {
 
 // scanFrames calls handle with every frame that p completes, without its
 // protocol.MessageDelimiter and not yet decoded (decodeFrame), in stream
-// order. p is scanned with bytes.IndexByte instead of byte by byte; under
-// escaped framing the delimiter byte only ever ends a frame, so an escape
+// order. p is scanned with bytes.IndexByte instead of byte by byte; as every frame
+// is escaped, the delimiter byte only ever ends a frame, so an escape
 // sequence (FrameEscape and its code) may be split across chunks like any
 // other bytes. A frame that lies completely inside p is passed as a sub-slice
 // of p without copying; only the unfinished tail of a chunk is kept in
@@ -415,26 +427,22 @@ func (h *baseHandler) consumeCommand(p []byte, command string) int {
 	return n
 }
 
-// handleMessage routes one decoded message of the given kind. Control
-// messages (hidden messages and AUTHKEY acknowledgements) are consumed here;
-// all other messages are user payload and are written with exactly one
-// trailing newline (writePayload). Which messages are control messages
-// depends on the session framing: a marked control frame always is one, an
-// unmarked frame of a session that marks control frames never is (so a
+// handleMessage routes one decoded message of the given kind. A marked
+// control frame (hidden messages and AUTHKEY acknowledgements) is consumed
+// here; every unmarked frame is user payload, whatever its content (so a
 // --plain log line such as ".syn close connection" is printed, not acted
-// upon), and in any other session the content tells (handleUnmarkedControl).
-// message is only valid for the duration of the call.
+// upon), and is written with exactly one trailing newline (writePayload). An
+// ignored first frame (frameIgnored) is dropped. message is only valid for
+// the duration of the call.
 func (h *baseHandler) handleMessage(message []byte, kind frameKind) {
 	switch kind {
 	case frameControl:
 		h.handleControlMessage(message)
-		return
-	case frameUnmarked:
-		if h.handleUnmarkedControl(message) {
-			return
-		}
+	case frameIgnored:
+		h.log().Debug(h.server, "Ignoring first frame of an unsupported server", string(message))
+	default:
+		h.writePayload(message)
 	}
-	h.writePayload(message)
 }
 
 // handleControlMessage handles the body of a marked control frame. A body
@@ -448,20 +456,6 @@ func (h *baseHandler) handleControlMessage(message []byte) {
 	if !h.handleAuthKeyMessage(string(message)) {
 		h.log().Debug(h.server, "Ignoring unknown control frame", string(message))
 	}
-}
-
-// handleUnmarkedControl handles message as a control message, and reports
-// true, when its content reads like one: it starts with '.' (a hidden
-// message) or is an AUTHKEY acknowledgement, bare or in a SERVER or
-// AGGREGATE frame. This is the routing of sessions that do not mark control
-// frames (with older servers, or of older clients), in which a --plain log
-// line reading like that is taken for a control message as well.
-func (h *baseHandler) handleUnmarkedControl(message []byte) bool {
-	if len(message) > 0 && message[0] == '.' {
-		h.handleHiddenMessage(string(message))
-		return true
-	}
-	return mayBeAuthKeyMessage(message) && h.handleAuthKeyMessage(string(message))
 }
 
 // writePayload writes one payload message with exactly one trailing newline.
@@ -503,39 +497,12 @@ func (h *baseHandler) handleAuthKeyMessage(message string) bool {
 	return true
 }
 
-// authKeyPrefixes are the leading bytes a whitespace-trimmed message must start
-// with for parseAuthKeyMessage to recognise it: a bare acknowledgement, or one
-// wrapped in a tagged frame whose content is decoded first.
-var authKeyPrefixes = [][]byte{
-	[]byte("AUTHKEY"),
-	[]byte(protocol.ServerMessageID + protocol.FieldSeparator()),
-	[]byte(protocol.AggregateMessageID + protocol.FieldSeparator()),
-}
-
-// mayBeAuthKeyMessage is an allocation-free pre-check run on every payload
-// message. It returns false only for messages parseAuthKeyMessage would reject,
-// so ordinary log lines skip the string conversion, trimming and decoding.
-func mayBeAuthKeyMessage(message []byte) bool {
-	trimmed := bytes.TrimSpace(message)
-	for _, prefix := range authKeyPrefixes {
-		if bytes.HasPrefix(trimmed, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
+// parseAuthKeyMessage parses the body of a marked control frame as an AUTHKEY
+// reply ("AUTHKEY OK" or "AUTHKEY ERR <detail>"), surrounding blanks
+// ignored. The server sends AUTHKEY replies only as bare control frames, never
+// wrapped in a SERVER frame.
 func parseAuthKeyMessage(message string) (isAuthKeyMessage bool, ok bool, detail string) {
-	if message == "" {
-		return false, false, ""
-	}
-
 	payload := strings.TrimSpace(message)
-	decoded, err := protocol.DecodeMessage(payload)
-	if err == nil && decoded.Kind != protocol.MessagePlain {
-		payload = strings.TrimSpace(decoded.Content)
-	}
-
 	switch {
 	case payload == "AUTHKEY OK":
 		return true, true, ""
@@ -559,6 +526,8 @@ func (h *baseHandler) handleHiddenMessage(message string) {
 		h.handleSessionAckMessage(message)
 	case strings.HasPrefix(message, protocol.HiddenCommandFailedPrefix):
 		h.handleCommandFailedMessage(message)
+	case strings.HasPrefix(message, protocol.HiddenProbePrefix):
+		h.handleProbeMessage(message)
 	case strings.HasPrefix(message, ".syn close connection"):
 		h.closeReceived.Store(true)
 		if err := h.SendMessage(".ack close connection"); err != nil {
@@ -596,8 +565,6 @@ func (h *baseHandler) handleCapabilitiesMessage(message string) {
 		}
 		h.capabilities[capability] = struct{}{}
 	}
-	// The session framing is not decided here but from the session's first
-	// frame only (see decideFraming).
 
 	h.capabilitiesOk.Do(func() {
 		if h.capabilitiesCh != nil {
@@ -643,13 +610,29 @@ func (h *baseHandler) WaitForCapabilities(timeout time.Duration) bool {
 	}
 }
 
-// WaitForSessionAck returns the next session acknowledgement, waiting up to
-// timeout for one. Like WaitForCapabilities, an acknowledgement that is
-// already queued wins without any wait: the non-blocking receive comes first
-// because a select with several ready cases picks one at random, so a queued
-// acknowledgement could otherwise lose against an expired timer or an already
-// finished session.
-func (h *baseHandler) WaitForSessionAck(timeout time.Duration) (SessionAck, bool) {
+// WaitForSessionAck returns the next session acknowledgement, waiting for
+// one until the handler was idle for timeout, but never longer than
+// maxWait (wall clock; 0 for no cap). Like WaitForCapabilities, an
+// acknowledgement that is already queued wins without any wait: the
+// non-blocking receive comes first because a select with several ready
+// cases picks one at random, so a queued acknowledgement could otherwise
+// lose against an expired timer or an already finished session.
+//
+// Only the time the handler was free to read frames counts against timeout:
+// the time Write was busy (busyClock) does not, so a busy handler stretches
+// the wait. dserver sends the acknowledgement ahead of the payload it has
+// queued and of all output of the workload it acknowledges
+// (handlers.sessionAckGate), but payload frames already on their way can
+// come before it, and while the interactive output is paused, the handler's
+// payload write blocks and the acknowledgement is not read. So pausing the
+// output right after a SESSION START, for longer than the timeout, does not
+// fail the session start: its wait (maxWait 0) goes on until the output
+// resumes. A server that never answers times out after timeout of idle
+// handler time; the session's end ends the wait. A SESSION UPDATE runs on the interactive control loop,
+// which must not wait without bound (e.g. for a host key prompt that only
+// the control loop answers while it pauses the output), so it passes a
+// maxWait (connectors.sessionUpdateAckMaxWait).
+func (h *baseHandler) WaitForSessionAck(timeout, maxWait time.Duration) (SessionAck, bool) {
 	if h.sessionAcks == nil {
 		return SessionAck{}, false
 	}
@@ -662,18 +645,51 @@ func (h *baseHandler) WaitForSessionAck(timeout time.Duration) (SessionAck, bool
 	if timeout <= 0 {
 		return SessionAck{}, false
 	}
+	return h.waitForSessionAckIdle(timeout, maxWait)
+}
 
-	timer := time.NewTimer(timeout)
+// minAckRecheck is the shortest time the acknowledgement wait's timer is
+// armed again for, so that a little idle time still missing does not make
+// it spin.
+const minAckRecheck = 10 * time.Millisecond
+
+// waitForSessionAckIdle waits for a session acknowledgement until the
+// handler was idle (not busy in Write) for timeout since the call, or
+// maxWait (if above 0) passed. When the timer fires early because of busy
+// time, it is armed again for the idle time still missing (at least
+// minAckRecheck), but not past maxWait.
+func (h *baseHandler) waitForSessionAckIdle(timeout, maxWait time.Duration) (SessionAck, bool) {
+	start := time.Now()
+	busyAtStart := h.busy.busy(start)
+	timer := time.NewTimer(min(timeout, remainingWait(maxWait, 0)))
 	defer timer.Stop()
 
-	select {
-	case ack := <-h.sessionAcks:
-		return ack, true
-	case <-h.Done():
-		return SessionAck{}, false
-	case <-timer.C:
-		return SessionAck{}, false
+	for {
+		select {
+		case ack := <-h.sessionAcks:
+			return ack, true
+		case <-h.Done():
+			return SessionAck{}, false
+		case <-timer.C:
+			now := time.Now()
+			elapsed := now.Sub(start)
+			idle := elapsed - (h.busy.busy(now) - busyAtStart)
+			if idle >= timeout || (maxWait > 0 && elapsed >= maxWait) {
+				// An acknowledgement queued meanwhile still wins.
+				return h.WaitForSessionAck(0, 0)
+			}
+			timer.Reset(min(max(timeout-idle, minAckRecheck), remainingWait(maxWait, elapsed)))
+		}
 	}
+}
+
+// remainingWait returns how much of maxWait is left after elapsed, or the
+// largest duration for no cap (maxWait 0).
+func remainingWait(maxWait, elapsed time.Duration) time.Duration {
+	if maxWait <= 0 {
+		return time.Duration(math.MaxInt64)
+	}
+	return maxWait - elapsed
 }
 
 func (h *baseHandler) Shutdown() {

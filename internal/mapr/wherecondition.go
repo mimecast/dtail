@@ -33,6 +33,55 @@ const (
 	FloatGe             QueryOperation = iota
 )
 
+// OperatorKind tells which values a where operator compares.
+type OperatorKind int
+
+// The kinds of where operators.
+const (
+	// NumericOperator compares two numbers (==, <, ...). Its operands must be
+	// barewords: numbers or fields holding numbers.
+	NumericOperator OperatorKind = iota
+	// StringOperator compares two strings (eq, contains, ...). Its operands
+	// may be fields, quoted strings or bare numbers.
+	StringOperator
+)
+
+// WhereOperator describes one operator of a where condition.
+type WhereOperator struct {
+	// Name is the operator as written in a query, in lower case.
+	Name string
+	// Kind tells whether the operator compares numbers or strings.
+	Kind OperatorKind
+}
+
+// whereOperatorTable lists every operator of a where condition with its
+// operation, in the order of doc/querylanguage.md (float operators first).
+// The parser (parseWhereOperation) and WhereOperators, which the interactive
+// query completer reads, share this one table so that they cannot drift
+// apart. It is only read while a query is parsed.
+var whereOperatorTable = [...]struct {
+	name      string
+	operation QueryOperation
+}{
+	{"==", FloatEq},
+	{"!=", FloatNe},
+	{"<", FloatLt},
+	{"<=", FloatLe},
+	{"=<", FloatLe},
+	{">", FloatGt},
+	{">=", FloatGe},
+	{"=>", FloatGe},
+	{"eq", StringEq},
+	{"ne", StringNe},
+	{"contains", StringContains},
+	{"ncontains", StringNotContains},
+	{"lacks", StringNotContains},
+	{"hasprefix", StringHasPrefix},
+	{"nhasprefix", StringNotHasPrefix},
+	{"hassuffix", StringHasSuffix},
+	{"nhassuffix", StringNotHasSuffix},
+}
+
 // Represent a parsed "where" clause, used by mapr.Query
 type whereCondition struct {
 	lType   fieldType
@@ -53,73 +102,70 @@ func (wc *whereCondition) String() string {
 		wc.rFloat, wc.rType.String())
 }
 
-func makeWhereConditions(tokens []token) (where []whereCondition, err error) {
-
-	// Helper to parse a where condition.
-	parse := func(tokens []token) (whereCondition, []token, error) {
-		var wc whereCondition
-		if len(tokens) < 3 {
-			return wc, nil, errors.New(invalidQuery + "Not enough arguments in 'where' clause")
-		}
-
-		whereOp := strings.ToLower(tokens[1].str)
-		switch whereOp {
-		case "==":
-			wc.Operation = FloatEq
-		case "!=":
-			wc.Operation = FloatNe
-		case "<":
-			wc.Operation = FloatLt
-		case "<=":
-			wc.Operation = FloatLe
-		case "=<":
-			wc.Operation = FloatLe
-		case ">":
-			wc.Operation = FloatGt
-		case ">=":
-			wc.Operation = FloatGe
-		case "=>":
-			wc.Operation = FloatGe
-		case "eq":
-			wc.Operation = StringEq
-		case "ne":
-			wc.Operation = StringNe
-		case "contains":
-			wc.Operation = StringContains
-		case "lacks":
-			fallthrough
-		case "ncontains":
-			wc.Operation = StringNotContains
-		case "hasprefix":
-			wc.Operation = StringHasPrefix
-		case "nhasprefix":
-			wc.Operation = StringNotHasPrefix
-		case "hassuffix":
-			wc.Operation = StringHasSuffix
-		case "nhassuffix":
-			wc.Operation = StringNotHasSuffix
-		default:
-			return wc, nil, errors.New(invalidQuery +
-				"Unknown operation in 'where' clause: " + whereOp)
-		}
-
-		var err error
-		tokens, err = wc.fill(tokens)
-		return wc, tokens, err
+// WhereOperators returns the operators of a where condition, such as == or
+// contains, with their kind, in the order of the parser's table. Aliases
+// (=<, =>, lacks) are listed as operators of their own. The parser matches
+// them ignoring case. The result is a new slice, which the caller may change.
+func WhereOperators() []WhereOperator {
+	ops := make([]WhereOperator, len(whereOperatorTable))
+	for i, entry := range whereOperatorTable {
+		ops[i] = WhereOperator{Name: entry.name, Kind: entry.operation.kind()}
 	}
+	return ops
+}
 
-	// Consume all where conditions.
+// makeWhereConditions parses the conditions of a 'where' clause, separated
+// by blanks, commas or the optional keyword 'and'.
+func makeWhereConditions(tokens []token) (where []whereCondition, err error) {
 	for len(tokens) > 0 {
 		var wc whereCondition
-		var err error
-		wc, tokens, err = parse(tokens)
+		wc, tokens, err = parseWhereCondition(tokens)
 		if err != nil {
 			return nil, err
 		}
 		where = append(where, wc)
 		tokens = tokensConsumeOptional(tokens, "and")
 	}
-	return
+	return where, nil
+}
+
+// parseWhereCondition parses the first condition (ARG OPERATOR ARG) of
+// tokens and returns it with the tokens that follow it.
+func parseWhereCondition(tokens []token) (whereCondition, []token, error) {
+	var wc whereCondition
+	if len(tokens) < 3 {
+		return wc, nil, errors.New(invalidQuery + "Not enough arguments in 'where' clause")
+	}
+	var err error
+	if wc.Operation, err = parseWhereOperation(tokens[1].str); err != nil {
+		return wc, nil, err
+	}
+	tokens, err = wc.fill(tokens)
+	return wc, tokens, err
+}
+
+// parseWhereOperation maps the operator of a where condition, ignoring case,
+// to its operation, looked up in whereOperatorTable. Operators are resolved
+// here, once per parsed query: matching lines only switches on the resulting
+// QueryOperation (floatClause, stringClause).
+func parseWhereOperation(op string) (QueryOperation, error) {
+	op = strings.ToLower(op)
+	for _, entry := range whereOperatorTable {
+		if entry.name == op {
+			return entry.operation, nil
+		}
+	}
+	return UndefQueryOperation,
+		errors.New(invalidQuery + "Unknown operation in 'where' clause: " + op)
+}
+
+// kind tells whether the operation compares numbers or strings: the float
+// operations follow the FloatOperation marker in the constant list.
+func (op QueryOperation) kind() OperatorKind {
+	if op > FloatOperation {
+		return NumericOperator
+	}
+	return StringOperator
 }
 
 // Fill a where condition.

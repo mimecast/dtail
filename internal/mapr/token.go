@@ -1,9 +1,16 @@
 package mapr
 
 import (
+	"slices"
 	"strings"
 )
 
+// keywords are the clause keywords of the query language, in lower case. A
+// bareword equal to one of them (ignoring case) starts a new clause, so the
+// clauses can come in any order (see doc/querylanguage.md). The tokenizer
+// (token.isKeyword) and Keywords, which the interactive query completer
+// reads, share this one table so that they cannot drift apart. A new clause
+// needs an entry here and a case in Query.parseTokens.
 var keywords = [...]string{"select", "from", "where", "set", "group", "rorder",
 	"order", "interval", "limit", "outfile", "logformat"}
 
@@ -14,7 +21,16 @@ type token struct {
 	quotesStripped bool
 }
 
-// tokenize parses a query string into tokens.
+// Keywords returns the clause keywords of the query language in lower case,
+// the words a clause starts with, in the order of the parser's table. The
+// result is a copy, which the caller may change.
+func Keywords() []string {
+	return slices.Clone(keywords[:])
+}
+
+// tokenize parses a query string into tokens. scanQuery (complete_scan.go)
+// splits the same way and records offsets for AnalyzePartial; a change of
+// the rules here must be made there too, which its tests enforce.
 func tokenize(queryStr string) []token {
 	var tokens []token
 	for i, part := range strings.Split(queryStr, "\"") {
@@ -46,30 +62,22 @@ func tokensConsume(tokens []token) ([]token, []token) {
 		if current.isKeyword() {
 			return tokens[i:], consumed
 		}
-		// strip escapes, such as ` from `foo`, this allows to use keywords as field names
-		length := len(current.str)
-		if length >= 2 && current.str[0] == '`' && current.str[length-1] == '`' {
-			stripped := current.str[1 : length-1]
-			normalized := token{
-				str:            stripped,
-				isBareword:     current.isBareword,
-				quotesStripped: true,
-			}
-			consumed = append(consumed, normalized)
-			continue
-		}
-		consumed = append(consumed, current)
+		consumed = append(consumed, stripBackticks(current))
 	}
 	return nil, consumed
 }
 
-func tokensConsumeStr(tokens []token) ([]token, []string) {
-	var strings []string
-	tokens, found := tokensConsume(tokens)
-	for _, token := range found {
-		strings = append(strings, token.str)
+// stripBackticks strips the escapes of a token that is enclosed in backticks
+// as a whole, such as `foo`, and marks it quotesStripped. This allows to use
+// keywords and aggregation-like names as field names. A backtick anywhere
+// else (`foo, fo`o) is part of the token. The parser (tokensConsume) and
+// AnalyzePartial share this rule.
+func stripBackticks(t token) token {
+	length := len(t.str)
+	if length >= 2 && t.str[0] == '`' && t.str[length-1] == '`' {
+		return token{str: t.str[1 : length-1], isBareword: t.isBareword, quotesStripped: true}
 	}
-	return tokens, strings
+	return t
 }
 
 func tokensConsumeOptional(tokens []token, optional string) []token {

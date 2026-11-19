@@ -224,3 +224,41 @@ func TestNewHealthClientRejectsNoServer(t *testing.T) {
 		}
 	}
 }
+
+// TestNewHealthClientDisablesAuthKey checks that dtailhealth never registers
+// an auth key (task 7c4), also when it was not started with --no-auth-key
+// and the auth key's .pub file exists: the NoAuthKey its connections get
+// (ServerConnection.registerAuthKey) is set. The health handler of a
+// protocol 5 dserver from before 7c4 ends the session on AUTHKEY, so a
+// healthy server was reported CRITICAL. The negative counterpart: a data
+// client keeps the registration enabled.
+func TestNewHealthClientDisablesAuthKey(t *testing.T) {
+	t.Parallel()
+
+	keyPath := filepath.Join(t.TempDir(), "id_rsa")
+	for _, name := range []string{keyPath, keyPath + ".pub"} {
+		if err := os.WriteFile(name, []byte("key\n"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	args := config.Args{ServersStr: "localhost:1", ConnectionsPerCPU: 1}
+	args.TrustAllHosts = true
+	args.KnownHostsPath = filepath.Join(t.TempDir(), "known_hosts")
+	args.SSHPrivateKeyFilePath = keyPath
+
+	health, err := NewHealthClient(args, clientTestRuntimeConfig(), LoggerDependencies{})
+	if err != nil {
+		t.Fatalf("NewHealthClient: %v", err)
+	}
+	if connArgs, _ := health.snapshotConnectionState(); !connArgs.NoAuthKey {
+		t.Fatal("health client connections would register an auth key")
+	}
+
+	cat, err := NewCatClient(args, clientTestRuntimeConfig(), LoggerDependencies{})
+	if err != nil {
+		t.Fatalf("NewCatClient: %v", err)
+	}
+	if connArgs, _ := cat.snapshotConnectionState(); connArgs.NoAuthKey {
+		t.Fatal("cat client connections would not register an auth key")
+	}
+}

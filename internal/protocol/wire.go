@@ -36,7 +36,7 @@ type Line struct {
 }
 
 // DecodedLine is a remote log-line payload after stream framing has removed
-// MessageDelimiter (and, under EscapedFraming, its escape sequences). Number
+// MessageDelimiter (and, under EscapedControlFraming, its escape sequences). Number
 // retains its original spelling so presentation code does not rewrite
 // compatible frames such as a zero-padded line number.
 type DecodedLine struct {
@@ -56,8 +56,8 @@ type Message struct {
 
 // EncodeLine appends a complete remote log-line frame in framing f to dst.
 // Header fields must not contain the field separator; the wire format has no
-// escape sequence for field separators in those fields. Under EscapedFraming
-// (and EscapedControlFraming) the whole frame body, header fields and
+// escape sequence for field separators in those fields. Under
+// EscapedControlFraming the whole frame body, header fields and
 // content alike, is escaped, so a MessageDelimiter byte in any of them no
 // longer ends the frame early.
 func (f Framing) EncodeLine(dst *bytes.Buffer, line Line) {

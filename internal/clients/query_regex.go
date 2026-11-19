@@ -51,10 +51,8 @@ func maprRegexForQuery(query *mapr.Query) string {
 //
 // The read commands built from a query session spec ignore RegexInvert
 // anyway (session.Spec.queryCommands), so clearing it here is not needed for
-// a current dserver. It is kept so that the client's own args and the
-// regex_invert field of a SESSION START/UPDATE spec say what is done, and
-// because an older dserver builds the read commands of such a spec itself
-// and would invert the filter.
+// dserver. It is kept so that the client's own args and the regex_invert
+// field of a SESSION START/UPDATE spec say what is done.
 func applyQueryRegex(args *config.Args, query *mapr.Query) {
 	args.RegexStr = maprRegexForQuery(query)
 	args.RegexInvert = false

@@ -271,6 +271,29 @@ func TestNewMaprClientIgnoresInvert(t *testing.T) {
 	}
 }
 
+// TestNewMaprClientJobModesNeverInteractive pins that dserver's scheduled
+// and continuous jobs (every mode but DefaultMode) never run interactively,
+// even if their arguments asked for it, while the command-line clients
+// (DefaultMode) keep a requested interactive session.
+func TestNewMaprClientJobModesNeverInteractive(t *testing.T) {
+	for _, mode := range []MaprClientMode{DefaultMode, CumulativeMode, NonCumulativeMode,
+		ScheduledMode, ScheduledPartialMode} {
+		client, err := NewMaprClient(config.Args{
+			Mode:              omode.MapClient,
+			QueryStr:          "from STATS select count(*)",
+			InteractiveQuery:  true,
+			Serverless:        true,
+			ConnectionsPerCPU: 1,
+		}, clientTestRuntimeConfig(), mode, LoggerDependencies{})
+		if err != nil {
+			t.Fatalf("mode %d: NewMaprClient() error = %v", mode, err)
+		}
+		if want := mode == DefaultMode; client.InteractiveQuery != want {
+			t.Fatalf("mode %d: InteractiveQuery = %v, want %v", mode, client.InteractiveQuery, want)
+		}
+	}
+}
+
 func TestMaprClientCumulativePolicy(t *testing.T) {
 	t.Parallel()
 
@@ -417,9 +440,10 @@ func TestInteractiveControlWritersDescribeCurrentSession(t *testing.T) {
 			Options: "plain=true",
 			Timeout: 7,
 		},
+		// One session up, one still connecting (sessions=1, servers=2).
 		connections: []connectors.Connector{
-			&interactiveReloadConnector{supported: true},
-			&interactiveReloadConnector{supported: false},
+			&interactiveReloadConnector{generation: 1},
+			&interactiveReloadConnector{},
 		},
 	}
 
@@ -436,10 +460,43 @@ func TestInteractiveControlWritersDescribeCurrentSession(t *testing.T) {
 	}
 	for _, want := range []string{
 		"mode=tail", "files=app.log,audit.log", `query="from STATS select count(*)"`,
-		`regex="ERROR"`, "invert=false", `options="plain=true"`, "timeout=7", "capable=1/2",
+		`regex="ERROR"`, "invert=false", `options="plain=true"`, "timeout=7", "servers=2", "sessions=1",
 	} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("state output = %q, want substring %q", output.String(), want)
+		}
+	}
+}
+
+// TestInteractiveStateColored checks :show through the line editor's writer
+// with colors: the same text once stripped, keys painted and the query
+// highlighted, not painted as one value.
+func TestInteractiveStateColored(t *testing.T) {
+	t.Parallel()
+
+	client := &baseClient{
+		mu:          newBaseClientMu(),
+		Args:        config.Args{Mode: omode.MapClient},
+		sessionSpec: SessionSpec{Files: []string{"app.log"}, Query: `from STATS select count($line) where x eq "a b"`},
+	}
+	var plain, colored bytes.Buffer
+	if err := client.writeInteractiveState(&plain); err != nil {
+		t.Fatalf("writeInteractiveState() error = %v", err)
+	}
+	style := testInteractiveStyle()
+	if err := client.writeInteractiveState(editorWriter{Writer: &colored, styled: style}); err != nil {
+		t.Fatalf("writeInteractiveState() error = %v", err)
+	}
+	if got := stripANSI(colored.String()); got != plain.String() {
+		t.Fatalf("colored :show stripped = %q, want %q", got, plain.String())
+	}
+	for _, want := range []string{
+		style.paint(style.theme.Key, "query") + "=" + style.quotedQuery(client.sessionSpec.Query),
+		style.paint(style.theme.CandidateKeyword, "select"),
+		style.paint(style.theme.Value, "app.log"),
+	} {
+		if !strings.Contains(colored.String(), want) {
+			t.Fatalf("colored :show = %q, want substring %q", colored.String(), want)
 		}
 	}
 }
@@ -468,7 +525,7 @@ func TestMaprTerminalRendererWritesEveryCellType(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.ClientConfig{TermColorsEnable: true}
-	renderer := newClientOutputFormatter(cfg).MaprResultRenderer()
+	renderer := newClientOutputFormatter(cfg, true).MaprResultRenderer()
 	var output strings.Builder
 	renderer.WriteHeaderEntry(&output, "header", true, true)
 	renderer.WriteHeaderDelimiter(&output, "|")

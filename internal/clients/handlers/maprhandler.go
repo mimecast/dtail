@@ -31,16 +31,18 @@ func NewMaprHandler(server string, session *client.SessionState, logger clientlo
 			server:         server,
 			shellStarted:   false,
 			commands:       make(chan string),
-			status:         -1,
 			done:           internal.NewDone(),
 			capabilities:   make(map[string]struct{}),
 			capabilitiesCh: make(chan struct{}),
 			sessionAcks:    make(chan SessionAck, 4),
+			probeAnswers:   make(chan protocol.ProbeAnswer, probeAnswerQueueSize),
+			probeSlot:      make(chan struct{}, 1),
 			logger:         logger,
 		},
 		aggregate: client.NewAggregate(server, session, logger),
 	}
-	h.requestFraming()
+	h.status.Store(-1) // No status yet.
+	h.expectCapabilities = true
 	return h
 }
 
@@ -66,6 +68,10 @@ func NewMaprHandler(server string, session *client.SessionState, logger clientlo
 // The aggregate messages of p are queued and merged into the global group set
 // once, after the whole of p was handled (see client.Aggregate).
 func (h *MaprHandler) Write(p []byte) (n int, err error) {
+	// Measured as busy time for WaitForSessionAck (busyClock), the
+	// whole call.
+	h.busy.begin()
+	defer h.busy.end()
 	h.scanFrames(p, h.handleMaprFrame)
 	if err := h.aggregate.Merge(); err != nil {
 		h.log().Error("Unable to aggregate data", h.server, err)
@@ -73,10 +79,19 @@ func (h *MaprHandler) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// handleMaprFrame handles one received frame, still undecoded. A frame that
-// is empty once its newlines are dropped is ignored. A marked control frame
-// is never aggregate data.
+// handleMaprFrame handles one received frame, still undecoded. While the
+// session expects aggregates (client.Aggregate.Expected), a frame that is
+// empty once its newlines are dropped is ignored, and only a payload frame
+// can be aggregate data, never a marked control frame. Otherwise the frame is
+// handled like any frame of a ClientHandler (baseHandler.handleFrame).
 func (h *MaprHandler) handleMaprFrame(frame []byte) {
+	if !h.aggregate.Expected() {
+		// No query runs nor is being switched to (interactive dtail
+		// following lines): every frame is handled as by a ClientHandler,
+		// so a --plain line starting like an aggregate frame is printed.
+		h.handleFrame(frame)
+		return
+	}
 	frame = h.dropNewlines(frame)
 	if len(frame) == 0 {
 		return
@@ -85,7 +100,7 @@ func (h *MaprHandler) handleMaprFrame(frame []byte) {
 	if logging.DebugEnabled(h.log()) {
 		h.log().Debug(string(message))
 	}
-	if kind != frameControl {
+	if kind == framePayload {
 		if content, isAggregate, decodeErr := protocol.CutAggregateContent(message); isAggregate {
 			h.handleAggregateMessage(message, content, decodeErr)
 			return
@@ -121,10 +136,11 @@ func (h *MaprHandler) dropNewlines(frame []byte) []byte {
 // aggregate tag. Valid frames are handed to the aggregate parser; malformed
 // tagged frames are reported as protocol errors. Matching the full
 // AggregateMessageID field prefix, rather than just the first byte 'A', keeps
-// plain-mode protocol acks such as "AUTHKEY OK" out of the parser; those would
+// payload such as a --plain log line "AUTHKEY OK" out of the parser; it would
 // otherwise trigger a spurious "Unable to aggregate data ... expected 3
 // parts" error. Non-aggregate messages are routed to the base handler, which
-// recognises acks as control. handleMaprFrame classifies with the same
+// prints unmarked ones as payload (real AUTHKEY acks are marked control
+// frames). handleMaprFrame classifies with the same
 // protocol.CutAggregateContent.
 func isAggregateMessage(message string) bool {
 	_, isAggregate, _ := protocol.CutAggregateContent([]byte(message))

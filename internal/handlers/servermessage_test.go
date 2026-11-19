@@ -103,7 +103,7 @@ func TestReadMessagesKeepTheirTextWhenTheLogLevelFiltersThem(t *testing.T) {
 	for _, logger := range serverMessageTestLoggers {
 		t.Run(logger.name, func(t *testing.T) {
 			handler := newServerMessageTestHandler(t, logger.newLogger())
-			output := runLegacyCommandsOn(t, handler, commands)
+			output := runCommandStreamOn(t, handler, commands)
 			for _, text := range want {
 				if !strings.Contains(output, text) {
 					t.Fatalf("client output misses %q:\n%q", text, output)
@@ -175,7 +175,7 @@ func TestServerMessagesAreLoggedAtTheirLevel(t *testing.T) {
 		t.Fatalf("build commands: %v", err)
 	}
 	logger := &errorLevelLogger{}
-	runLegacyCommandsOn(t, newServerMessageTestHandler(t, logger), commands)
+	runCommandStreamOn(t, newServerMessageTestHandler(t, logger), commands)
 	logged := logger.loggedLines()
 	if strings.Contains(logged, "WARN|") {
 		t.Fatalf("logger at error level logged a warning:\n%s", logged)

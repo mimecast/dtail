@@ -18,7 +18,6 @@ import (
 	"github.com/mimecast/dtail/internal/logging"
 	mapaggregate "github.com/mimecast/dtail/internal/mapr/aggregate"
 	"github.com/mimecast/dtail/internal/omode"
-	"github.com/mimecast/dtail/internal/protocol"
 	"github.com/mimecast/dtail/internal/session"
 )
 
@@ -67,15 +66,15 @@ func (s *journalReadTestServer) readCommandDependencies() readCommandDependencie
 		readerLogger: s.ReaderLogger(),
 		logContext:   s.LogContext(),
 		timings: readTimings{
-			globRetryInterval:         time.Millisecond,
-			readRetryInterval:         time.Millisecond,
-			outputEOFAckTimeout:       time.Millisecond,
-			legacyAggregateInputGrace: time.Millisecond,
-			maxLineLength:             1024 * 1024,
-			maxGlobTargets:            1000,
+			globRetryInterval:            time.Millisecond,
+			readRetryInterval:            time.Millisecond,
+			outputEOFAckTimeout:          time.Millisecond,
+			unbatchedAggregateInputGrace: time.Millisecond,
+			maxLineLength:                1024 * 1024,
+			maxGlobTargets:               1000,
 		},
 		newLineWriter: func(ctx context.Context, generation uint64) LineWriter {
-			return NewNetworkWriter(ctx, protocol.RawFraming, s.outputLines, s.serverMessage, "testhost", false, false,
+			return NewNetworkWriter(ctx, s.outputLines, s.serverMessage, "testhost", false, false,
 				generation, func() uint64 { return 0 }, s.Logger())
 		},
 	}
@@ -206,10 +205,46 @@ func TestReadCommandDispatchesJournalSpecWithoutGlob(t *testing.T) {
 	}
 }
 
+// TestReadCommandRejectsJournalTargetsOfNoLiteralUnit checks that a journal
+// target that is no single literal unit name never runs journalctl: shell
+// metacharacters, globs journalctl -u would expand over the journal's units
+// (bypassing a readfiles deny rule on the matched unit), a name journalctl
+// would complete with .service, and a slice, which reads all its units.
+func TestReadCommandRejectsJournalTargetsOfNoLiteralUnit(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "journal-injection-marker")
+	mock := journaltest.InstallMock(t, journaltest.Scenario{
+		Default: journaltest.Invocation{Lines: []string{"leaked"}},
+	})
+
+	for _, unit := range []string{
+		"ssh.service;touch${IFS}" + marker,
+		"ssh*.service", "ssh[d].service", "*.service", "sshd", "system.slice",
+	} {
+		server := newJournalReadTestServer()
+		command := newReadCommand(server, omode.CatClient)
+		command.Start(context.Background(), emptyLContext(), 3,
+			[]string{"cat", fs.JournalSpecPrefix + unit, ""}, 1)
+		select {
+		case line := <-server.outputLines:
+			t.Errorf("unit %q: output %q", unit, line)
+		default:
+		}
+	}
+
+	if got := mock.Args(t); got != "" {
+		t.Fatalf("journalctl ran with %q", got)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("journal unit was interpreted as shell; marker stat error = %v", err)
+	}
+}
+
+// TestReadCommandPassesJournalUnitAsSingleArgWithoutShell checks that a unit
+// name reaches journalctl as one argument, byte for byte, with the
+// backslash of a systemd \x escape that a shell would interpret.
 func TestReadCommandPassesJournalUnitAsSingleArgWithoutShell(t *testing.T) {
 
-	marker := filepath.Join(t.TempDir(), "journal-injection-marker")
-	unit := "ssh.service;touch${IFS}" + marker
+	unit := `systemd-fsck@dev-disk-by\x2duuid-0f2a.service`
 	spec := fs.JournalSpecPrefix + unit
 
 	mock := journaltest.InstallMock(t, journaltest.Scenario{
@@ -229,10 +264,6 @@ func TestReadCommandPassesJournalUnitAsSingleArgWithoutShell(t *testing.T) {
 		[]string{"cat", spec, ""},
 		1,
 	)
-
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatalf("journal unit was interpreted as shell; marker stat error = %v", err)
-	}
 
 	unitFile, err := os.ReadFile(mock.UnitFile)
 	if err != nil {

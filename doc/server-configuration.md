@@ -38,6 +38,13 @@ client the missing-file warning, with its full text. How the client shows
 these warnings is described in
 [Server warnings and log levels](./examples.md#server-warnings-and-log-levels).
 
+Every log line stays one line: control and format characters in the text a
+line carries (a path, glob or probe entry a client sent, an error) are
+written as Go escapes (`\n`, `\t`, `\x1b`, `\u202e`, ...), so a client can not
+forge log lines or terminal escapes with them. Other text, including
+non-ASCII names, is written unchanged. This applies to the client logs too,
+and to the warnings `dserver` sends to its clients.
+
 ## Read permissions
 
 The `Server.Permissions` map controls which files each SSH user may read:
@@ -71,10 +78,27 @@ The `Server.Permissions` map controls which files each SSH user may read:
   `dserver` run user does, when built without Linux ACL support).
 * Journal targets are strings like `journal:nginx.service`, and the rule must
   match that full target string, e.g. `"readfiles:^journal:.*\\.service$"`.
+  The unit must be a literal unit name with its type (see "Journal reads"
+  below), so globs and names `journalctl` would complete are refused.
 
 `dserver`'s own scheduled and continuous jobs (see below) run as internal
 users and bypass these permission checks; they read what the job
 configuration tells them to read.
+
+The same rules bound the path listing that the clients' interactive path
+completion asks `dserver` for: it offers only files the user may read and
+only units of `journal:` targets the user may read. It offers a directory
+when an allow rule can match some path beneath it, unless a deny rule
+already matches the directory path itself (as `/var/log/secret/` above for
+`jamesblake`). A deny rule that only matches the files beneath (e.g.
+`!^/var/log/private/.*\.log$`) does not hide the directory's name, so to
+hide a directory write a deny rule for the directory path. An unanchored
+allow rule such as `\.log$` makes every directory listable that the OS lets
+`dserver` read. A directory the user may not list looks the same as one
+that does not exist. A `..` in the typed path removes the directory before
+it without looking at it (as `filepath.Clean` does), so it does not tell
+whether that directory exists either. Set
+`Server.PathCompletionDisable` to `true` to turn the listing off.
 
 ## Connection and session limits
 
@@ -110,7 +134,7 @@ the time the server waits on a slow client:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `Server.OutputBufferMaxBytes` | `2097152` (2 MiB) | Maximum payload backing memory retained per SSH session while the output waits for the client. Producers apply backpressure when the cap is reached. Must be at least `MaxLineLength` + 131072 (two 64 KiB writer batches), otherwise dserver refuses to start. A session using escaped wire framing (current clients and servers) raises its own cap to at least 2 × `MaxLineLength` + 131072, as escaping can almost double a line frame, so the configured value does not need to cover that. |
+| `Server.OutputBufferMaxBytes` | `2097152` (2 MiB) | Maximum payload backing memory retained per SSH session while the output waits for the client. Producers apply backpressure when the cap is reached. Must be at least `MaxLineLength` + 131072 (two 64 KiB writer batches), otherwise dserver refuses to start. Every session escapes its wire frames and so raises its own cap to at least 2 × `MaxLineLength` + 131072 (2228224 bytes with the default `MaxLineLength`), as escaping can almost double a line frame, so the configured value does not need to cover that. |
 | `Server.OutputFlushTimeoutMs` | `2000` | Maximum time the session reader may make no progress while output is drained, in milliseconds. A client that keeps reading, however slowly, or that paused reading while dserver is still writing to it (a pager, a stopped pipeline) is waited for; the idle session timeout bounds a client that never comes back. |
 | `Server.OutputReadRetryIntervalMs` | `1` | Compatibility fallback interval for detecting a stale output generation (for older writers that provide no cancellation signal). Values below the implementation's safety minimum are clamped. |
 | `Server.OutputEOFAckTimeoutMs` | `2000` | Maximum time to wait for the output EOF acknowledgement after signaling EOF, in milliseconds. |
@@ -150,6 +174,30 @@ passing a `journal:unit.service` target (e.g.
 * Journal targets are authorized like files, but the permission rule must
   match the full target string including the `journal:` prefix, for example
   `"readfiles:^journal:.*\\.service$"`.
+* The unit must be one literal systemd unit name with its unit type, so the
+  rule that matched the target covers exactly what `journalctl -u` reads:
+  only ASCII letters, digits and `:-_.\@`, an explicit type suffix
+  (`.service`, `.socket`, `.timer`, `.scope`, `.mount`, `.automount`,
+  `.swap`, `.target`, `.path` or `.device`) and, for an instance such as
+  `getty@tty1.service`, a non-empty instance. Glob patterns
+  (`journal:ssh*.service`), names without a type (`journal:sshd`, which
+  `journalctl` would read as `sshd.service`), slices (`journal:system.slice`,
+  which would read every unit in the slice) and templates
+  (`journal:getty@.service`) are refused and reported as `read: unable to
+  read file`, so a deny rule such as `"readfiles:!^journal:sshd\\.service$"`
+  can not be bypassed by spelling the target differently. This also holds
+  for scheduled and continuous jobs: a job `Files` entry such as
+  `journal:nginx`, `journal:*.service` or `journal:system.slice` (accepted by
+  older releases) now fails every run; name the unit with its type.
+* A deny rule covers the unit's own log stream only. Messages about the unit
+  logged by other units stay readable through those units, e.g. PID 1's
+  messages in `journal:init.scope`, coredump reports of the unit under its
+  `systemd-coredump@...service` unit, and a user's units under
+  `user@UID.service`; deny those too where that matters.
+* Deny rules must name the canonical unit, not an alias: `journalctl -u`
+  does not resolve aliases (on Debian and Ubuntu `sshd.service` is an alias
+  of `ssh.service`, so a deny rule on `sshd\\.service` protects nothing
+  there).
 
 ## Shared reads
 

@@ -27,7 +27,7 @@ func TestNewForUserSelectsHandlerAndUsesExplicitDependencies(t *testing.T) {
 			Diagnostics: logging.NopLogger{},
 			Reader:      logging.NopLogger{},
 		},
-		Capabilities: []string{protocol.CapabilityQueryUpdateV1},
+		Capabilities: []string{protocol.CapabilityJournalV1},
 		Hostname:     "test-host",
 	}
 
@@ -57,8 +57,8 @@ func TestNewForUserSelectsHandlerAndUsesExplicitDependencies(t *testing.T) {
 				if !ok {
 					t.Fatalf("handler type = %T, want *ServerHandler", handler)
 				}
-				message := readServerMessage(t, serverHandler.serverMessages)
-				want := protocol.HiddenCapabilitiesPrefix + protocol.CapabilityQueryUpdateV1
+				message := queuedFirstFrame(t, serverHandler.baseHandler)
+				want := protocol.HiddenCapabilitiesPrefix + protocol.CapabilityJournalV1
 				if message != want {
 					t.Fatalf("capability advertisement = %q, want %q", message, want)
 				}

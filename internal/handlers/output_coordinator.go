@@ -32,8 +32,12 @@ type outputCoordinator struct {
 	handler *baseHandler
 	output  outputManager
 
-	maprMessages      chan string
-	serverMessages    chan string
+	maprMessages   chan string
+	serverMessages chan string
+	// sessionAcks and ackGate send SESSION acknowledgements ahead of the
+	// output of the workload they acknowledge (see sessionAckGate).
+	sessionAcks       chan sessionAck
+	ackGate           sessionAckGate
 	hostname          string
 	ackCloseReceived  chan struct{}
 	ackCloseOnce      sync.Once
@@ -107,11 +111,11 @@ func (c *outputCoordinator) WaitForOutputEOFAck(ctx context.Context, timeout tim
 func (c *outputCoordinator) next(p []byte) outputReadResult {
 	h := c.handler
 	outputChanged, eofWait := c.output.readWait()
-	if n, handled := c.output.tryRead(p, h.user, c.shouldDropGeneration); handled {
-		if n == 0 {
-			return outputReadResult{kind: outputReadRetry}
-		}
-		return outputReadResult{kind: outputReadBytes, n: n}
+	if result, handled := c.tryReadSessionAckFirst(); handled {
+		return result
+	}
+	if result, handled := c.tryReadPayload(p); handled {
+		return result
 	}
 	if result, handled := c.tryReadQueued(); handled {
 		return result
@@ -128,19 +132,19 @@ func (c *outputCoordinator) next(p []byte) outputReadResult {
 	case message := <-c.flushErrors:
 		stopOptionalTimer(eofTimer)
 		return outputReadResult{kind: outputReadServerMessage, message: message}
+	case ack := <-c.sessionAcks:
+		stopOptionalTimer(eofTimer)
+		return c.deliverSessionAck(ack)
 	case message := <-c.serverMessages:
 		stopOptionalTimer(eofTimer)
-		return c.prioritizeFlushError(message)
-	case message := <-c.maprMessages:
+		return c.takeServerMessage(message)
+	case message := <-c.maprSource():
 		stopOptionalTimer(eofTimer)
-		return outputReadResult{kind: outputReadMaprMessage, message: message}
+		return c.takeMaprMessage(message)
 	case <-h.done.Done():
 		stopOptionalTimer(eofTimer)
-		if n, handled := c.output.tryRead(p, h.user, c.shouldDropGeneration); handled {
-			if n == 0 {
-				return outputReadResult{kind: outputReadRetry}
-			}
-			return outputReadResult{kind: outputReadBytes, n: n}
+		if result, handled := c.tryReadPayload(p); handled {
+			return result
 		}
 		if result, handled := c.tryReadQueued(); handled {
 			return result
@@ -162,7 +166,29 @@ func (c *outputCoordinator) next(p []byte) outputReadResult {
 	}
 }
 
+// tryReadPayload reads queued payload into p, if there is any to deliver
+// (outputManager.tryRead).
+func (c *outputCoordinator) tryReadPayload(p []byte) (outputReadResult, bool) {
+	n, handled := c.output.tryRead(p, c.handler.user, c.shouldDropGeneration)
+	switch {
+	case !handled:
+		return outputReadResult{}, false
+	case n == 0:
+		return outputReadResult{kind: outputReadRetry}, true
+	default:
+		return outputReadResult{kind: outputReadBytes, n: n}, true
+	}
+}
+
+// tryReadQueued takes the next queued message without blocking: a SESSION
+// acknowledgement (and, once it released its generation, the messages
+// deferred for it, see sessionAckGate), a flush error, a server message, a
+// MapReduce message; else it handles flush requests and the close handshake.
+// next calls it only when no payload is to be read.
 func (c *outputCoordinator) tryReadQueued() (outputReadResult, bool) {
+	if result, handled := c.tryReadSessionAck(); handled {
+		return result, true
+	}
 	select {
 	case message := <-c.flushErrors:
 		return outputReadResult{kind: outputReadServerMessage, message: message}, true
@@ -176,15 +202,21 @@ func (c *outputCoordinator) tryReadQueued() (outputReadResult, bool) {
 	}
 	select {
 	case message := <-c.serverMessages:
-		return c.prioritizeFlushError(message), true
+		return c.takeServerMessage(message), true
 	default:
 	}
 	select {
-	case message := <-c.maprMessages:
-		return outputReadResult{kind: outputReadMaprMessage, message: message}, true
+	case message := <-c.maprSource():
+		return c.takeMaprMessage(message), true
 	default:
 	}
+	return c.tryFlushOrClose()
+}
 
+// tryFlushOrClose collects the pending flush requests and, once nothing is
+// queued or held any more, acknowledges them and emits the close handshake
+// if one was requested.
+func (c *outputCoordinator) tryFlushOrClose() (outputReadResult, bool) {
 	receivedFlushRequest := false
 	for {
 		select {
@@ -198,6 +230,11 @@ func (c *outputCoordinator) tryReadQueued() (outputReadResult, bool) {
 			if c.closeSyncRequested.Load() && !c.closeSyncObserved {
 				c.closeSyncObserved = true
 				return outputReadResult{kind: outputReadRetry}, true
+			}
+			if c.ackGate.pending() {
+				// Output held for a SESSION acknowledgement is still to
+				// be sent: neither flushed nor ready for the close.
+				return outputReadResult{}, false
 			}
 			for _, flushAck := range c.pendingFlushAcks {
 				close(flushAck)
@@ -219,7 +256,9 @@ func (c *outputCoordinator) tryReadQueued() (outputReadResult, bool) {
 // blocking, for sessionFramer.readMaprMessage to frame it into the same Read
 // as the mapr message before it. It takes one only where next would take it
 // as well: while no payload, flush error, deferred or queued server message
-// is pending, all of which next delivers before a mapr message. Flush
+// or SESSION acknowledgement is pending, all of which next delivers before a
+// mapr message, and while no output is held or deferred for an
+// acknowledgement (sessionAckGate), which must go first. Flush
 // requests and the close handshake come after the queued mapr messages
 // anyway (tryReadQueued), so they need no check. A message racing in after
 // a check is delivered by the next Read, as it would be without coalescing.
@@ -232,11 +271,16 @@ func (c *outputCoordinator) tryReadQueued() (outputReadResult, bool) {
 // keeps that ordering should a later change defer messages elsewhere.
 func (c *outputCoordinator) tryReadQueuedMapr() (string, bool) {
 	if len(c.flushErrors) > 0 || c.hasDeferredServer || len(c.serverMessages) > 0 ||
-		c.output.bufferedLen() > 0 {
+		len(c.sessionAcks) > 0 || c.ackGate.pending() || c.output.bufferedLen() > 0 {
 		return "", false
 	}
 	select {
 	case message := <-c.maprMessages:
+		// Checked again once taken: its generation may have been held
+		// since (sessionAckGate).
+		if c.ackGate.deferIfHeld(outputReadResult{kind: outputReadMaprMessage, message: message}) {
+			return "", false
+		}
 		return message, true
 	default:
 		return "", false
@@ -266,7 +310,7 @@ func (c *outputCoordinator) waitForCloseAcknowledgement(ctx context.Context) {
 	}
 	h := c.handler
 	// The timeout is for a client that got the close frame and does not
-	// acknowledge it (older clients do not). While the reader is still
+	// acknowledge it (e.g. one that stopped reading). While the reader is still
 	// writing to a slow or paused client (clientSlow), the close frame may
 	// not even have reached it: closing then would cut the session short.
 	const timeout = 5 * time.Second
@@ -324,6 +368,23 @@ func (c *outputCoordinator) ensureFlushChannels() {
 	})
 }
 
+// queuedUnits counts the output still queued for the session reader: server
+// messages and acknowledgements, MapReduce messages and payload bytes. A
+// generation held for its acknowledgement counts as one unit until the
+// acknowledgement went out (sessionAckGate).
+func (c *outputCoordinator) queuedUnits() int {
+	h := c.handler
+	serverCount := len(c.serverMessages) + len(c.sessionAcks)
+	if c.ackGate.held.Load() != 0 {
+		serverCount++
+	}
+	maprCount := len(c.maprMessages)
+	outputBytes := c.output.bufferedLen()
+	h.Logger().Trace(h.user, "flush", "server", serverCount, "mapr", maprCount,
+		"outputBytes", outputBytes)
+	return serverCount + maprCount + outputBytes
+}
+
 func (c *outputCoordinator) flushContext(ctx context.Context) error {
 	h := c.handler
 	if ctx == nil {
@@ -331,20 +392,11 @@ func (c *outputCoordinator) flushContext(ctx context.Context) error {
 	}
 	c.ensureFlushChannels()
 	h.Logger().Trace(h.user, "flush()")
-	queuedUnits := func() int {
-		serverCount := len(c.serverMessages)
-		maprCount := len(c.maprMessages)
-		outputBytes := c.output.bufferedLen()
-		h.Logger().Trace(h.user, "flush", "server", serverCount, "mapr", maprCount,
-			"outputBytes", outputBytes)
-		return serverCount + maprCount + outputBytes
-	}
-
 	maxWait := c.output.resolvedFlushTimeout()
 	if !c.readerSeen.Load() {
 		return nil
 	}
-	if queuedUnits() == 0 && c.readBufferedBytes.Load() == 0 &&
+	if c.queuedUnits() == 0 && c.readBufferedBytes.Load() == 0 &&
 		!c.readActive.Load() && !c.deliveryPending.Load() {
 		h.Logger().Debug(h.user, "ALL lines sent", fmt.Sprintf("%p", h))
 		return nil
@@ -381,7 +433,7 @@ func (c *outputCoordinator) flushContext(ctx context.Context) error {
 				continue
 			}
 			return fmt.Errorf("%w after %s: %d queued units remain",
-				errHandlerFlushTimeout, maxWait, queuedUnits())
+				errHandlerFlushTimeout, maxWait, c.queuedUnits())
 		}
 	}
 }

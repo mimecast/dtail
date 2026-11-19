@@ -135,6 +135,9 @@ func (s *scheduler) prepare(job *config.Scheduled, now time.Time) (dueJob, strin
 		ServersStr:        servers,
 		What:              files,
 		Mode:              omode.MapClient,
+		// Jobs run without a terminal and must end by themselves: never
+		// interactive (NewMaprClient enforces this for every job mode too).
+		InteractiveQuery: false,
 		SSHArgs: config.SSHArgs{
 			NoAuthKey: true,
 			UserName:  config.ScheduleUser,

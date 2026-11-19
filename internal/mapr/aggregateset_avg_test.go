@@ -111,8 +111,10 @@ func TestAggregateSetMergeAvgValueCount(t *testing.T) {
 }
 
 // TestGroupSetAvgResult verifies the rendered avg(): it divides by the value
-// count, falls back to Samples for a set without one (as avg() did before
-// value counts existed), and shows 0 instead of NaN without any value.
+// count, never by Samples, and shows 0 instead of NaN without any value. A
+// sum without its value count cannot arise (AggregateAvg and mergeAvg add
+// both together); a set built that way by hand renders 0 rather than an
+// average guessed from Samples.
 func TestGroupSetAvgResult(t *testing.T) {
 	query, err := NewQuery(avgTestQuery, logging.NopLogger{})
 	if err != nil {
@@ -125,7 +127,7 @@ func TestGroupSetAvgResult(t *testing.T) {
 	}{
 		{"value count", AggregateSet{Samples: 4, FValues: map[string]float64{"avg(lat)": 30},
 			ValueCounts: map[string]int{"avg(lat)": 2}}, "15.000000"},
-		{"no value count", AggregateSet{Samples: 4, FValues: map[string]float64{"avg(lat)": 30}}, "7.500000"},
+		{"sum without value count", AggregateSet{Samples: 4, FValues: map[string]float64{"avg(lat)": 30}}, "0.000000"},
 		{"no value", AggregateSet{Samples: 4, FValues: map[string]float64{"count(status)": 4}}, "0.000000"},
 		{"empty set", AggregateSet{FValues: map[string]float64{}}, "0.000000"},
 	}
@@ -176,7 +178,7 @@ func TestAggregateSetSerializeValueCount(t *testing.T) {
 // TestAggregateSetSerializeCountFollowsSum pins the wire order: each avg()
 // count directly follows its own sum and precedes every last()/len() string,
 // so a message cut short after such a string still carries the counts (the
-// client would otherwise fall back to Samples without any sign of it).
+// client would otherwise reject the avg() sums that lost their counts).
 func TestAggregateSetSerializeCountFollowsSum(t *testing.T) {
 	set := NewAggregateSet()
 	for _, add := range []struct {

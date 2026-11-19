@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -12,18 +13,16 @@ import (
 )
 
 const (
-	// capsNew is the capabilities frame of a server reporting failures.
-	capsNew = protocol.HiddenCapabilitiesPrefix + protocol.CapabilityQueryUpdateV1 + " " +
-		protocol.CapabilityCommandFailureV1 + " " + protocol.CapabilityEscapedFramingV1
-	// capsOld is the capabilities frame of a server reporting no failures.
-	capsOld   = protocol.HiddenCapabilitiesPrefix + protocol.CapabilityQueryUpdateV1
+	// capsNew is the capabilities frame a protocol 5 server starts a
+	// session with.
+	capsNew   = protocol.HiddenCapabilitiesPrefix + protocol.CapabilityJournalV1
 	closeSync = ".syn close connection"
 )
 
-// oldServerWarning is the visible warning frame a server sends for a file
-// it could not read (see readCommand.readFileIfPermissions), the only sign of
-// the failure an old server without protocol.CapabilityCommandFailureV1
-// gives.
+// oldServerWarning is a visible warning frame (here: one for a file the
+// server could not read, see readCommand.readFileIfPermissions). As the first
+// frame of a session it comes from a server of another protocol version,
+// which does not start the session with the marked capabilities frame.
 var oldServerWarning = protocol.ServerMessageID + protocol.FieldSeparator() + "srv1" +
 	protocol.FieldSeparator() + protocol.EncodeTimedDiagnostic(unreadableFileWarning)
 
@@ -126,10 +125,11 @@ func TestStartExitStatus(t *testing.T) {
 		{name: "dcat, output too large", profile: readClientProfile(nil),
 			sessions: []messageSession{{messages: []string{capsNew, tooLarge, closeSync}}},
 			want:     ExitStatusFailedCommand},
-		// An unsupported old server closes normally but cannot be trusted
-		// to have run the read; the compatibility error sets status 1.
+		// A server of another protocol version closes normally but cannot
+		// be trusted to have run the read; the compatibility error sets
+		// status 1, also when a capabilities frame follows.
 		{name: "dcat, unsupported old server", profile: readClientProfile(nil),
-			sessions: []messageSession{{messages: []string{capsOld, oldServerWarning, closeSync}}}, want: 1},
+			sessions: []messageSession{{messages: []string{oldServerWarning, capsNew, closeSync}}}, want: 1},
 		{name: "dcat, missing file on one of two servers", profile: readClientProfile(nil),
 			sessions: []messageSession{ok, readFailure}, want: ExitStatusFailedCommand},
 		{name: "dcat, connection failure", profile: readClientProfile(nil),
@@ -182,6 +182,18 @@ type messageSession struct {
 	serverError string
 }
 
+// encodeSessionMessage frames message as a server does: a hidden message as
+// a marked control frame, any other message as an untagged frame.
+func encodeSessionMessage(message string) []byte {
+	var frame bytes.Buffer
+	if protocol.IsHiddenMessage(message) {
+		protocol.EscapedControlFraming.EncodeControl(&frame, message)
+		return frame.Bytes()
+	}
+	protocol.EscapedControlFraming.EncodeMessage(&frame, protocol.Message{Kind: protocol.MessagePlain, Content: message})
+	return frame.Bytes()
+}
+
 // messageConnector feeds its handler the messages of its session.
 type messageConnector struct {
 	retryTestConnector
@@ -198,7 +210,7 @@ func (c *messageConnector) Start(_ context.Context, cancel context.CancelFunc, _
 	go func() { _, _ = io.Copy(io.Discard, handler) }()
 	defer handler.Shutdown()
 	for _, message := range c.session.messages {
-		if _, err := handler.Write(append([]byte(message), protocol.MessageDelimiter)); err != nil {
+		if _, err := handler.Write(encodeSessionMessage(message)); err != nil {
 			c.t.Errorf("Write(%q) error = %v", message, err)
 		}
 	}

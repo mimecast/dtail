@@ -15,8 +15,7 @@ import (
 // avgCountSuffix turns an avg() storage key into the wire key of the number
 // of values its sum holds (see AvgCountKey). It starts with a double quote,
 // which no select storage key can contain (the query tokenizer splits on it),
-// so the count key never collides with the storage key of a selected field,
-// also not on an older client that receives it.
+// so the count key never collides with the storage key of a selected field.
 const avgCountSuffix = "\"count"
 
 // AggregateSet represents aggregated key/value pairs from the
@@ -24,9 +23,10 @@ const avgCountSuffix = "\"count"
 // values.
 type AggregateSet struct {
 	// Samples counts the lines of the group in which at least one selected
-	// field could be aggregated. avg() does not divide by it (see
-	// ValueCounts); it is still sent because an older client divides avg() by
-	// it, and it stands in for the value count an older server does not send.
+	// field could be aggregated. It is part of the wire format (the second
+	// part of every serialized set) and is added up by Merge and the client,
+	// but no result is computed from it: avg() divides by its value count
+	// (see ValueCounts), not by Samples.
 	Samples int
 	FValues map[string]float64
 	SValues map[string]string
@@ -88,14 +88,13 @@ func (s *AggregateSet) Merge(query *Query, set *AggregateSet) error {
 
 // Serialize the aggregate set so it can be sent over the wire. The value
 // count of each avg() field is sent as one more key/value pair under
-// AvgCountKey; an older client only reads the keys of its selected fields and
-// ignores it.
+// AvgCountKey; the client requires it with every avg() sum.
 //
 // Each count directly follows its own sum, before any last()/len() string.
-// Should a message reach the client cut short (e.g. a frame split inside a
-// last() string), a count is then lost only together with its sum or right
-// after it, never because of a string written between the two, so the client
-// falls back to the message's Samples for at most that one avg() field.
+// Should a message ever reach the client cut short, a count is then lost only
+// together with its sum or right after it, never because of a string written
+// between the two, so the client rejects at most that one avg() field (a sum
+// without its count) instead of averaging it with a wrong count.
 // Returns true when the serialized message was successfully sent, and false
 // when the context was cancelled before the send completed. Callers that own
 // the source state (e.g. Aggregate) must re-merge unsent sets so data is not
@@ -392,14 +391,11 @@ func (s *AggregateSet) aggregateNumber(key string, agg AggregateOperation, value
 }
 
 // avg returns the average of the values aggregated into the avg() sum of
-// storage, or 0 when there are none. A set without a value count for it,
-// which AggregateAvg never makes, falls back to Samples, as avg() did before
-// value counts existed.
+// storage, or 0 when there are none. The sum and its value count are only
+// ever added together (AggregateAvg, mergeAvg), so a set without a value
+// count for storage has no sum for it either.
 func (s *AggregateSet) avg(storage string) float64 {
-	count, ok := s.ValueCounts[storage]
-	if !ok {
-		count = s.Samples
-	}
+	count := s.ValueCounts[storage]
 	// Guard against 0/0, which would render as "NaN" (e.g. an empty set).
 	if count == 0 {
 		return 0

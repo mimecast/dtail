@@ -89,6 +89,30 @@ Older copies of the example config contained ``"Logger": "Fout"``. If your insta
 % grep -n '"Logger"' /etc/dserver/dtail.json
 ```
 
+### Upgrade note: MapReduce queries with stray words are rejected
+
+Older releases silently ignored words the query parser did not expect after the value of a clause, so a misspelled or half-typed word changed nothing or the wrong thing (``order by x asc`` sorted descending, ``order by x reverse`` and ``limit 10 20`` ignored the last word). Such queries are now rejected with an error naming the word (see the notes in [the query language](./querylanguage.md)). Rejected are:
+
+* a word after the value of ``from``, ``order``, ``rorder``, ``interval``, ``limit``, ``logformat`` and ``outfile`` (e.g. ``order by x reverse``, ``limit 10 20``), including a second order field (``order by a,b``); a trailing ``desc`` after ``order`` and ``asc`` after ``rorder`` stay allowed;
+* ``asc`` after ``order`` and ``desc`` after ``rorder``;
+* a bare ``by`` in a ``select`` or ``group by`` list (``select count(x) gropu by x``);
+* ``interval`` without a number;
+* an ``outfile`` path starting with ``append:`` (``outfile append:result.csv`` wrote a new file named ``append:result.csv`` instead of appending to ``result.csv``).
+
+Replacements: use ``rorder by x`` for ascending order (instead of ``order by x asc`` or ``reverse``), write a field named ``by`` as ``` `by` ```, remove the stray word (or add the missing interval), and write ``outfile append result.csv`` to append (or ``outfile ./append:result.csv`` for a file really named so).
+
+dserver does not check the queries of the ``Schedule`` and ``Continuous`` jobs when it starts: a job whose query is now rejected fails each time it runs, with an ERROR log line ``Unable to create job <name>`` followed by the parse error, and writes no outfile. A scheduled job then backs off like any failed run and is given up 24 hours after its ``TimeRange`` ended; a continuous job logs the error at every retry, every minute. Check the dserver log after the upgrade, for example:
+
+```console
+% grep 'Unable to create job' log/*.log
+```
+
+(the ``log`` directory is dserver's ``Common.LogDir``), or check each job query with the new ``dmap --query '...'`` before upgrading dserver: it rejects such a query the same way before connecting.
+
+### Upgrade note: ``outfile append`` appends the result once
+
+``dmap`` and ``dtail --query`` with ``outfile append PATH`` used to append the whole result so far to ``PATH`` at every report interval (every 5 seconds by default), so the file got the same rows again and again. They now append the result once, when the query ends (the client exits, or an interactive reload replaces the query). Scripts that read ``PATH`` while the query runs no longer see interim rows, and a client that is killed or crashes appends nothing. Use ``outfile PATH`` (without ``append``) for a file that is replaced with the result so far at every interval. Scheduled jobs (one final result per run) and continuous jobs (each interval's rows, once) are unchanged.
+
 ### Upgrade note: ``Client.TermColors`` names now take effect
 
 Older releases copied every ``Client.TermColors`` value verbatim into the output, so a colour name such as ``"Red"`` or ``"Dim"`` was printed as literal text instead of a colour; only raw escape sequences such as ``"\u001b[31m"`` worked. Colour and attribute names (matched case-insensitively) are now converted to terminal escape codes, so a configured palette now changes the client's colours.
@@ -133,6 +157,7 @@ The example config above only sets a few keys. The most important ``Server`` set
 | ``MaxConcurrentCats`` | ``2`` | Max concurrent cat/grep/MapReduce reads; also bounds grouped scheduled jobs |
 | ``MaxConcurrentTails`` | ``50`` | Max concurrent tails |
 | ``SharedReadsDisable`` | ``false`` | Turn off shared reads (same-file follow reads and grouped job reads) |
+| ``PathCompletionDisable`` | ``false`` | Turn off the path listing of the interactive path completion (it offers only paths the user may read) |
 | ``MaxLineLength`` | ``1048576`` | Max line length in bytes before a line of a file read, or an entry of a `journal:` read, is split |
 | ``HostKeyPath`` | ``./cache/ssh_host_key`` | Private SSH host key (generated on first start) |
 | ``HostKeyBits`` | ``4096`` | RSA host key size in bits |
@@ -151,9 +176,10 @@ A few pointers beyond the table:
 * **Auth-key fast reconnect**: ``AuthKeyEnabled``/``AuthKeyTTLSeconds``/``AuthKeyMaxPerUser`` tune the in-memory auth-key cache, see [auth-key-fast-reconnect.md](auth-key-fast-reconnect.md).
 * **Session/output tuning**: ``IdleSessionTimeoutS`` plus the ``Output*`` keys above bound idle sessions and slow clients; ``SharedReadsDisable`` trades the shared-read optimization for per-session readers; ``MaxConnections``/``MaxConcurrentCats``/``MaxConcurrentTails`` size the connection and read slots.
 * **Journal support**: dserver advertises the ``journal-v1`` capability on Linux when ``journalctl`` is on ``PATH``; clients can then read ``journal:unit.service`` targets (permission rules must match the full ``journal:...`` target).
-* **UTF-8 lines with `€`, `¬`, `Ь`**: dserver advertises the ``escaped-framing-v1`` capability. Only when both the client and dserver are of this version or newer are such characters (whose UTF-8 encoding contains the protocol's 0xAC message delimiter byte) transferred intact; with an older client or an older dserver, server-mode output still splits those lines as before. Upgrade both sides to get them unchanged.
-* **File paths containing spaces**: dserver advertises the ``encoded-read-path-v1`` capability and reads such paths (also globs, job ``Files`` and ``:reload --files``). A client of this version refuses to send such a path to an older dserver and fails with ``file paths containing spaces or starting with base64% require server capability encoded-read-path-v1`` (a scheduled job counts this as a failed run and writes no outfile); paths without spaces work with every combination of versions. Commas always separate files (``--files a.log,b.log``, positional arguments and job ``Files`` are joined and split at commas), so paths containing a comma cannot be read, and blanks around a path are removed.
-* **`--plain` lines starting with `.` or reading `AUTHKEY OK`**: dserver also advertises the ``control-frames-v1`` capability and then marks its control messages (hidden `.syn ...` messages, `AUTHKEY` replies). Only when both the client and dserver are of this version or newer does `--plain` server-mode output keep log lines such as `.hidden`, `.syn close connection` or `AUTHKEY OK` (and never acts upon them); with an older client or an older dserver such lines are still dropped (and a `.syn ...` line may still end the session or count as a failed command) as before. Output without `--plain` is not affected in any version.
+* **Protocol 5**: clients and dserver must both speak protocol 5 (printed by ``--version``); a client refuses an older dserver (``unsupported DTail server ... please update DTail server``, exit status 1) and dserver rejects the commands of an older client with a version mismatch error (``... please update DTail client``), keeping the session of a protocol 4.x or older client open until the client is stopped or ``IdleSessionTimeoutS`` passes, so that an older ``dtail`` does not reconnect in a loop (a 4.x ``dtailhealth`` session is ended at once, so the health check fails right away). Upgrade both sides together. This also holds between dservers during a rolling upgrade: the scheduled and continuous jobs of a not yet upgraded 4.x dserver are 4.x clients, so a job that reads from an already upgraded dserver gets the mismatch error and its session stays open like that of any older one-shot client, until ``IdleSessionTimeoutS`` on the upgraded dserver; a released 4.x dserver (e.g. v4.3.4) runs its scheduled jobs one after another, so such a job holds up its other scheduled jobs meanwhile.
+* **UTF-8 lines with `€`, `¬`, `Ь`**: every session escapes the protocol's 0xAC message delimiter byte in its frames, so such characters (whose UTF-8 encoding contains that byte) are transferred intact.
+* **File paths containing spaces**: dserver reads such paths (also globs, job ``Files`` and ``:reload --files``); the client sends them encoded. Commas always separate files (``--files a.log,b.log``, positional arguments and job ``Files`` are joined and split at commas), so paths containing a comma cannot be read, and blanks around a path are removed.
+* **`--plain` lines starting with `.` or reading `AUTHKEY OK`**: dserver marks its control messages (hidden `.syn ...` messages, `AUTHKEY` replies), so `--plain` server-mode output keeps log lines such as `.hidden`, `.syn close connection` or `AUTHKEY OK` and never acts upon them.
 * **Scheduled and continuous MapReduce jobs**: the ``Schedule`` and ``Continuous`` config arrays run MapReduce queries periodically (``TimeRange`` hours) or continuously and write CSV outfiles; see the config schema for the job fields.
 
 # Start it

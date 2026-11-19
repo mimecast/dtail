@@ -55,7 +55,11 @@ func run() int {
 		"Logger name (default "+config.DefaultHealthCheckLogger+"; Common.Logger from the config file is ignored)")
 	flag.StringVar(&args.LogLevel, "logLevel", "none", "Log level")
 	flag.StringVar(&args.ServersStr, "server", "", "Remote server to connect")
-	flag.BoolVar(&args.NoAuthKey, "no-auth-key", false, "Disable auth-key fast reconnect feature")
+	// Kept for compatibility only: the health client never registers an
+	// auth key (clients.NewHealthClient, task 7c4), so this flag changes
+	// nothing; NoAuthKey is set below whatever it says.
+	flag.BoolVar(&args.NoAuthKey, "no-auth-key", false,
+		"No effect, kept for compatibility (dtailhealth never registers an auth key)")
 	flag.BoolVar(&args.TrustChangedHostKeys, "trustChangedHostKeys", false,
 		"Also trust a server whose host key differs from the one in known_hosts and replace its entry (refused otherwise)")
 	flag.StringVar(&pprof, "pprof", "", "Start PProf server this address")
@@ -66,6 +70,9 @@ func run() int {
 		return 0
 	}
 
+	// Set before the configuration is set up, so it does not warn about an
+	// auth-key path it cannot determine (e.g. without $HOME) either.
+	args.NoAuthKey = true
 	runtimeCfg, err := config.SetupRuntime(source.HealthCheck, &args, flag.Args())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "CRITICAL: unable to configure dtailhealth: %v\n", err)

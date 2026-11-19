@@ -8,6 +8,7 @@ import (
 	"github.com/mimecast/dtail/internal/authkey"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/fs/readhub"
+	"github.com/mimecast/dtail/internal/io/journal"
 	"github.com/mimecast/dtail/internal/logging"
 	user "github.com/mimecast/dtail/internal/sessionuser"
 )
@@ -28,8 +29,15 @@ type Dependencies struct {
 	ServerlessOutput io.Writer
 	Loggers          HandlerLoggers
 	Capabilities     []string
-	Colorizer        Colorizer
-	Hostname         string
+	// Colorizer paints the serverless payload lines (unless plain). The
+	// in-process client runtime decides about terminal colors and passes a
+	// pass-through colorizer when they are off; nil means the default colors.
+	Colorizer Colorizer
+	// JournalUnits caches the journal unit list of the path listing for
+	// all sessions of a dserver (NewJournalUnitCache); nil makes every
+	// journal: listing run journalctl itself.
+	JournalUnits *journal.UnitCache
+	Hostname     string
 }
 
 // NewForUser creates the handler appropriate for the authenticated user.
@@ -66,4 +74,13 @@ func NewReadHub(serverCfg *config.ServerConfig, logger logging.Logger) *readhub.
 		// when the read starts read on their own.
 		MaxGroupMembers: max(1, serverCfg.MaxConcurrentCats),
 	})
+}
+
+// NewJournalUnitCache returns the cache of the journal units for the path
+// listings of all dserver sessions: journalctl --field _SYSTEMD_UNIT runs
+// at most once per journal.DefaultUnitCacheTTL, and concurrent listings
+// share one run. Each listing still filters the units by its own session
+// user's read permissions.
+func NewJournalUnitCache() *journal.UnitCache {
+	return journal.NewUnitCache(journal.ListUnits, journal.DefaultUnitCacheTTL)
 }

@@ -108,7 +108,7 @@ func TestIteratePaths_DenyWins(t *testing.T) {
 			t.Parallel()
 
 			u := newTestUser(tc.permissions)
-			got, err := u.iteratePaths(tc.path, tc.permType)
+			got, err := u.iteratePaths(tc.path, tc.permType, u.checkLog(false))
 			if err != nil {
 				t.Fatalf("iteratePaths returned unexpected error: %v", err)
 			}
@@ -126,7 +126,7 @@ func TestIteratePaths_InvalidRegex(t *testing.T) {
 	t.Parallel()
 
 	u := newTestUser([]string{"readfiles:[invalid"})
-	_, err := u.iteratePaths("/var/log/app.log", "readfiles")
+	_, err := u.iteratePaths("/var/log/app.log", "readfiles", u.checkLog(false))
 	if err == nil {
 		t.Error("expected an error for invalid regex, got nil")
 	}
@@ -165,5 +165,31 @@ func TestValidateReadTarget_JournalDenyRuleWins(t *testing.T) {
 	_, ok := u.ValidateReadTarget("journal:postgresql.service", "readfiles")
 	if ok {
 		t.Fatal("expected matching journal deny rule to block target")
+	}
+}
+
+// TestValidateReadTarget_JournalDenyRuleNotBypassed checks targets that pass
+// the readfiles rules as strings but make journalctl -u read the denied unit
+// (a glob, the implicit .service suffix, a slice): they must be refused.
+func TestValidateReadTarget_JournalDenyRuleNotBypassed(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string][]string{
+		`readfiles:^journal:.*\.service$`: {
+			"journal:ssh*.service", "journal:ssh[d].service", "journal:*.service",
+			"journal:ssh?.service",
+		},
+		`readfiles:^journal:.*`: {"journal:sshd", "journal:system.slice", "journal:sshd.servic*"},
+	}
+	for allow, specs := range tests {
+		u := newTestUser([]string{`readfiles:!^journal:sshd\.service$`, allow})
+		for _, spec := range specs {
+			if _, ok := u.ValidateReadTarget(spec, "readfiles"); ok {
+				t.Errorf("rules %q: %q passed, want refused", allow, spec)
+			}
+		}
+		if _, ok := u.ValidateReadTarget("journal:nginx.service", "readfiles"); !ok {
+			t.Errorf("rules %q: journal:nginx.service refused, want allowed", allow)
+		}
 	}
 }

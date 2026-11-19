@@ -14,20 +14,13 @@ import (
 	"github.com/mimecast/dtail/internal/session"
 )
 
-// settleTestClients are the sessions whose framing can still change when a
-// command that can not change it arrives: an older client's first command,
-// an escaped-only client's second one.
-var settleTestClients = map[string][]string{
-	"older client":        nil,
-	"escaped-only client": {protocol.EscapedFramingCommand},
-}
-
 // TestServerHandlerSessionStartWithManyMissingFilesDoesNotDeadlock: a
 // SESSION START whose reads queue more "Unable to read file(s)" messages
-// than the server message channel holds acks its spec on the command input
-// goroutine only once the channel has room again. The framing settles before
-// that command is handled, so Read drains the channel meanwhile instead of
-// holding every frame back until the command returned.
+// than the server message channel holds is acknowledged, and the messages
+// all reach the client: while the workload is held for its acknowledgement
+// (sessionAckGate), Read keeps draining the channel into the deferred
+// messages, so neither the reads nor the command input goroutine block, and
+// none of them goes out ahead of the acknowledgement.
 func TestServerHandlerSessionStartWithManyMissingFilesDoesNotDeadlock(t *testing.T) {
 	dir := t.TempDir()
 	files := make([]string, 60)
@@ -38,36 +31,38 @@ func TestServerHandlerSessionStartWithManyMissingFilesDoesNotDeadlock(t *testing
 	if err != nil {
 		t.Fatalf("build SESSION START: %v", err)
 	}
-	for name, first := range settleTestClients {
-		t.Run(name, func(t *testing.T) {
-			handler := newFramingTestServerHandler(t, ServerCapabilities("linux", false))
-			output := &testOutput{}
-			var writeMu sync.Mutex
-			readerDone := startTestReader(handler, output, &writeMu)
-			output.waitForContains(t, protocol.HiddenCapabilitiesPrefix, 5*time.Second)
+	handler := newFramingTestServerHandler(t, ServerCapabilities("linux", false))
+	output := &testOutput{}
+	var writeMu sync.Mutex
+	readerDone := startTestReader(handler, output, &writeMu)
+	output.waitForContains(t, protocol.HiddenCapabilitiesPrefix, 5*time.Second)
 
-			writeTestCommandsWithin(t, handler, &writeMu, 10*time.Second,
-				append(append([]string(nil), first...), start)...)
-			output.waitForContains(t, sessionAckStartOKPrefix, 5*time.Second)
-			if !strings.Contains(output.String(), "Unable to read file(s)") {
-				t.Fatalf("no missing file reported: %q", output.String())
-			}
-			handler.Shutdown()
-			select {
-			case <-readerDone:
-			case <-time.After(5 * time.Second):
-				t.Fatal("reader did not observe EOF after handler shutdown")
-			}
-		})
+	writeTestCommandsWithin(t, handler, &writeMu, 10*time.Second, start)
+	output.waitForContains(t, sessionAckStartOKPrefix, 5*time.Second)
+	// The reports of the workload follow its acknowledgement
+	// (sessionAckGate), failure reports included.
+	waitForAfter(t, output, sessionAckStartOKPrefix, "Unable to read file(s)", 5*time.Second)
+	waitForAfter(t, output, sessionAckStartOKPrefix, protocol.HiddenCommandFailedPrefix, 5*time.Second)
+	before, _, _ := strings.Cut(output.String(), sessionAckStartOKPrefix)
+	if strings.Contains(before, "Unable to read file(s)") ||
+		strings.Contains(before, protocol.HiddenCommandFailedPrefix) {
+		t.Fatalf("output of the workload ahead of its acknowledgement: %q", before)
+	}
+	handler.Shutdown()
+	select {
+	case <-readerDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reader did not observe EOF after handler shutdown")
 	}
 }
 
 // TestServerHandlerFailingOnlyCommandsDoNotWaitForTimeouts: an unknown
 // command or a failed map query that is a session's only command shuts the
 // session down, flushing its output and then running the close handshake.
-// The framing settles before that command is handled, so the flush does not
-// wait for a Read held back until the command returned, which would take the
-// full flush timeout and report a bogus flush error. The shutdown runs off
+// The flush does not wait for a Read held back until the command returned,
+// which would take the full flush timeout and report a bogus flush error, also
+// when former framing requests (now unknown ".ack" commands) come first. The
+// shutdown runs off
 // the command input goroutine (ServerHandler.finishUserCommand), so the
 // client's close acknowledgement, a later command frame, is handled at once
 // instead of after the acknowledgement timeout (5 s).
@@ -76,14 +71,9 @@ func TestServerHandlerFailingOnlyCommandsDoNotWaitForTimeouts(t *testing.T) {
 		"unknown command":  "bogus command",
 		"failed map query": "map: from STATS select count(a),count(a) group by $time",
 	}
-	// A current client's session settles with its framing requests, before
-	// the failing command; the close acknowledgement must not wait there
-	// either.
 	clients := map[string][]string{
-		"current client": {protocol.EscapedFramingCommand, protocol.ControlFramesCommand},
-	}
-	for client, first := range settleTestClients {
-		clients[client] = first
+		"no ack first":           nil,
+		"former framing request": {".ack framing escaped-v1", ".ack framing control-v1"},
 	}
 	for client, first := range clients {
 		for name, command := range commands {

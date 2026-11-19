@@ -27,77 +27,41 @@ import (
 const framingTestContent = "price 5€ ok\nsoft Ь sign\nnot ¬ sign\nbyte \xff\xac end\n"
 
 // splitFrames cuts a server-to-client stream at every MessageDelimiter and
-// decodes each frame in framing, as a client receive loop does.
-func splitFrames(stream []byte, framing protocol.Framing) []string {
+// decodes each frame in sessionFraming, as a client receive loop does,
+// control frames without their marker (see splitMarkedFrames).
+func splitFrames(stream []byte) []string {
 	var frames []string
-	var scratch []byte
-	for len(stream) > 0 {
-		end := bytes.IndexByte(stream, protocol.MessageDelimiter)
-		if end < 0 {
-			break
-		}
-		frames = append(frames, string(framing.DecodeFrame(stream[:end], &scratch)))
-		stream = stream[end+1:]
+	for _, frame := range splitMarkedFrames(stream) {
+		frames = append(frames, frame.body)
 	}
 	return frames
 }
 
-func TestSessionFramerSwitchesToEscapedFramingAfterCapabilitiesFrame(t *testing.T) {
+// TestSessionFramerEscapesFromTheCapabilitiesFrame: every frame of a
+// session, the capabilities frame included, is escaped, and every control
+// frame is marked, without any request of the client.
+func TestSessionFramerEscapesFromTheCapabilitiesFrame(t *testing.T) {
 	handler := newReadTestHandler()
-	capabilities := protocol.HiddenCapabilitiesPrefix + protocol.CapabilityEscapedFramingV1
+	capabilities := protocol.HiddenCapabilitiesPrefix + protocol.CapabilityJournalV1 + " ¬"
 	handler.serverMessages <- capabilities
-
-	enabled := make(chan bool, 1)
-	go func() { enabled <- handler.enableEscapedFraming(context.Background()) }()
-	select {
-	case <-enabled:
-		t.Fatal("escaped framing was enabled before the capabilities frame was encoded")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	if got := splitFrames(readExactly(t, handler, 4096, len(capabilities)+1),
-		protocol.RawFraming); len(got) != 1 || got[0] != capabilities {
-		t.Fatalf("capabilities frame = %q, want raw %q", got, capabilities)
-	}
-	select {
-	case ok := <-enabled:
-		if !ok {
-			t.Fatal("enableEscapedFraming() = false, want true")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("escaped framing was not enabled after the capabilities frame")
-	}
-	// No command arrives through Write here to settle the session framing,
-	// without which Read holds back every frame after the capabilities.
-	handler.settleFraming()
-
 	handler.serverMessages <- "server 5€"
 	handler.maprMessages <- "group≔Ь¬"
+
 	var want bytes.Buffer
-	protocol.EscapedFraming.EncodeMessage(&want, protocol.Message{
+	protocol.EscapedControlFraming.EncodeControl(&want, capabilities)
+	protocol.EscapedControlFraming.EncodeMessage(&want, protocol.Message{
 		Kind: protocol.MessageServer, Hostname: "testhost", Content: "server 5€"})
-	protocol.EscapedFraming.EncodeMessage(&want, protocol.Message{
+	protocol.EscapedControlFraming.EncodeMessage(&want, protocol.Message{
 		Kind: protocol.MessageAggregate, Hostname: "testhost", Content: "group≔Ь¬"})
 	stream := readExactly(t, handler, 4096, want.Len())
 	if !bytes.Equal(stream, want.Bytes()) {
-		t.Fatalf("escaped frames = %q, want %q", stream, want.Bytes())
+		t.Fatalf("frames = %q, want %q", stream, want.Bytes())
 	}
-	frames := splitFrames(stream, protocol.EscapedFraming)
-	if len(frames) != 2 || frames[0] != "SERVER|testhost|server 5€" ||
-		frames[1] != "AGGREGATE|testhost|group≔Ь¬" {
-		t.Fatalf("decoded frames = %q", frames)
-	}
-}
-
-func TestSessionFramerEnableEscapedFramingGivesUpWithContext(t *testing.T) {
-	handler := newReadTestHandler()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if handler.enableEscapedFraming(ctx) {
-		t.Fatal("enableEscapedFraming() = true without an encoded capabilities frame")
-	}
-	if handler.framing() != protocol.RawFraming {
-		t.Fatal("session left raw framing although the switch gave up")
+	frames := splitMarkedFrames(stream)
+	if len(frames) != 3 || !frames[0].control || frames[0].body != capabilities ||
+		frames[1].control || frames[1].body != "SERVER|testhost|server 5€" ||
+		frames[2].control || frames[2].body != "AGGREGATE|testhost|group≔Ь¬" {
+		t.Fatalf("decoded frames = %+v", frames)
 	}
 }
 
@@ -132,16 +96,11 @@ func newFramingTestServerHandlerWithLogger(t *testing.T, capabilities []string,
 	return handler
 }
 
-// runFramingCatSession runs one cat session, with the escaped framing
-// request first when requested, and returns all bytes sent to the client.
-func runFramingCatSession(t *testing.T, handler *ServerHandler, path, options string,
-	request bool) []byte {
+// runFramingCatSession runs one cat session and returns all bytes sent to
+// the client.
+func runFramingCatSession(t *testing.T, handler *ServerHandler, path, options string) []byte {
 	t.Helper()
-	var first []string
-	if request {
-		first = []string{protocol.EscapedFramingCommand}
-	}
-	return runCatSessionAfter(t, handler, path, options, first...)
+	return runCatSessionAfter(t, handler, path, options)
 }
 
 // runCatSessionAfter runs one cat session whose command frames follow the
@@ -205,84 +164,31 @@ func payloadOf(t *testing.T, frames []string) string {
 	return payload.String()
 }
 
-func TestServerHandlerEscapesFramesOnlyWhenNegotiated(t *testing.T) {
+// TestServerHandlerEscapesFrames: lines holding 0xAC and 0xFF bytes reach
+// the client whole in plain and REMOTE line format, as every session
+// escapes its frames. A former framing request (".ack framing escaped-v1",
+// before protocol 5) is just an unknown ".ack" and changes nothing.
+func TestServerHandlerEscapesFrames(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "utf8.log")
 	if err := os.WriteFile(path, []byte(framingTestContent), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	advertised := ServerCapabilities("linux", false)
-	tests := []struct {
-		name         string
-		capabilities []string
-		request      bool
-		wantFraming  protocol.Framing
-	}{
-		{name: "advertised and requested", capabilities: advertised, request: true,
-			wantFraming: protocol.EscapedFraming},
-		{name: "advertised, older client", capabilities: advertised, request: false,
-			wantFraming: protocol.RawFraming},
-		{name: "requested, not advertised", capabilities: nil, request: true,
-			wantFraming: protocol.RawFraming},
-	}
-	for _, test := range tests {
+	for name, first := range map[string][]string{
+		"no request":             nil,
+		"former framing request": {".ack framing escaped-v1", ".ack framing control-v1"},
+	} {
 		for _, options := range []string{"plain=true", ""} {
-			t.Run(test.name+"/"+options, func(t *testing.T) {
-				handler := newFramingTestServerHandler(t, test.capabilities)
-				stream := runFramingCatSession(t, handler, path, options, test.request)
-				frames := splitFrames(stream, test.wantFraming)
-				got := payloadOf(t, frames)
-				if test.wantFraming == protocol.EscapedFraming && got != framingTestContent {
+			t.Run(name+"/"+options, func(t *testing.T) {
+				handler := newFramingTestServerHandler(t, ServerCapabilities("linux", false))
+				stream := runCatSessionAfter(t, handler, path, options, first...)
+				if got := payloadOf(t, splitFrames(stream)); got != framingTestContent {
 					t.Fatalf("payload = %q, want %q", got, framingTestContent)
 				}
-				if test.wantFraming == protocol.RawFraming &&
-					bytes.Contains(stream, []byte{protocol.FrameEscape, 0x01}) {
-					t.Fatalf("raw session sent an escape sequence: %q", stream)
-				}
-				if test.wantFraming == protocol.RawFraming && got == framingTestContent {
-					t.Fatal("raw session unexpectedly kept lines with 0xAC whole")
+				if !bytes.Contains(stream, []byte{protocol.FrameEscape, 0x01}) {
+					t.Fatalf("stream holds no escape sequence: %q", stream)
 				}
 			})
 		}
-	}
-}
-
-// TestServerHandlerHonoursOnlyAFirstEscapedFramingRequest: a framing request
-// switches the session only as its first command; a later one is ignored, so
-// the session stays raw, and a repeated one changes nothing.
-func TestServerHandlerHonoursOnlyAFirstEscapedFramingRequest(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "utf8.log")
-	if err := os.WriteFile(path, []byte(framingTestContent), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	tests := []struct {
-		name        string
-		first       []string
-		wantFraming protocol.Framing
-	}{
-		{name: "late request", first: []string{".ack late first", protocol.EscapedFramingCommand},
-			wantFraming: protocol.RawFraming},
-		{name: "repeated request",
-			first:       []string{protocol.EscapedFramingCommand, protocol.EscapedFramingCommand},
-			wantFraming: protocol.EscapedFraming},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			handler := newFramingTestServerHandler(t, ServerCapabilities("linux", false))
-			stream := runCatSessionAfter(t, handler, path, "plain=true", test.first...)
-			if handler.framing() != test.wantFraming {
-				t.Fatalf("session framing = %s, want %s", handler.framing(), test.wantFraming)
-			}
-			escaped := bytes.Contains(stream, []byte{protocol.FrameEscape, 0x01})
-			if escaped != (test.wantFraming == protocol.EscapedFraming) {
-				t.Fatalf("stream has escape sequences = %v, want framing %s: %q",
-					escaped, test.wantFraming, stream)
-			}
-			if test.wantFraming == protocol.EscapedFraming {
-				if got := payloadOf(t, splitFrames(stream, test.wantFraming)); got != framingTestContent {
-					t.Fatalf("payload = %q, want %q", got, framingTestContent)
-				}
-			}
-		})
 	}
 }
 
@@ -321,8 +227,8 @@ func TestServerHandlerDeliversEscapedMaxLengthLinesAtMinimumBuffer(t *testing.T)
 					&config.ServerConfig{MapreduceLogFormat: "default", AuthKeyEnabled: true,
 						MaxLineLength:        escapedMaxLineLength,
 						OutputBufferMaxBytes: mustMinimumOutputBufferMaxBytes(t, escapedMaxLineLength)})
-				stream := runFramingCatSession(t, handler, path, options, true)
-				frames := splitFrames(stream, protocol.EscapedFraming)
+				stream := runFramingCatSession(t, handler, path, options)
+				frames := splitFrames(stream)
 				for _, frame := range frames {
 					if strings.Contains(frame, protocol.HiddenCommandFailedPrefix) {
 						t.Fatalf("session reported a failed command: %q", frame)
@@ -336,32 +242,37 @@ func TestServerHandlerDeliversEscapedMaxLengthLinesAtMinimumBuffer(t *testing.T)
 	}
 }
 
-func TestEscapedFramingRaisesOnlyAnEscapedSessionsBufferCap(t *testing.T) {
+// TestSessionOutputBufferCapIsAtLeastTheEscapedOne: every session escapes
+// its frames, so its output buffer cap is raised to
+// escapedOutputBufferMaxBytes when OutputBufferMaxBytes is lower, and a larger
+// configured cap is kept.
+func TestSessionOutputBufferCapIsAtLeastTheEscapedOne(t *testing.T) {
 	minimum := mustMinimumOutputBufferMaxBytes(t, escapedMaxLineLength)
 	escaped, ok := escapedOutputBufferMaxBytes(escapedMaxLineLength)
 	if !ok || escaped != 2*escapedMaxLineLength+outputBufferLineOverhead {
 		t.Fatalf("escapedOutputBufferMaxBytes = %d, %v", escaped, ok)
 	}
+	defaultEscaped, _ := escapedOutputBufferMaxBytes(1024 * 1024)
 	for _, test := range []struct {
-		name       string
-		request    bool
-		configured int
-		want       int
+		name string
+		cfg  config.ServerConfig
+		want int
 	}{
-		{name: "raw session keeps the configured cap", configured: minimum, want: minimum},
-		{name: "escaped session raises a smaller cap", request: true, configured: minimum, want: escaped},
-		{name: "escaped session keeps a larger cap", request: true, configured: 4 * escaped,
+		{name: "raises the configured minimum",
+			cfg:  config.ServerConfig{MaxLineLength: escapedMaxLineLength, OutputBufferMaxBytes: minimum},
+			want: escaped},
+		{name: "keeps a larger cap",
+			cfg:  config.ServerConfig{MaxLineLength: escapedMaxLineLength, OutputBufferMaxBytes: 4 * escaped},
 			want: 4 * escaped},
+		{name: "raises the default cap for the default line length",
+			cfg: config.ServerConfig{}, want: max(defaultEscaped, defaultOutputBufferMaxBytes)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			handler := newFramingTestServerHandlerWithConfig(t, ServerCapabilities("linux", false),
-				&config.ServerConfig{MapreduceLogFormat: "default", AuthKeyEnabled: true,
-					MaxLineLength: escapedMaxLineLength, OutputBufferMaxBytes: test.configured})
-			path := filepath.Join(t.TempDir(), "short.log")
-			if err := os.WriteFile(path, []byte("short\n"), 0o644); err != nil {
-				t.Fatalf("write file: %v", err)
+			if got := sessionOutputBufferMaxBytes(&test.cfg); got != test.want {
+				t.Fatalf("sessionOutputBufferMaxBytes = %d, want %d", got, test.want)
 			}
-			runFramingCatSession(t, handler, path, "plain=true", test.request)
+			test.cfg.MapreduceLogFormat = "default"
+			handler := newFramingTestServerHandlerWithConfig(t, ServerCapabilities("linux", false), &test.cfg)
 			handler.output.mu.Lock()
 			got := handler.output.resolvedBufferMaxBytes()
 			handler.output.mu.Unlock()
@@ -399,7 +310,7 @@ func TestServerHandlerReportsOutputTooLargeForTheBuffer(t *testing.T) {
 	handler.output.bufferMaxBytes = escapedMaxLineLength / 2
 	handler.output.mu.Unlock()
 
-	frames := splitFrames(runFramingCatSession(t, handler, path, "", false), protocol.RawFraming)
+	frames := splitFrames(runFramingCatSession(t, handler, path, ""))
 	var warned, reported bool
 	for _, frame := range frames {
 		warned = warned || strings.HasPrefix(frame, "SERVER|testhost|") &&

@@ -24,12 +24,20 @@ func newReadTestHandler() *baseHandler {
 
 func encodeTestMessage(kind protocol.MessageKind, content string) bytes.Buffer {
 	var encoded bytes.Buffer
-	protocol.RawFraming.EncodeMessage(&encoded, protocol.Message{
+	sessionFraming.EncodeMessage(&encoded, protocol.Message{
 		Kind:     kind,
 		Hostname: "testhost",
 		Content:  content,
 	})
 	return encoded
+}
+
+// encodeTestControl returns the marked control frame of message, as the
+// session sends hidden messages.
+func encodeTestControl(message string) []byte {
+	var encoded bytes.Buffer
+	sessionFraming.EncodeControl(&encoded, message)
+	return encoded.Bytes()
 }
 
 // readExactly drains wantLen bytes from the handler using a buffer of bufSize
@@ -105,14 +113,14 @@ func TestBaseHandlerReadLargeMaprMessageAcrossMultipleReads(t *testing.T) {
 
 // TestBaseHandlerReadLargeHiddenMessageAcrossMultipleReads verifies the
 // hidden-message path (messages starting with '.') keeps its remainder across
-// Read calls: hidden messages are forwarded verbatim plus the delimiter.
+// Read calls: hidden messages are forwarded as marked control frames.
 func TestBaseHandlerReadLargeHiddenMessageAcrossMultipleReads(t *testing.T) {
 	handler := newReadTestHandler()
 
 	message := ".hidden " + string(bytes.Repeat([]byte("h"), 500))
 	handler.serverMessages <- message
 
-	want := append([]byte(message), protocol.MessageDelimiter)
+	want := encodeTestControl(message)
 	got := readExactly(t, handler, 32, len(want))
 	if !bytes.Equal(got, want) {
 		t.Fatalf("large hidden message corrupted across reads:\ngot  %q\nwant %q",

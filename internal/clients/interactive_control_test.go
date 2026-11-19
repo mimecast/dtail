@@ -30,8 +30,7 @@ func TestParseInteractiveCommandForGrepReload(t *testing.T) {
 	}
 
 	command, err := parseInteractiveCommand(current,
-		`:reload --grep WARN --before 2 --after 3 --max 4 --invert --files "/tmp/other.log" --plain --quiet --timeout 7`,
-		logging.NopLogger{})
+		`:reload --grep WARN --before 2 --after 3 --max 4 --invert --files "/tmp/other.log" --plain --quiet --timeout 7`)
 	if err != nil {
 		t.Fatalf("parseInteractiveCommand() error = %v", err)
 	}
@@ -68,8 +67,7 @@ func TestParseInteractiveCommandForMapReloadDerivesRegex(t *testing.T) {
 	}
 
 	command, err := parseInteractiveCommand(current,
-		`:reload --query "select count(status) from warnings group by status" --files /tmp/new.log --plain --timeout 9`,
-		logging.NopLogger{})
+		`:reload --query "select count(status) from warnings group by status" --files /tmp/new.log --plain --timeout 9`)
 	if err != nil {
 		t.Fatalf("parseInteractiveCommand() error = %v", err)
 	}
@@ -105,12 +103,12 @@ func TestParseInteractiveReloadRejectsQueryInvert(t *testing.T) {
 			RegexStr: "\\|MAPREDUCE:STATS\\|",
 		}
 		for _, line := range []string{":reload --invert --files /tmp/new.log", ":reload --invert=true --plain"} {
-			_, err := parseInteractiveCommand(current, line, logging.NopLogger{})
+			_, err := parseInteractiveCommand(current, line)
 			if !errors.Is(err, errReloadQueryInvert) {
 				t.Errorf("%s %q: error = %v, want %v", mode, line, err, errReloadQueryInvert)
 			}
 		}
-		command, err := parseInteractiveCommand(current, ":reload --invert=false --plain", logging.NopLogger{})
+		command, err := parseInteractiveCommand(current, ":reload --invert=false --plain")
 		if err != nil {
 			t.Fatalf("%s: --invert=false error = %v", mode, err)
 		}
@@ -127,7 +125,7 @@ func TestParseInteractiveCommandRejectsUnterminatedQuotes(t *testing.T) {
 	}
 
 	if _, err := parseInteractiveCommand(current,
-		`:reload --query "select count(status) from stats`, logging.NopLogger{}); err == nil {
+		`:reload --query "select count(status) from stats`); err == nil {
 		t.Fatalf("expected parseInteractiveCommand() to reject unterminated quoted input")
 	}
 }
@@ -243,7 +241,7 @@ func TestParseInteractiveCommandReloadRegexQuoting(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			command, err := parseInteractiveCommand(current, tt.line, logging.NopLogger{})
+			command, err := parseInteractiveCommand(current, tt.line)
 			if err != nil {
 				t.Fatalf("parseInteractiveCommand(%q) error = %v", tt.line, err)
 			}
@@ -296,7 +294,7 @@ func TestParseInteractiveCommandRejectsBlankValues(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			command, err := parseInteractiveCommand(tt.current, tt.line, logging.NopLogger{})
+			command, err := parseInteractiveCommand(tt.current, tt.line)
 			if err == nil {
 				t.Fatalf("parseInteractiveCommand(%q) = %#v, want error %q", tt.line, command.next, tt.wantErr)
 			}
@@ -311,14 +309,14 @@ func TestParseInteractiveCommandKeepsUnsetBlankFiles(t *testing.T) {
 	// A session without files (e.g. serverless stdin) can still reload other
 	// flags: only an explicitly given --files value is validated.
 	current := config.Args{Mode: omode.GrepClient, RegexStr: "ERROR"}
-	command, err := parseInteractiveCommand(current, `:reload --regex WARN`, logging.NopLogger{})
+	command, err := parseInteractiveCommand(current, `:reload --regex WARN`)
 	if err != nil {
 		t.Fatalf("parseInteractiveCommand() error = %v", err)
 	}
 	if command.next.RegexStr != "WARN" || command.next.What != "" {
 		t.Fatalf("regex = %q, files = %q, want WARN and no files", command.next.RegexStr, command.next.What)
 	}
-	command, err = parseInteractiveCommand(current, `:reload --files 'a.log, ,b.log'`, logging.NopLogger{})
+	command, err = parseInteractiveCommand(current, `:reload --files 'a.log, ,b.log'`)
 	if err != nil {
 		t.Fatalf("parseInteractiveCommand() error = %v", err)
 	}
@@ -330,37 +328,100 @@ func TestParseInteractiveCommandKeepsUnsetBlankFiles(t *testing.T) {
 func TestInteractiveHelpTextMatchesMode(t *testing.T) {
 	query := "select count(status) from stats group by status"
 	tests := []struct {
-		name        string
-		args        config.Args
-		wantExample string
+		name     string
+		args     config.Args
+		wantMode string // "grep", "query" or "files"
 	}{
-		{name: "dgrep", args: config.Args{Mode: omode.GrepClient}, wantExample: `--regex '\d+'`},
-		{name: "dtail", args: config.Args{Mode: omode.TailClient}, wantExample: `--regex '\d+'`},
-		{name: "dtail query", args: config.Args{Mode: omode.TailClient, QueryStr: query}, wantExample: "--query"},
-		{name: "dmap", args: config.Args{Mode: omode.MapClient, QueryStr: query}, wantExample: "--query"},
-		{name: "dcat", args: config.Args{Mode: omode.CatClient}, wantExample: "--files /var/log/a.log,/var/log/b.log"},
+		{name: "dgrep", args: config.Args{Mode: omode.GrepClient}, wantMode: "grep"},
+		{name: "dtail", args: config.Args{Mode: omode.TailClient}, wantMode: "grep"},
+		{name: "dtail query", args: config.Args{Mode: omode.TailClient, QueryStr: query}, wantMode: "query"},
+		{name: "dmap", args: config.Args{Mode: omode.MapClient, QueryStr: query}, wantMode: "query"},
+		{name: "dcat", args: config.Args{Mode: omode.CatClient}, wantMode: "files"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			help := interactiveHelpText(tt.args)
-			if !strings.Contains(help, ":reload <flags>, :show, :help, :quit") {
-				t.Fatalf("help %q lacks the command list", help)
+			for _, want := range []string{"Commands: :reload <flags>, ", ":show, :fields [table], :probe, :help, :quit.",
+				"An empty line pauses or resumes the output",
+				":reload --files /var/log/a.log,/var/log/b.log", ":show prints the current ones"} {
+				if !strings.Contains(help, want) {
+					t.Fatalf("help %q lacks %q", help, want)
+				}
 			}
-			if !strings.Contains(help, tt.wantExample) {
-				t.Fatalf("help %q lacks example %q", help, tt.wantExample)
-			}
-			// A path with a space needs servers advertising
-			// encoded-read-path-v1, so the generic examples avoid one.
+			// A path with a space needs quoting, so the generic examples
+			// avoid one (doc/interactive-query.md explains the quoting).
 			if strings.Contains(help, "my app") || strings.Contains(help, `\ `) {
 				t.Fatalf("help %q suggests a file path with a space", help)
 			}
-			// Only the grep-driven modes accept --regex.
-			grepMode := tt.wantExample == `--regex '\d+'`
-			if strings.Contains(help, "--regex") != grepMode {
-				t.Fatalf("help %q: mentions --regex = %v, want %v", help, !grepMode, grepMode)
+			// Each mode only suggests the flags its :reload accepts.
+			grep, regex, query := strings.Contains(help, "--grep"), strings.Contains(help, "--regex"),
+				strings.Contains(help, "--query")
+			if grep != (tt.wantMode == "grep") || regex != (tt.wantMode == "grep") || query != (tt.wantMode == "query") {
+				t.Fatalf("help %q: --grep %v, --regex %v, --query %v for mode %s",
+					help, grep, regex, query, tt.wantMode)
 			}
 		})
+	}
+}
+
+// TestInteractiveHelpExamplesParse runs every :reload example of the help
+// through the real :reload parser of its mode, so the help never suggests a
+// line that would be rejected (an invalid query, a flag of another mode or
+// a quoting mistake).
+func TestInteractiveHelpExamplesParse(t *testing.T) {
+	query := "from STATS select count($line) group by $hostname"
+	for _, args := range []config.Args{
+		{Mode: omode.GrepClient, What: "/var/log/app.log", RegexStr: "x"},
+		{Mode: omode.TailClient, What: "/var/log/app.log", RegexStr: "x"},
+		{Mode: omode.TailClient, What: "/var/log/app.log", QueryStr: query},
+		{Mode: omode.MapClient, What: "/var/log/app.log", QueryStr: query},
+		{Mode: omode.CatClient, What: "/var/log/app.log"},
+	} {
+		examples := 0
+		for _, line := range strings.Split(interactiveHelpText(args), "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, ":reload ") && !strings.HasPrefix(line, ":query") &&
+				!strings.HasPrefix(line, ":tail") {
+				continue
+			}
+			// Drop the explanation column (two or more blanks after the
+			// command; no example contains a run of blanks itself).
+			if i := strings.Index(line, "  "); i > 0 {
+				line = line[:i]
+			}
+			examples++
+			command, err := parseInteractiveCommand(args, line)
+			if err != nil || ":"+command.kind != strings.Fields(line)[0] {
+				t.Fatalf("mode %s: help example %q: kind %q, err %v", args.Mode, line, command.kind, err)
+			}
+		}
+		if examples == 0 {
+			t.Fatalf("mode %s: help has no :reload example", args.Mode)
+		}
+		requireHelpCommandsParse(t, args)
+	}
+}
+
+// requireHelpCommandsParse parses every command the "Commands:" line of the
+// help names, with a table for :fields; :reload is covered by the examples.
+func requireHelpCommandsParse(t *testing.T, args config.Args) {
+	t.Helper()
+	first, _, _ := strings.Cut(interactiveHelpText(args), ".")
+	commands := strings.Split(strings.TrimPrefix(first, "Commands: "), ", ")
+	if len(commands) < 6 || !strings.HasSuffix(first, ":quit") {
+		t.Fatalf("help names %d commands: %q", len(commands), first)
+	}
+	for _, command := range commands {
+		if strings.HasPrefix(command, ":reload") {
+			continue
+		}
+		line := strings.NewReplacer("[table]", "STATS", "[query]", "from STATS select count($line)",
+			"[regex]", "ERROR").Replace(command)
+		parsed, err := parseInteractiveCommand(args, line)
+		if err != nil || ":"+parsed.kind != strings.Fields(line)[0] {
+			t.Fatalf("help command %q: kind %q, err %v", line, parsed.kind, err)
+		}
 	}
 }
 
@@ -377,7 +438,7 @@ func TestParseInteractiveCommandToleratesSurroundingBlanks(t *testing.T) {
 			":" + kind + "\r",
 			" \t:" + kind + " \t\r",
 		} {
-			command, err := parseInteractiveCommand(current, line, logging.NopLogger{})
+			command, err := parseInteractiveCommand(current, line)
 			if err != nil {
 				t.Fatalf("parseInteractiveCommand(%q) error = %v", line, err)
 			}
@@ -394,7 +455,7 @@ func TestParseInteractiveCommandRequiresExactReload(t *testing.T) {
 	current := config.Args{Mode: omode.GrepClient, What: "/var/log/app.log", RegexStr: "ERROR"}
 
 	for _, line := range []string{":reload --regex WARN", ":reload\t--regex WARN", "\t:reload --regex WARN\r"} {
-		command, err := parseInteractiveCommand(current, line, logging.NopLogger{})
+		command, err := parseInteractiveCommand(current, line)
 		if err != nil {
 			t.Fatalf("parseInteractiveCommand(%q) error = %v", line, err)
 		}
@@ -405,52 +466,17 @@ func TestParseInteractiveCommandRequiresExactReload(t *testing.T) {
 	}
 
 	for _, line := range []string{":reload", " :reload\r", ":reload \t"} {
-		_, err := parseInteractiveCommand(current, line, logging.NopLogger{})
+		_, err := parseInteractiveCommand(current, line)
 		if err == nil || !strings.Contains(err.Error(), "reload requires flags") {
 			t.Fatalf("parseInteractiveCommand(%q) error = %v, want reload requires flags", line, err)
 		}
 	}
 
 	for _, line := range []string{":reloadx", ":reload--regex=x", ":reloads --regex x", ":reload,--regex x"} {
-		_, err := parseInteractiveCommand(current, line, logging.NopLogger{})
+		_, err := parseInteractiveCommand(current, line)
 		if err == nil || !strings.Contains(err.Error(), "unknown command") {
 			t.Fatalf("parseInteractiveCommand(%q) error = %v, want unknown command", line, err)
 		}
-	}
-}
-
-func TestApplyInteractiveReloadRejectsUnsupportedConnections(t *testing.T) {
-	client := &baseClient{
-		mu: newBaseClientMu(),
-		Args: config.Args{
-			Mode:     omode.GrepClient,
-			What:     "/var/log/app.log",
-			RegexStr: "ERROR",
-		},
-		sessionSpec: SessionSpec{
-			Mode:  omode.GrepClient,
-			Files: []string{"/var/log/app.log"},
-			Regex: "ERROR",
-		},
-		connections: []connectors.Connector{
-			&interactiveReloadConnector{server: "srv1", supported: false},
-		},
-	}
-
-	err := client.applyInteractiveReload(config.Args{
-		Mode:     omode.GrepClient,
-		What:     "/tmp/next.log",
-		RegexStr: "WARN",
-	}, SessionSpec{
-		Mode:  omode.GrepClient,
-		Files: []string{"/tmp/next.log"},
-		Regex: "WARN",
-	})
-	if !errors.Is(err, connectors.ErrSessionUnsupported) {
-		t.Fatalf("expected ErrSessionUnsupported, got %v", err)
-	}
-	if client.What != "/var/log/app.log" || client.sessionSpec.Regex != "ERROR" {
-		t.Fatalf("client state changed on unsupported reload: args=%#v spec=%#v", client.Args, client.sessionSpec)
 	}
 }
 
@@ -467,9 +493,9 @@ func TestApplyInteractiveReloadRollsBackEarlyFailure(t *testing.T) {
 	}
 	rollbackErr := errors.New("boom")
 
-	connA := &interactiveReloadConnector{server: "srv1", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
-	connB := &interactiveReloadConnector{server: "srv2", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
-	connC := &interactiveReloadConnector{server: "srv3", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, applyErr: rollbackErr, generation: 4}
+	connA := &interactiveReloadConnector{server: "srv1", committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
+	connB := &interactiveReloadConnector{server: "srv2", committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
+	connC := &interactiveReloadConnector{server: "srv3", committedSpec: oldSpec, liveSpec: oldSpec, applyErr: rollbackErr, generation: 4}
 	recorder := &interactiveReloadRecorder{}
 
 	client := &baseClient{
@@ -493,7 +519,7 @@ func TestApplyInteractiveReloadRollsBackEarlyFailure(t *testing.T) {
 		Regex: "WARN",
 	}
 
-	err := client.applyInteractiveReload(nextArgs, nextSpec)
+	_, err := client.applyInteractiveReload(nextArgs, nextSpec)
 	if err == nil || !errors.Is(err, rollbackErr) {
 		t.Fatalf("expected reload error from failing connection, got %v", err)
 	}
@@ -538,11 +564,10 @@ func TestApplyInteractiveReloadRollsBackLateAckFailure(t *testing.T) {
 		Regex: "WARN",
 	}
 
-	connA := &interactiveReloadConnector{server: "srv1", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
-	connB := &interactiveReloadConnector{server: "srv2", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
+	connA := &interactiveReloadConnector{server: "srv1", committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
+	connB := &interactiveReloadConnector{server: "srv2", committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
 	connC := &interactiveReloadConnector{
 		server:                   "srv3",
-		supported:                true,
 		committedSpec:            oldSpec,
 		liveSpec:                 oldSpec,
 		generation:               4,
@@ -562,7 +587,7 @@ func TestApplyInteractiveReloadRollsBackLateAckFailure(t *testing.T) {
 		What:     "/tmp/new.log",
 		RegexStr: "WARN",
 	}
-	err := client.applyInteractiveReload(nextArgs, nextSpec)
+	_, err := client.applyInteractiveReload(nextArgs, nextSpec)
 	if err == nil || !errors.Is(err, connectors.ErrSessionAckTimeout) {
 		t.Fatalf("expected late ack timeout error, got %v", err)
 	}
@@ -633,7 +658,7 @@ func TestApplyInteractiveReloadRollsBackLateAckFailureWithRealServerConnection(t
 		What:     "/tmp/new.log",
 		RegexStr: "WARN",
 	}
-	err := client.applyInteractiveReload(nextArgs, nextSpec)
+	_, err := client.applyInteractiveReload(nextArgs, nextSpec)
 	if err == nil || !errors.Is(err, connectors.ErrSessionAckTimeout) {
 		t.Fatalf("expected late ack timeout error, got %v", err)
 	}
@@ -657,20 +682,20 @@ func TestApplyInteractiveReloadRollsBackLateAckFailureWithRealServerConnection(t
 	}
 }
 
-// TestApplyInteractiveReloadChecksReadCapabilitiesUpFront covers a mixed
-// fleet: server srv1 reads encoded (spaced) paths, srv2 supports reloads but
-// not encoded paths. A :reload to a spaced path is rejected before any
-// SESSION UPDATE is sent, naming srv2, so srv1 neither switches nor has to be
+// TestApplyInteractiveReloadChecksJournalCapabilityUpFront covers a mixed
+// fleet: server srv1 reads journal targets, srv2 (e.g. without journalctl)
+// does not. A :reload to a journal target is rejected before any SESSION
+// UPDATE is sent, naming srv2, so srv1 neither switches nor has to be
 // rolled back (which would repeat the previous workload's output), and
 // nothing is reported to the user, so the exit status stays 0.
-func TestApplyInteractiveReloadChecksReadCapabilitiesUpFront(t *testing.T) {
+func TestApplyInteractiveReloadChecksJournalCapabilityUpFront(t *testing.T) {
 	oldArgs := config.Args{Mode: omode.TailClient, What: "/var/log/app.log"}
 	oldSpec := SessionSpec{Mode: omode.TailClient, Files: []string{"/var/log/app.log"}}
-	nextArgs := config.Args{Mode: omode.TailClient, What: "/x/my app.log"}
-	nextSpec := SessionSpec{Mode: omode.TailClient, Files: []string{"/x/my app.log"}}
+	nextArgs := config.Args{Mode: omode.TailClient, What: "journal:my app.service"}
+	nextSpec := SessionSpec{Mode: omode.TailClient, Files: []string{"journal:my app.service"}}
 
 	handlerA := newInteractiveReloadSessionHandler(handlers.SessionAck{Action: "update", Generation: 5})
-	handlerA.capabilities[protocol.CapabilityEncodedReadPathV1] = true
+	handlerA.capabilities[protocol.CapabilityJournalV1] = true
 	handlerB := newInteractiveReloadSessionHandler(handlers.SessionAck{Action: "update", Generation: 5})
 	connA := newInteractiveReloadServerConnection(t, "srv1", handlerA, oldSpec)
 	connB := newInteractiveReloadServerConnection(t, "srv2", handlerB, oldSpec)
@@ -681,9 +706,9 @@ func TestApplyInteractiveReloadChecksReadCapabilitiesUpFront(t *testing.T) {
 		connections: []connectors.Connector{connA, connB},
 	}
 
-	err := client.applyInteractiveReload(nextArgs, nextSpec)
-	if !errors.Is(err, connectors.ErrEncodedReadPathUnsupported) {
-		t.Fatalf("expected ErrEncodedReadPathUnsupported, got %v", err)
+	_, err := client.applyInteractiveReload(nextArgs, nextSpec)
+	if !errors.Is(err, connectors.ErrJournalUnsupported) {
+		t.Fatalf("expected ErrJournalUnsupported, got %v", err)
 	}
 	if !strings.HasSuffix(err.Error(), ": srv2") {
 		t.Fatalf("error %q should name srv2 only", err)
@@ -702,9 +727,11 @@ func TestApplyInteractiveReloadChecksReadCapabilitiesUpFront(t *testing.T) {
 		t.Fatalf("client state changed: args=%#v spec=%#v", client.Args, client.sessionSpec)
 	}
 
-	// Once srv2 can read encoded paths too, the same reload applies on both.
-	handlerB.capabilities[protocol.CapabilityEncodedReadPathV1] = true
-	if err := client.applyInteractiveReload(nextArgs, nextSpec); err != nil {
+	// Once srv2 can read journal targets too, the same reload applies on
+	// both. The target contains a space: every protocol 5 server reads
+	// encoded paths, so that needs no capability.
+	handlerB.capabilities[protocol.CapabilityJournalV1] = true
+	if _, err := client.applyInteractiveReload(nextArgs, nextSpec); err != nil {
 		t.Fatalf("reload with capable servers: %v", err)
 	}
 	for _, conn := range []*connectors.ServerConnection{connA, connB} {
@@ -721,8 +748,8 @@ func TestApplyInteractiveReloadCommitsSharedState(t *testing.T) {
 		Query: "select count(status) from stats group by status",
 		Regex: "\\|MAPREDUCE:STATS\\|",
 	}
-	connA := &interactiveReloadConnector{server: "srv1", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
-	connB := &interactiveReloadConnector{server: "srv2", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
+	connA := &interactiveReloadConnector{server: "srv1", committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
+	connB := &interactiveReloadConnector{server: "srv2", committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
 	recorder := &interactiveReloadRecorder{}
 
 	client := &baseClient{
@@ -759,8 +786,14 @@ func TestApplyInteractiveReloadCommitsSharedState(t *testing.T) {
 		Timeout: 5,
 	}
 
-	if err := client.applyInteractiveReload(nextArgs, nextSpec); err != nil {
+	// The prober is not started; its pending request shows the reload
+	// asked for a probe round.
+	client.prober = client.newInteractiveProber()
+	if _, err := client.applyInteractiveReload(nextArgs, nextSpec); err != nil {
 		t.Fatalf("applyInteractiveReload() error = %v", err)
+	}
+	if len(client.prober.trigger) != 1 {
+		t.Fatal("applied reload did not request a probe round")
 	}
 
 	if client.What != "/tmp/new.log" || client.sessionSpec.Query != nextArgs.QueryStr {
@@ -782,8 +815,8 @@ func TestApplyInteractiveReloadRollsBackProfileCommitError(t *testing.T) {
 	oldSpec := SessionSpec{Mode: omode.MapClient, Files: []string{"/var/log/app.log"}, Query: "from STATS select count(*)"}
 	nextArgs := config.Args{Mode: omode.MapClient, What: "/tmp/new.log"}
 	nextSpec := SessionSpec{Mode: omode.MapClient, Files: []string{"/tmp/new.log"}, Query: "from WARNINGS select count(*)"}
-	connA := &interactiveReloadConnector{server: "srv1", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
-	connB := &interactiveReloadConnector{server: "srv2", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
+	connA := &interactiveReloadConnector{server: "srv1", committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
+	connB := &interactiveReloadConnector{server: "srv2", committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
 	commitErr := errors.New("commit failed")
 	client := &baseClient{
 		mu:          newBaseClientMu(),
@@ -795,9 +828,13 @@ func TestApplyInteractiveReloadRollsBackProfileCommitError(t *testing.T) {
 		},
 	}
 
-	err := client.applyInteractiveReload(nextArgs, nextSpec)
+	client.prober = client.newInteractiveProber()
+	_, err := client.applyInteractiveReload(nextArgs, nextSpec)
 	if !errors.Is(err, commitErr) {
 		t.Fatalf("applyInteractiveReload() error = %v, want commit error", err)
+	}
+	if len(client.prober.trigger) != 0 {
+		t.Fatal("rolled back reload requested a probe round")
 	}
 	if !reflect.DeepEqual(client.Args, oldArgs) || !reflect.DeepEqual(client.sessionSpec, oldSpec) {
 		t.Fatalf("client state changed after commit failure: args=%#v spec=%#v", client.Args, client.sessionSpec)
@@ -821,7 +858,22 @@ type interactiveReloadConnector struct {
 	applyCount               int
 	generation               uint64
 	server                   string
-	supported                bool
+	// startBegun makes ReplaceStartSessionSpec report false, as for a
+	// connection whose initial SESSION START already began.
+	startBegun bool
+	// beganWith, with startBegun, is the spec of the begun start, committed
+	// at generation 1 when ReplaceStartSessionSpec is called.
+	beganWith *sessionspec.Spec
+	// startSpecs records the specs ReplaceStartSessionSpec and
+	// RestoreStartSessionSpec replaced the start spec with.
+	startSpecs []sessionspec.Spec
+	// replaceErr and restoreErr, if set, are returned by
+	// ReplaceStartSessionSpec and RestoreStartSessionSpec instead, as for
+	// a SESSION START in flight past the control loop's cap.
+	replaceErr error
+	restoreErr error
+	// restoreCalls counts the RestoreStartSessionSpec calls.
+	restoreCalls int
 }
 
 type interactiveReloadSessionHandler struct {
@@ -836,9 +888,7 @@ var _ handlers.Handler = (*interactiveReloadSessionHandler)(nil)
 
 func newInteractiveReloadSessionHandler(acks ...handlers.SessionAck) *interactiveReloadSessionHandler {
 	return &interactiveReloadSessionHandler{
-		capabilities: map[string]bool{
-			protocol.CapabilityQueryUpdateV1: true,
-		},
+		capabilities:        map[string]bool{},
 		sessionAcks:         append([]handlers.SessionAck(nil), acks...),
 		waitForCapabilities: true,
 	}
@@ -871,17 +921,16 @@ func (*interactiveReloadSessionHandler) Status() int { return 0 }
 
 func (*interactiveReloadSessionHandler) Shutdown() {}
 
+// Done never closes: the fake's session is up, so a :reload updates it.
 func (*interactiveReloadSessionHandler) Done() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
+	return nil
 }
 
 func (h *interactiveReloadSessionHandler) WaitForCapabilities(time.Duration) bool {
 	return h.waitForCapabilities
 }
 
-func (h *interactiveReloadSessionHandler) WaitForSessionAck(timeout time.Duration) (handlers.SessionAck, bool) {
+func (h *interactiveReloadSessionHandler) WaitForSessionAck(timeout, _ time.Duration) (handlers.SessionAck, bool) {
 	if timeout <= 0 {
 		return handlers.SessionAck{}, false
 	}
@@ -943,8 +992,6 @@ func (c *interactiveReloadConnector) Server() string { return c.server }
 
 func (*interactiveReloadConnector) Handler() handlers.Handler { return nil }
 
-func (c *interactiveReloadConnector) SupportsQueryUpdates(time.Duration) bool { return c.supported }
-
 func (c *interactiveReloadConnector) ApplySessionSpec(spec sessionspec.Spec, _ time.Duration) error {
 	_, generation, ok := c.CommittedSession()
 	if !ok {
@@ -977,6 +1024,35 @@ func (c *interactiveReloadConnector) CommittedSession() (sessionspec.Spec, uint6
 		return sessionspec.Spec{}, 0, false
 	}
 	return c.committedSpec, c.generation, true
+}
+
+func (c *interactiveReloadConnector) ReplaceStartSessionSpec(spec sessionspec.Spec) (bool, error) {
+	if c.replaceErr != nil {
+		return false, c.replaceErr
+	}
+	return c.replaceStartSpec(spec)
+}
+
+func (c *interactiveReloadConnector) RestoreStartSessionSpec(spec sessionspec.Spec) (bool, error) {
+	c.restoreCalls++
+	if c.restoreErr != nil {
+		return false, c.restoreErr
+	}
+	return c.replaceStartSpec(spec)
+}
+
+// replaceStartSpec replaces the start spec unless startBegun is set.
+func (c *interactiveReloadConnector) replaceStartSpec(spec sessionspec.Spec) (bool, error) {
+	if c.startBegun {
+		if c.beganWith != nil && c.generation == 0 {
+			// The start that began commits now, as a SESSION START in
+			// flight does before the replacement gets applyMu.
+			c.committedSpec, c.liveSpec, c.generation = *c.beganWith, *c.beganWith, 1
+		}
+		return false, nil
+	}
+	c.startSpecs = append(c.startSpecs, spec)
+	return true, nil
 }
 
 func (c *interactiveReloadConnector) RestoreCommittedSession(spec sessionspec.Spec, generation uint64, committed bool) {
@@ -1033,13 +1109,19 @@ func TestRunInteractiveCommand(t *testing.T) {
 			command: interactiveCommand{kind: "reload", next: nextArgs, spec: nextSpec},
 			connections: func() []connectors.Connector {
 				return []connectors.Connector{&interactiveReloadConnector{
-					server: "srv1", supported: true, committedSpec: spec, liveSpec: spec, generation: 1}}
+					server: "srv1", committedSpec: spec, liveSpec: spec, generation: 1}}
 			},
 			wantOutput: "reload applied successfully\n", wantRegex: "WARN"},
 		{name: "show", command: interactiveCommand{kind: "show"},
 			wantPrefix: "mode=", wantRegex: "ERROR"},
 		{name: "help", command: interactiveCommand{kind: "help"},
 			wantOutput: interactiveHelpText(args) + "\n", wantRegex: "ERROR"},
+		{name: "fields without probe answers", command: interactiveCommand{kind: "fields"},
+			wantOutput: fieldsEmptyMessage + "\n", wantRegex: "ERROR"},
+		{name: "probe without prober", command: interactiveCommand{kind: "probe"},
+			wantOutput: "probe not run: the background prober is not running\n", wantRegex: "ERROR"},
+		{name: "fields write error", command: interactiveCommand{kind: "fields"},
+			failWrite: true, wantErr: writeErr, wantRegex: "ERROR"},
 		{name: "unsupported", command: interactiveCommand{kind: "bogus"},
 			wantOutput: "unsupported command\n", wantRegex: "ERROR"},
 		{name: "quit write error", command: interactiveCommand{kind: "quit"},

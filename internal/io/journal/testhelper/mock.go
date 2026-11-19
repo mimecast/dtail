@@ -271,7 +271,6 @@ while [ "$#" -gt 0 ]; do
   [ "$#" -gt 0 ] && shift
 done
 
-printf '%s\n' "$$" > "$pid_file"
 printf '%s\n' "$original_args" >> "$args_file"
 printf '%s\n' "$unit" >> "$unit_file"
 printf '%s\n' "$follow" >> "$follow_file"
@@ -316,6 +315,10 @@ on_term() {
 }
 
 trap on_term TERM
+# The PID file is written only once the SIGTERM trap is installed: tests
+# that wait for it and then cancel must find the termination recorded, which
+# a SIGTERM arriving before the trap (default action: die silently) would not.
+printf '%s\n' "$$" > "$pid_file"
 
 if [ "$fail_first" -gt 0 ] && [ "$invocations" -le "$fail_first" ]; then
   exit "$fail_exit_code"

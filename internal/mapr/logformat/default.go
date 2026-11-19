@@ -10,6 +10,12 @@ import (
 )
 
 var _ FieldsIntoParser = (*defaultParser)(nil)
+var _ Prober = (*defaultParser)(nil)
+var _ ProbeTabler = (*defaultParser)(nil)
+
+// defaultTableToken is the index of the MAPREDUCE:<TABLE> token in a line of
+// the default format (see MakeFieldsInto).
+const defaultTableToken = 9
 
 type defaultParser struct {
 	hostname       string
@@ -150,7 +156,7 @@ func (p *defaultParser) MakeFieldsInto(dst map[string]string, maprLine, _ string
 			if p.wantUptime {
 				fields["$uptime"] = token
 			}
-		case 9:
+		case defaultTableToken:
 			if !strings.HasPrefix(token, "MAPREDUCE:") {
 				return ErrIgnoreFields
 			}
@@ -252,5 +258,57 @@ func (p *defaultParser) configureFieldPlan(plan mapr.ParserFieldPlan) {
 	p.dynamicFields = make(map[string]struct{}, len(plan.Fields))
 	for field := range plan.Fields {
 		p.dynamicFields[field] = struct{}{}
+	}
+}
+
+// Probe is the default format's own probe: the generic probe, with the fields
+// of every line grouped by the MAPREDUCE:<TABLE> of the line, the table a
+// query names with `from TABLE`.
+func (p *defaultParser) Probe(sample ProbeSample) (ProbeResult, error) {
+	return probeLines(p, sample, defaultLineTable)
+}
+
+// ProbeLineTable tells the table of a line of the default format without
+// parsing its fields (ProbeTabler): like MakeFieldsInto it needs an INFO
+// line of at least the 11 tokens of a mapreduce line whose table token
+// starts with "MAPREDUCE:". A line whose key=value fields do not parse is
+// named a table too, which the probe then lists without fields.
+func (p *defaultParser) ProbeLineTable(maprLine string) (string, bool) {
+	if !strings.HasPrefix(maprLine, "INFO") {
+		return "", false
+	}
+	start, table := 0, ""
+	for tokenIndex := 0; ; tokenIndex++ {
+		token, next, done := protocol.ScanField(maprLine, start)
+		if tokenIndex == defaultTableToken {
+			var ok bool
+			if table, ok = strings.CutPrefix(token, "MAPREDUCE:"); !ok {
+				return "", false
+			}
+		}
+		if tokenIndex == defaultTableToken+1 {
+			return table, true
+		}
+		if done {
+			return "", false
+		}
+		start = next
+	}
+}
+
+// defaultLineTable returns the table name of a line of the default format,
+// the part after "MAPREDUCE:" of its table token. It is called for lines the
+// parser accepted only, whose table token always carries the prefix.
+func defaultLineTable(maprLine string) string {
+	start := 0
+	for tokenIndex := 0; ; tokenIndex++ {
+		token, next, done := protocol.ScanField(maprLine, start)
+		if tokenIndex == defaultTableToken {
+			return strings.TrimPrefix(token, "MAPREDUCE:")
+		}
+		if done {
+			return ProbeAnyTable
+		}
+		start = next
 	}
 }

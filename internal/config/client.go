@@ -96,13 +96,55 @@ type maprTableTermColors struct {
 	RawQueryFg          color.FgColor
 }
 
+// TermStyle is the foreground color and attribute of one kind of text; the
+// background stays the terminal's own, so a style reads on dark and light
+// terminals alike.
+type TermStyle struct {
+	Fg   color.FgColor
+	Attr color.Attribute
+}
+
+// InteractiveTermColors are the styles of the interactive control output:
+// messages of the control loop, :help, :show and :fields, the prompt shown
+// while the output is paused, and the kinds of Tab completion candidates.
+// The candidate styles also highlight the words of MapReduce queries: in
+// :show and after an applied :reload, and in the raw query printed above
+// MapReduce result tables when stdout is a terminal (also outside
+// interactive mode, on the MaprTable.RawQuery* colors).
+type InteractiveTermColors struct {
+	Banner  TermStyle
+	Hint    TermStyle
+	Paused  TermStyle
+	Success TermStyle
+	Error   TermStyle
+	// Heading, Command and Example style :help (and :fields headings).
+	Heading TermStyle
+	Command TermStyle
+	Example TermStyle
+	// Key and Value style the key=value pairs of :show (and :fields).
+	Key    TermStyle
+	Value  TermStyle
+	Prompt TermStyle
+	// Candidate kinds of Tab completion lists and highlighted query words.
+	CandidateKeyword   TermStyle
+	CandidateField     TermStyle
+	CandidateVariable  TermStyle
+	CandidateFunction  TermStyle
+	CandidateOperator  TermStyle
+	CandidateValue     TermStyle
+	CandidateTable     TermStyle
+	CandidatePath      TermStyle
+	CandidateDirectory TermStyle
+}
+
 // TermColors contains the terminal palette used to render protocol messages.
 type TermColors struct {
-	Remote    remoteTermColors
-	Client    clientTermColors
-	Server    serverTermColors
-	Common    commonTermColors
-	MaprTable maprTableTermColors
+	Remote      remoteTermColors
+	Client      clientTermColors
+	Server      serverTermColors
+	Common      commonTermColors
+	MaprTable   maprTableTermColors
+	Interactive InteractiveTermColors
 }
 
 // ClientConfig represents a DTail client configuration (empty as of now as there
@@ -122,7 +164,17 @@ type ClientConfig struct {
 	// to stdout/terminal regardless of this setting. Only affects the default
 	// "fout" logger (stdout+file); see docs for other loggers.
 	LogPayload bool `json:",omitempty"`
+	// EditMode is the key set of the interactive line editor:
+	// EditModeEmacs (the default; also when empty) or EditModeVi, a vi
+	// insert/normal mode on top. --edit-mode overrides it.
+	EditMode string `json:",omitempty"`
 }
+
+// The editing modes of the interactive line editor (ClientConfig.EditMode).
+const (
+	EditModeEmacs = "emacs"
+	EditModeVi    = "vi"
+)
 
 // DefaultTermColors returns the standard terminal palette.
 func DefaultTermColors() TermColors {
@@ -139,6 +191,7 @@ func newDefaultClientConfig() *ClientConfig {
 		// / Client.LogPayload to restore the legacy full-payload tee.
 		LogPayload: false,
 		TermColors: DefaultTermColors(),
+		EditMode:   EditModeEmacs,
 	}
 }
 
@@ -228,6 +281,35 @@ func defaultTermColors() TermColors {
 			RawQueryBg:          color.BgBlack,
 			RawQueryFg:          color.FgCyan,
 		},
+		Interactive: defaultInteractiveTermColors(),
+	}
+}
+
+// defaultInteractiveTermColors returns the default styles of the interactive
+// control output: no background, so they read on dark and light terminals.
+func defaultInteractiveTermColors() InteractiveTermColors {
+	style := func(fg color.FgColor, attr color.Attribute) TermStyle { return TermStyle{Fg: fg, Attr: attr} }
+	return InteractiveTermColors{
+		Banner:             style(color.FgCyan, color.AttrBold),
+		Hint:               style(color.FgCyan, color.AttrNone),
+		Paused:             style(color.FgYellow, color.AttrBold),
+		Success:            style(color.FgGreen, color.AttrNone),
+		Error:              style(color.FgRed, color.AttrBold),
+		Heading:            style(color.FgDefault, color.AttrBold),
+		Command:            style(color.FgCyan, color.AttrBold),
+		Example:            style(color.FgDefault, color.AttrNone),
+		Key:                style(color.FgCyan, color.AttrNone),
+		Value:              style(color.FgDefault, color.AttrNone),
+		Prompt:             style(color.FgYellow, color.AttrBold),
+		CandidateKeyword:   style(color.FgMagenta, color.AttrBold),
+		CandidateField:     style(color.FgGreen, color.AttrNone),
+		CandidateVariable:  style(color.FgYellow, color.AttrNone),
+		CandidateFunction:  style(color.FgBlue, color.AttrNone),
+		CandidateOperator:  style(color.FgMagenta, color.AttrNone),
+		CandidateValue:     style(color.FgCyan, color.AttrNone),
+		CandidateTable:     style(color.FgBlue, color.AttrBold),
+		CandidatePath:      style(color.FgDefault, color.AttrNone),
+		CandidateDirectory: style(color.FgBlue, color.AttrBold),
 	}
 }
 

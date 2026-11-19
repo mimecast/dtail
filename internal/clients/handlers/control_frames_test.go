@@ -29,24 +29,24 @@ var controlLookalikeLines = []string{
 	"\xff\x03.syn close connection\n",
 }
 
-// controlFramesCapabilities is the capabilities frame of a server marking
-// control frames.
+// controlFramesCapabilities is the capabilities frame a protocol 5 server
+// without journal support starts a session with; it lists no capability.
 func controlFramesCapabilities() []byte {
-	return capabilitiesFrame(protocol.CapabilityCommandFailureV1,
-		protocol.CapabilityEscapedFramingV1, protocol.CapabilityControlFramesV1)
+	return capabilitiesFrame()
 }
 
-// controlFrames encodes messages as control frames in framing.
-func controlFrames(framing protocol.Framing, messages ...string) []byte {
+// controlFrames encodes messages as marked control frames, as the server
+// sends them.
+func controlFrames(messages ...string) []byte {
 	var stream bytes.Buffer
 	for _, message := range messages {
-		framing.EncodeControl(&stream, message)
+		protocol.EscapedControlFraming.EncodeControl(&stream, message)
 	}
 	return stream.Bytes()
 }
 
-// TestClientHandlerPrintsControlLookalikePayload: in a session that marks
-// control frames, every unmarked frame is payload, so --plain log lines that
+// TestClientHandlerPrintsControlLookalikePayload: every session marks
+// control frames, so every unmarked frame is payload, so --plain log lines that
 // read like control messages are printed byte for byte and change neither
 // the session outcome nor the capabilities.
 func TestClientHandlerPrintsControlLookalikePayload(t *testing.T) {
@@ -57,9 +57,6 @@ func TestClientHandlerPrintsControlLookalikePayload(t *testing.T) {
 		handler := NewClientHandler("srv1", recorder)
 		writeInChunks(t, handler, stream, size)
 
-		if handler.framing() != protocol.EscapedControlFraming {
-			t.Fatalf("chunk size %d: framing = %v, want escaped-control", size, handler.framing())
-		}
 		if got, want := recorder.payload.String(), strings.Join(controlLookalikeLines, ""); got != want {
 			t.Fatalf("chunk size %d: payload = %q, want %q", size, got, want)
 		}
@@ -89,7 +86,7 @@ func TestClientHandlerHandlesMarkedControlFrames(t *testing.T) {
 	var stream []byte
 	stream = append(stream, controlFramesCapabilities()...)
 	stream = append(stream, payloadFrames(protocol.EscapedControlFraming, "first\n")...)
-	stream = append(stream, controlFrames(protocol.EscapedControlFraming,
+	stream = append(stream, controlFrames(
 		"AUTHKEY ERR feature disabled\n",
 		protocol.HiddenCommandFailedPrefix+protocol.CommandFailureNoFile+"\n",
 		"FUTURE control frame\n",
@@ -113,47 +110,8 @@ func TestClientHandlerHandlesMarkedControlFrames(t *testing.T) {
 	}
 }
 
-// TestClientHandlerKeepsContentRoutingWithoutControlFrames: with a server
-// that escapes but does not mark control frames (or does neither), the
-// content still tells control messages, so its unmarked hidden messages and
-// AUTHKEY replies keep working, and lookalike log lines are still taken for
-// them, as before.
-func TestClientHandlerKeepsContentRoutingWithoutControlFrames(t *testing.T) {
-	tests := []struct {
-		name         string
-		capabilities []string
-		framing      protocol.Framing
-	}{
-		{name: "escaped framing only", capabilities: []string{protocol.CapabilityEscapedFramingV1},
-			framing: protocol.EscapedFraming},
-		{name: "control frames without escaped framing",
-			capabilities: []string{protocol.CapabilityControlFramesV1}, framing: protocol.RawFraming},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			recorder := &payloadRecorder{}
-			handler := NewClientHandler("srv1", recorder)
-			defer handler.Shutdown()
-			stream := append(capabilitiesFrame(test.capabilities...),
-				payloadFrames(test.framing, "kept\n", ".hidden\n",
-					protocol.HiddenCommandFailedPrefix+"x\n", "AUTHKEY OK\n")...)
-			writeInChunks(t, handler, stream, len(stream))
-
-			if handler.framing() != test.framing {
-				t.Fatalf("framing = %v, want %v", handler.framing(), test.framing)
-			}
-			if got := recorder.payload.String(); got != "kept\n" {
-				t.Fatalf("payload = %q, want the legacy content routing", got)
-			}
-			if got := handler.Outcome().Failures; !slices.Equal(got, []string{"x"}) {
-				t.Fatalf("Failures = %q, want the unmarked hidden message handled", got)
-			}
-		})
-	}
-}
-
-// TestMaprHandlerWithControlFrames: a mapreduce session that marks control
-// frames still aggregates its AGGREGATE frames and handles its control
+// TestMaprHandlerWithControlFrames: a mapreduce session, whose control
+// frames are marked like those of every session, still aggregates its AGGREGATE frames and handles its control
 // frames.
 func TestMaprHandlerWithControlFrames(t *testing.T) {
 	query, err := mapr.NewQuery("select status,count(status) from stats group by status", logging.NopLogger{})
@@ -175,8 +133,8 @@ func TestMaprHandlerWithControlFrames(t *testing.T) {
 	stream.Write(controlFramesCapabilities())
 	protocol.EscapedControlFraming.EncodeMessage(&stream, protocol.Message{
 		Kind: protocol.MessageAggregate, Hostname: "host1", Content: serialized + "\n"})
-	stream.Write(controlFrames(protocol.EscapedControlFraming,
-		protocol.HiddenCommandFailedPrefix+protocol.CommandFailureNoFile+"\n"))
+	stream.Write(controlFrames(
+		protocol.HiddenCommandFailedPrefix + protocol.CommandFailureNoFile + "\n"))
 	if _, writeErr := handler.Write(stream.Bytes()); writeErr != nil {
 		t.Fatalf("Write() error = %v", writeErr)
 	}
@@ -193,55 +151,5 @@ func TestMaprHandlerWithControlFrames(t *testing.T) {
 	}
 	if numRows != 1 || !strings.Contains(result, "ok") {
 		t.Fatalf("aggregate result = %q (%d rows), want the group ok", result, numRows)
-	}
-}
-
-// TestClientHandlerRoutesMarkerFramesByContentWithoutControlFrames: in a
-// session that does not mark control frames, a frame whose wire bytes start
-// with the control frame marker FF 03 is no control frame: it is routed by
-// its content as before, which starts with 0xFF and so is payload, printed
-// byte for byte. Under EscapedFraming FF 03 is no escape sequence, so it is
-// decoded unchanged; raw framing does not decode at all.
-func TestClientHandlerRoutesMarkerFramesByContentWithoutControlFrames(t *testing.T) {
-	lines := []string{
-		"\xff\x03.syn close connection\n",
-		"\xff\x03" + protocol.HiddenCommandFailedPrefix + "x\n",
-		"\xff\x03AUTHKEY OK\n",
-	}
-	tests := []struct {
-		name         string
-		capabilities []string
-		framing      protocol.Framing
-	}{
-		{name: "escaped framing only", capabilities: []string{protocol.CapabilityEscapedFramingV1},
-			framing: protocol.EscapedFraming},
-		{name: "raw framing", framing: protocol.RawFraming},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			recorder := &payloadRecorder{}
-			handler := NewClientHandler("srv1", recorder)
-			defer handler.Shutdown()
-			stream := capabilitiesFrame(test.capabilities...)
-			for _, line := range lines {
-				// The marker goes on the wire as is, as a server of a
-				// session not marking control frames never sends it.
-				stream = append(append(stream, line...), protocol.MessageDelimiter)
-			}
-			writeInChunks(t, handler, stream, len(stream))
-
-			if handler.framing() != test.framing {
-				t.Fatalf("framing = %v, want %v", handler.framing(), test.framing)
-			}
-			if got, want := recorder.payload.String(), strings.Join(lines, ""); got != want {
-				t.Fatalf("payload = %q, want %q", got, want)
-			}
-			if outcome := handler.Outcome(); outcome.Completed || len(outcome.Failures) != 0 {
-				t.Fatalf("marker frames changed the outcome to %+v", outcome)
-			}
-			if len(recorder.warnings) != 0 {
-				t.Fatalf("marker frames taken for AUTHKEY replies: %q", recorder.warnings)
-			}
-		})
 	}
 }

@@ -78,6 +78,15 @@ type ServerConfig struct {
 	// the file with a reader of its own, and the scheduler runs its jobs one
 	// at a time.
 	SharedReadsDisable bool `json:",omitempty"`
+	// PathCompletionDisable turns off the path listing of the probe command
+	// (a probe request with a list prefix, used by the interactive path
+	// completion): such a request is then answered with the error
+	// "probe: path listing disabled" and lists nothing. By default a
+	// listing offers only the files the session user may read
+	// (readfiles permissions) and the directories the permissions do not
+	// rule out; a deny rule matching only the files beneath a directory
+	// does not hide its name (see docs/dev/probe.md).
+	PathCompletionDisable bool `json:",omitempty"`
 	// MaxLineLength is the longest line, in bytes without its "\n" but with
 	// the "\r" of a CRLF ending, that file reads pass on whole; a longer line
 	// is cut into pieces of this length. journal: targets cut their entries
@@ -121,8 +130,8 @@ type ServerConfig struct {
 	ReadRetryIntervalMs int `json:",omitempty"`
 	// Maximum payload backing memory retained by the output buffer per SSH
 	// session. It must be at least MaxLineLength + 131072, otherwise dserver
-	// refuses to start (handlers.ValidateOutputBufferConfig in server.New); a
-	// session using escaped framing raises its own cap to at least
+	// refuses to start (handlers.ValidateOutputBufferConfig in server.New);
+	// every client session escapes its frames and so raises its own cap to at least
 	// 2*MaxLineLength + 131072.
 	OutputBufferMaxBytes int `json:",omitempty"`
 	// Maximum time to wait for the session reader to drain output, in milliseconds.

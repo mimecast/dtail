@@ -14,13 +14,17 @@ import (
 	"github.com/mimecast/dtail/internal/omode"
 )
 
+// readFilesPermission is the permission type of the rules that permit
+// reads ("readfiles:<regex>", the default type of a rule without one).
+const readFilesPermission = "readfiles"
+
 type readTimings struct {
-	globRetryInterval         time.Duration
-	readRetryInterval         time.Duration
-	outputEOFAckTimeout       time.Duration
-	legacyAggregateInputGrace time.Duration
-	maxLineLength             int
-	maxGlobTargets            int
+	globRetryInterval            time.Duration
+	readRetryInterval            time.Duration
+	outputEOFAckTimeout          time.Duration
+	unbatchedAggregateInputGrace time.Duration
+	maxLineLength                int
+	maxGlobTargets               int
 }
 
 type lineWriterFactory func(context.Context, uint64) LineWriter
@@ -95,12 +99,12 @@ func newReadTimings(serverCfg *config.ServerConfig) readTimings {
 		serverCfg = &config.ServerConfig{}
 	}
 	return readTimings{
-		globRetryInterval:         durationFromMilliseconds(serverCfg.ReadGlobRetryIntervalMs, 5*time.Second),
-		readRetryInterval:         durationFromMilliseconds(serverCfg.ReadRetryIntervalMs, 2*time.Second),
-		outputEOFAckTimeout:       durationFromMilliseconds(serverCfg.OutputEOFAckTimeoutMs, 2*time.Second),
-		legacyAggregateInputGrace: legacyUnbatchedAggregateInputGrace,
-		maxLineLength:             positiveIntOrDefault(serverCfg.MaxLineLength, 1024*1024),
-		maxGlobTargets:            positiveIntOrDefault(serverCfg.MaxGlobTargets, 1000),
+		globRetryInterval:            durationFromMilliseconds(serverCfg.ReadGlobRetryIntervalMs, 5*time.Second),
+		readRetryInterval:            durationFromMilliseconds(serverCfg.ReadRetryIntervalMs, 2*time.Second),
+		outputEOFAckTimeout:          durationFromMilliseconds(serverCfg.OutputEOFAckTimeoutMs, 2*time.Second),
+		unbatchedAggregateInputGrace: defaultUnbatchedAggregateInputGrace,
+		maxLineLength:                positiveIntOrDefault(serverCfg.MaxLineLength, 1024*1024),
+		maxGlobTargets:               positiveIntOrDefault(serverCfg.MaxGlobTargets, 1000),
 	}
 }
 
@@ -114,8 +118,8 @@ func (t readTimings) withDefaults() readTimings {
 	if t.outputEOFAckTimeout <= 0 {
 		t.outputEOFAckTimeout = 2 * time.Second
 	}
-	if t.legacyAggregateInputGrace <= 0 {
-		t.legacyAggregateInputGrace = legacyUnbatchedAggregateInputGrace
+	if t.unbatchedAggregateInputGrace <= 0 {
+		t.unbatchedAggregateInputGrace = defaultUnbatchedAggregateInputGrace
 	}
 	if t.maxLineLength <= 0 {
 		t.maxLineLength = 1024 * 1024
@@ -128,7 +132,16 @@ func (t readTimings) withDefaults() readTimings {
 
 // PrepareReadTarget validates the current user's access to the given path.
 func (h *ServerHandler) PrepareReadTarget(path string) (fs.ValidatedReadTarget, error) {
-	return h.user.ResolveReadTarget(path, "readfiles")
+	return h.user.ResolveReadTarget(path, readFilesPermission)
+}
+
+// probeReadTarget is PrepareReadTarget for the probe command: the same check
+// with the same result, but it logs about the path at debug level only
+// (sessionuser.User.ResolveReadTargetQuietly). A probe checks up to
+// thousands of paths in every round of every interactive session and logs
+// one "Probe answered" summary line instead (sendProbeAnswer).
+func (h *ServerHandler) probeReadTarget(path string) (fs.ValidatedReadTarget, error) {
+	return h.user.ResolveReadTargetQuietly(path, readFilesPermission)
 }
 
 // ServerlessOutput returns the in-process output destination the runtime
@@ -289,7 +302,10 @@ func (h *ServerHandler) PendingAndActive() (pending int32, activeCommands int32)
 
 // TriggerShutdown runs the idle shutdown on the calling goroutine if the
 // session is idle and nothing claimed that shutdown yet (claimIdleShutdown).
+// It records the wish first (wantIdleShutdown), so that a probe still
+// running then ends the session when it finishes.
 func (h *ServerHandler) TriggerShutdown(ctx context.Context) {
+	h.wantIdleShutdown()
 	if h.claimIdleShutdown(h.PendingAndActive()) {
 		h.shutdown(ctx)
 	}
@@ -329,18 +345,7 @@ func (h *ServerHandler) newReadLineWriter(ctx context.Context, generation uint64
 			generation, h.sessionState.currentGeneration, h.colorizer)
 	}
 
-	// The session framing is final for the line frames this writer
-	// encodes: only the session's first two commands can switch it
-	// (handleEscapedFramingRequest, handleControlFramesRequest), and both are
-	// handled before any read command. A read command that is itself the
-	// first or second command is no framing request, so the framing it sees
-	// is final already; the session settled it before that command was
-	// handled (sessionFramer.settleFramingBeforeCommand). A framing request
-	// with a timeout prefix is ignored (commandDispatcher.dispatchCommand).
-	// The second switch changes control frames only; the payload bytes of a
-	// line frame are the same under EscapedFraming and
-	// EscapedControlFraming.
-	writer := NewNetworkWriter(ctx, h.framing(), nil, h.serverMessages, h.hostname, h.plainMode(), false,
+	writer := NewNetworkWriter(ctx, nil, h.serverMessages, h.hostname, h.plainMode(), false,
 		generation, h.sessionState.currentGeneration, h.Logger())
 	writer.enqueueOutput = h.EnqueueOutput
 	return writer
@@ -397,9 +402,13 @@ func positiveIntOrDefault(value int, fallback int) int {
 	return value
 }
 
+// outputManagerConfig returns the session's output settings. Every session
+// escapes its frames (protocol.EscapedControlFraming), so the buffer cap is
+// raised to escapedOutputBufferMaxBytes when OutputBufferMaxBytes is lower
+// (sessionOutputBufferMaxBytes).
 func (h *ServerHandler) outputManagerConfig() outputManagerConfig {
 	return outputManagerConfig{
-		bufferMaxBytes:    positiveIntOrDefault(h.serverCfg.OutputBufferMaxBytes, defaultOutputBufferMaxBytes),
+		bufferMaxBytes:    sessionOutputBufferMaxBytes(h.serverCfg),
 		flushTimeout:      durationFromMilliseconds(h.serverCfg.OutputFlushTimeoutMs, defaultOutputFlushTimeout),
 		readRetryInterval: durationFromMilliseconds(h.serverCfg.OutputReadRetryIntervalMs, defaultOutputReadRetryInterval),
 	}

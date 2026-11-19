@@ -348,6 +348,11 @@ func setupAdditionalArgs(args *Args, additionalArgs []string) {
 }
 
 func transformClient(in *initializer, args *Args, additionalArgs []string) error {
+	// Only the clients check the edit mode: a typo in this client-only key
+	// of a shared config file must not stop dserver or dtailhealth.
+	if err := in.applyEditMode(args.EditMode); err != nil {
+		return err
+	}
 	applyStringOverride(&args.KnownHostsPath, &in.Client.KnownHostsPath)
 	// Serverless mode.
 	if args.Discovery == "" && isServerlessServers(args.ServersStr) {
@@ -406,4 +411,22 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// applyEditMode sets Client.EditMode from --edit-mode when given (a
+// non-empty flag wins over the config file) and checks it: empty means
+// EditModeEmacs.
+func (in *initializer) applyEditMode(flagValue string) error {
+	if flagValue != "" {
+		in.Client.EditMode = flagValue
+	}
+	switch in.Client.EditMode {
+	case "":
+		in.Client.EditMode = EditModeEmacs
+	case EditModeEmacs, EditModeVi:
+	default:
+		return fmt.Errorf("edit mode must be %q or %q, got %q",
+			EditModeEmacs, EditModeVi, in.Client.EditMode)
+	}
+	return nil
 }

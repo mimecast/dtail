@@ -23,8 +23,7 @@ const benchmarkMaprQuery = "from STATS select count(user),sum(currentConnections
 func maprBenchmarkStream(b *testing.B, query *mapr.Query, groups, intervals int) []byte {
 	b.Helper()
 	var stream bytes.Buffer
-	protocol.RawFraming.EncodeControl(&stream, protocol.HiddenCapabilitiesPrefix+
-		protocol.CapabilityEscapedFramingV1+" "+protocol.CapabilityControlFramesV1)
+	protocol.EscapedControlFraming.EncodeControl(&stream, protocol.HiddenCapabilitiesPrefix)
 	framing := protocol.EscapedControlFraming
 	for interval := range intervals {
 		for group := range groups {

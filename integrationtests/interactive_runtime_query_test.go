@@ -3,7 +3,6 @@ package integrationtests
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,23 +11,6 @@ import (
 	"testing"
 	"time"
 )
-
-type interactiveStep struct {
-	// At is a fixed delay (from the writer start) before Input is sent. It is
-	// only consulted when WaitFor and WaitForFile are empty.
-	At time.Duration
-	// WaitFor, when set, makes the step block until this substring appears in
-	// the accumulated PTY output before Input is sent (bounded by a timeout).
-	// This replaces racy fixed-offset timing with deterministic
-	// synchronization on observed output.
-	WaitFor string
-	// WaitForFile, when set, makes the step block (after WaitFor) until this
-	// file exists before Input is sent (bounded by the same timeout). The test
-	// creates the file once an event outside the PTY output happened, e.g. a
-	// server log line, so a step can also wait for the server.
-	WaitForFile string
-	Input       string
-}
 
 // processOutputCollector collects the output lines of a process, see
 // startInteractiveTestServer.
@@ -353,6 +335,13 @@ func assertInteractiveQuotingOutput(t *testing.T, clientOutput string) {
 func startInteractiveTestServer(ctx context.Context, t *testing.T) (int, *processOutputCollector) {
 	t.Helper()
 	port := getUniquePortNumber()
+	return port, startInteractiveTestServerOnPort(ctx, t, port)
+}
+
+// startInteractiveTestServerOnPort is startInteractiveTestServer on a given
+// port, e.g. one a client was told to connect to before the server ran.
+func startInteractiveTestServerOnPort(ctx context.Context, t *testing.T, port int) *processOutputCollector {
+	t.Helper()
 	args := []string{
 		"--cfg", "none",
 		"--logger", "stdout",
@@ -366,7 +355,7 @@ func startInteractiveTestServer(ctx context.Context, t *testing.T) (int, *proces
 		t.Fatalf("wait for dserver: %v", err)
 	}
 	collector.reset()
-	return port, collector
+	return collector
 }
 
 // launchInteractiveTestServer starts the server binary cmdStr with args and
@@ -509,117 +498,15 @@ func appendLinesOnSchedule(ctx context.Context, path string, steps []interactive
 			}
 		}
 
-		if _, err := fd.WriteString(step.Input + "\n"); err != nil {
+		input := step.Input + "\n"
+		if step.Raw {
+			input = step.Input
+		}
+		if _, err := fd.WriteString(input); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func runInteractivePTYCommand(ctx context.Context, argv []string, steps []interactiveStep) (string, error) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		return "", fmt.Errorf("python3 is required for PTY integration tests: %w", err)
-	}
-
-	script := `
-import json
-import os
-import pty
-import sys
-import threading
-import time
-
-argv = json.loads(os.environ["DTAIL_PTY_ARGV"])
-steps = json.loads(os.environ["DTAIL_PTY_STEPS"])
-
-pid, fd = pty.fork()
-if pid == 0:
-    os.execv(argv[0], argv)
-
-# Shared output buffer, populated by the reader loop below and consulted by the
-# writer thread so a step can wait for a marker to appear before sending input.
-# Declared before the writer starts so a wait_for step never races the buffer.
-output = bytearray()
-
-# Upper bound for how long a wait_for step blocks. The Go-side test context also
-# bounds the whole process, so a genuine product hang still fails rather than
-# hanging forever; on timeout the input is sent anyway so the pending Go
-# assertion reports the real problem instead of the harness deadlocking.
-WAIT_FOR_TIMEOUT = 30.0
-
-def writer():
-    start = time.monotonic()
-    for step in steps:
-        wait_for = step.get("wait_for") or ""
-        if wait_for:
-            needle = wait_for.encode("utf-8")
-            deadline = time.monotonic() + WAIT_FOR_TIMEOUT
-            while needle not in bytes(output):
-                if time.monotonic() >= deadline:
-                    break
-                time.sleep(0.01)
-        wait_for_file = step.get("wait_for_file") or ""
-        if wait_for_file:
-            deadline = time.monotonic() + WAIT_FOR_TIMEOUT
-            while not os.path.exists(wait_for_file):
-                if time.monotonic() >= deadline:
-                    break
-                time.sleep(0.01)
-        if not wait_for and not wait_for_file:
-            wait = (step["at_ms"] / 1000.0) - (time.monotonic() - start)
-            if wait > 0:
-                time.sleep(wait)
-        data = step["input"]
-        if not data.endswith("\n"):
-            data += "\n"
-        os.write(fd, data.encode("utf-8"))
-
-threading.Thread(target=writer, daemon=True).start()
-
-while True:
-    try:
-        chunk = os.read(fd, 4096)
-    except OSError:
-        break
-    if not chunk:
-        break
-    output.extend(chunk)
-
-_, status = os.waitpid(pid, 0)
-sys.stdout.buffer.write(output)
-if os.WIFEXITED(status):
-    sys.exit(os.WEXITSTATUS(status))
-if os.WIFSIGNALED(status):
-    sys.exit(128 + os.WTERMSIG(status))
-sys.exit(1)
-`
-
-	encodedSteps := make([]map[string]any, 0, len(steps))
-	for _, step := range steps {
-		encodedSteps = append(encodedSteps, map[string]any{
-			"at_ms":         step.At.Milliseconds(),
-			"wait_for":      step.WaitFor,
-			"wait_for_file": step.WaitForFile,
-			"input":         step.Input,
-		})
-	}
-
-	argvPayload, err := json.Marshal(argv)
-	if err != nil {
-		return "", err
-	}
-	stepsPayload, err := json.Marshal(encodedSteps)
-	if err != nil {
-		return "", err
-	}
-
-	cmd := exec.CommandContext(ctx, "python3", "-c", script)
-	cmd.Env = append(os.Environ(),
-		"DTAIL_PTY_ARGV="+string(argvPayload),
-		"DTAIL_PTY_STEPS="+string(stepsPayload),
-	)
-	output, err := cmd.CombinedOutput()
-	return string(output), err
 }
 
 func countSubstring(lines []string, needle string) int {

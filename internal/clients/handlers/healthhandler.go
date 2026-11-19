@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"strings"
+
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/clients/clientlog"
 	"github.com/mimecast/dtail/internal/protocol"
@@ -16,12 +18,11 @@ type HealthHandler struct {
 func NewHealthHandler(server string, logger clientlog.Logger) *HealthHandler {
 	logger = clientlog.OrNop(logger)
 	logger.Debug(server, "Creating new health handler")
-	return &HealthHandler{
+	h := &HealthHandler{
 		baseHandler: baseHandler{
 			server:         server,
 			shellStarted:   false,
 			commands:       make(chan string),
-			status:         2, // Assume CRITICAL status by default.
 			done:           internal.NewDone(),
 			capabilities:   make(map[string]struct{}),
 			capabilitiesCh: make(chan struct{}),
@@ -29,36 +30,45 @@ func NewHealthHandler(server string, logger clientlog.Logger) *HealthHandler {
 			logger:         logger,
 		},
 	}
+	h.status.Store(2) // Assume CRITICAL status by default.
+	return h
 }
 
 // Write receives data from the dtail server via the io.Writer interface. The
-// health handler never requests escaped framing (the server's health handler
-// ends the session after the first command and sends no capabilities), so
-// its frames are always raw and "OK" needs no decoding.
+// frames are cut out of p and decoded like those of every other session
+// (scanFrames, decodeFrame): the server's health handler frames them in
+// protocol.EscapedControlFraming too, but sends no capabilities frame, so the
+// first frame is not checked (expectCapabilities is unset). Marked control
+// frames, such as the close handshake, are handled as hidden messages; every
+// other frame is checked for the health status (handleMessage).
 func (h *HealthHandler) Write(p []byte) (n int, err error) {
-	for _, b := range p {
-		switch b {
-		case '\n', protocol.MessageDelimiter:
-			message := h.receiveBuf.String()
-			h.handleMessage(message)
-			h.receiveBuf.Reset()
-		default:
-			h.receiveBuf.WriteByte(b)
-		}
-	}
+	// Measured as busy time for WaitForSessionAck (busyClock), the
+	// whole call.
+	h.busy.begin()
+	defer h.busy.end()
+	h.scanFrames(p, h.handleHealthFrame)
 	return len(p), nil
 }
 
-func (h *HealthHandler) handleMessage(message string) {
-	if len(message) > 0 && message[0] == '.' {
-		h.handleHiddenMessage(message)
+// handleHealthFrame decodes and handles one received frame.
+func (h *HealthHandler) handleHealthFrame(frame []byte) {
+	message, kind := h.decodeFrame(frame)
+	if kind == frameControl {
+		h.handleControlMessage(message)
 		return
 	}
+	h.handleMessage(string(message))
+}
+
+// handleMessage sets the status to OK (0) when message, a payload frame, is
+// the server's "OK", bare or in a SERVER frame, with or without a trailing
+// newline.
+func (h *HealthHandler) handleMessage(message string) {
 	decoded, err := protocol.DecodeMessage(message)
 	if err == nil && decoded.Kind != protocol.MessagePlain {
 		message = decoded.Content
 	}
-	if message == "OK" {
-		h.status = 0
+	if strings.TrimRight(message, "\n") == "OK" {
+		h.status.Store(0)
 	}
 }

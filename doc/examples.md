@@ -60,14 +60,12 @@ Hint: You can also use the shorthand version (omitting the `--files`)
 Hint: `--files` (and the shorthand arguments) take a comma-separated list of
 files or globs, with blanks around each entry removed, so paths containing a
 comma cannot be read. Paths containing spaces work when quoted for the shell,
-e.g. `--files '/var/log/my app/*.log'`; this needs a dserver of the same
-version or newer (capability `encoded-read-path-v1`), and the client fails
-with `file paths containing spaces or starting with base64% require server
-capability encoded-read-path-v1` against an older one.
+e.g. `--files '/var/log/my app/*.log'`; every protocol 5 dserver reads
+them.
 
 ### Aggregating logs
 
-To run ad-hoc map-reduce aggregations on newly written log lines you must add a query. The following example follows all remote log lines and prints out every few seconds the result to standard output.
+To run ad-hoc map-reduce aggregations on newly written log lines you must add a query. The following example follows all remote log lines and prints out the result to standard output every 5 seconds (the query's default `interval`, see `doc/querylanguage.md`) whenever it changed.
 
 Hint: To run a map-reduce query across log lines written in the past, please use the `dmap` command instead.
 
@@ -98,7 +96,7 @@ Here is another example:
 
 ![dtail-map](dtail-map2.gif "Tail mapreduce example 2")
 
-You can also continuously append the results to a CSV file by adding `outfile append filename.csv` to the query:
+You can also append the result to a CSV file by adding `outfile append filename.csv` to the query. As `dtail` accumulates the result of a query with an outfile, the result is appended once, when `dtail` ends (or an interactive reload replaces the query); interim results are not appended. Until then the result is only in memory, so a killed or crashed `dtail` appends nothing; use `outfile result.csv` (without `append`) for a file that always holds the result so far:
 
 ```shell
 % dtail --servers serverlist.txt \
@@ -142,7 +140,7 @@ Hint: `--grep` is an alias for `--regex`.
 
 ## How to use `dmap`
 
-To run a map-reduce aggregation over logs written in the past, the `dmap` command can be used. The following example aggregates all map-reduce fields `dmap` will print interim results every few seconds. You can also write the result to an CSV file by adding `outfile result.csv` to the query.
+To run a map-reduce aggregation over logs written in the past, the `dmap` command can be used. The following example aggregates all map-reduce fields `dmap` will print interim results every 5 seconds (the default `interval`) whenever they changed, and the final result once all files were read. You can also write the result to an CSV file by adding `outfile result.csv` to the query.
 
 ```shell
 % dmap --servers serverlist.txt \
@@ -241,29 +239,30 @@ In server mode the client prints these warnings as output lines, which its own `
 
 ## Exit statuses of `dcat` and `dgrep`
 
-Current clients require the server to advertise `escaped-framing-v1` in its
-first frame. Older servers without it are unsupported: the client reports a
-missing-capability error, asks you to update DTail server, and exits 1. Some
-such servers share the same protocol label (`4.1`) but close on new control
-commands before reading files, which previously looked like a successful
-empty result. Servers with escaped framing but without control-frame markers
-remain supported.
+Clients and servers must both speak protocol 5. With an older server the
+client reports `unsupported DTail server: not a protocol 5 server (no
+capabilities frame first); please update DTail server` and exits 1: some protocol 4.1 servers close on
+the client's control commands before reading files, which would otherwise look
+like a successful empty result. An older client (protocol 4.x or lower) gets
+`... does not match client protocol version '...', please update DTail client`
+from a protocol 5 `dserver`, possibly after some unreadable output; `dserver`
+then keeps its session open, so that an older `dtail` does not reconnect in a
+loop, and the client waits until it is stopped (Ctrl-C) or the server's
+`IdleSessionTimeoutS` ends the session.
 
 `dcat` and `dgrep` exit with one of these statuses, in server and in serverless mode alike:
 
 | Status | Meaning |
 |---|---|
 | `0` | Every server read what was asked. `dgrep` exits `0` also when no line matched (unlike `grep`, which exits `1` then). |
-| `1` | A server could not be connected to (refused or unreachable), the SSH handshake failed or no SSH session could be opened, the server rejected or did not acknowledge an `--interactive-query` session start or the commands could not be sent, a server does not support a requested journal target (capability `journal-v1`) or a path containing a space or starting with `base64%` (capability `encoded-read-path-v1`), a serverless session failed, a session was cut short in the middle of a read (see below), or the client could not start (e.g. a configuration error or no server to connect to). |
+| `1` | A server could not be connected to (refused or unreachable), the SSH handshake failed or no SSH session could be opened, the server rejected or did not acknowledge an `--interactive-query` session start or the commands could not be sent, a server does not support a requested journal target (capability `journal-v1`), the server is of another protocol version, a serverless session failed, a session was cut short in the middle of a read (see below), or the client could not start (e.g. a configuration error or no server to connect to). |
 | `2` | A server reported that a command of the session failed, or the command line had an invalid flag. |
 
 A server reports a failed command when a file is missing (also a glob that matched no file after its retries), denied by the read permissions, or could not be opened or read; when a glob matched more files than the server reads (`MaxGlobTargets`); when it could not parse the read command; and when a read produced more output than the session output buffer (`OutputBufferMaxBytes`) holds. The output of the other files and servers is still printed, and the reason is in the server's warnings and log. With several servers the client exits with the highest status of them all, so a read failure on one server (`2`) outweighs a connection failure on another (`1`). In an `--interactive-query` session a failure that reached the client counts for the whole session, also when it was reported for an earlier workload that a `:reload` has replaced since. A failure of a replaced workload that `dserver` still had queued when the reload took effect is dropped with that workload's other output and does not count, and a workload that a reload cancelled reports no further failures.
 
-A session cut short in the middle of a read (e.g. `dserver` killed, crashed or shut down, or a network failure, so that the session ended without the server's close handshake) exits `1`, as the output may be incomplete, and the client logs `Session ended without the server's close handshake, the output may be incomplete` for that server. A failed command the server reported before (`2`) still outweighs it. Every `dserver` version ends a session it completed with that handshake, so this works with older servers too. A read the client stopped itself keeps its status: Ctrl+C twice, `SIGTERM`, or `:quit` in an `--interactive-query` session.
+A session cut short in the middle of a read (e.g. `dserver` killed, crashed or shut down, or a network failure, so that the session ended without the server's close handshake) exits `1`, as the output may be incomplete, and the client logs `Session ended without the server's close handshake, the output may be incomplete` for that server. A failed command the server reported before (`2`) still outweighs it. Every `dserver` the client accepts (protocol 5, see the exit status `1` above for other versions) ends a session it completed with that handshake. A read the client stopped itself keeps its status: Ctrl+C twice, `SIGTERM`, or `:quit` in an `--interactive-query` session.
 
-In `--plain` server mode a log line that starts with `.syn command failed`, or a log line `.syn close connection`, is printed like any other line and does not change the exit status or end the read. This needs a `dcat`/`dgrep` and a `dserver` that both support control frames (capability `control-frames-v1`); with an older client or server the first is still taken as a failure report (exit `2`), the second as the server's close handshake (the output is truncated at that line and the client exits `0`), and the other lines starting with `.` are dropped. The default (non-plain) output and serverless mode are not affected either way.
-
-Only servers advertising capability `command-failure-v1` report failed commands. With an older `dserver` a missing or unreadable file still exits `0`, as before.
+In `--plain` server mode a log line that starts with `.syn command failed`, or a log line `.syn close connection`, is printed like any other line and does not change the exit status or end the read: the server marks its own control messages, so no log line can be taken for one.
 
 The other clients keep their exit statuses: `dtail` (follow mode) is not affected by failed reads or sessions cut short (it reconnects), `dmap` handles them in its scheduled modes (see the [Server Configuration Guide](./server-configuration.md)), and `dtailhealth` has its own statuses.
 
@@ -281,12 +280,35 @@ Follow the systemd journal of a unit on all servers (Linux servers advertising t
 % dtail --servers serverlist.txt journal:myapp.service
 ```
 
-Keep a `dgrep` run open and reload the query in-flight (see the [Interactive Query Reload documentation](interactive-query.md)):
+`dtail` in a terminal is interactive by default: press Enter to pause the
+output, type `:help` for examples of changing the grep filter or query, and
+`:reload --grep WARN` to change it without reconnecting (`--no-interactive`
+turns this off). The other clients need the flag. Keep a `dgrep` run open and
+reload the query in-flight (see the [Interactive Query Reload documentation](interactive-query.md)):
 
 ```shell
 % dgrep --servers serverlist.txt --files '/var/log/dserver/*.log' --grep ERROR --interactive-query
 :reload --grep WARN
 ```
+
+An interactive `dtail` also switches between following lines and a
+MapReduce query on the same session, with Tab guiding the query from the
+tables and fields found in the logs being read:
+
+```shell
+% dtail --servers serverlist.txt --files '/var/log/dserver/*.log'
+:query <Tab>                       # inserts "from STATS " (the table found)
+:query from STATS select <Tab>     # lists the aggregations, fields, $variables
+:query from STATS select $hostname,count($line) group by $hostname interval 10
+:tail                              # back to following lines
+:fields                            # the tables and fields the servers' logs carry
+```
+
+The first result table shows about a second after every server's first
+results arrived (one `interval` after the query started). Alt-E opens the
+line in `$EDITOR`, and `--edit-mode vi` adds vi keys to the line editor. A
+`dtail` started without `--files` reads nothing and says so; `:reload --files
+PATH` (Tab lists the remote paths) gives it files.
 
 A few more one-liners:
 
@@ -305,9 +327,7 @@ An option given on the command line overrides the config file also when it names
 
 A regex is matched against the line without its line terminator, for every kind of read (`dtail`, `dcat`, `dgrep`, `dmap`, journal targets): `--regex 'foo$'` selects the lines ending in `foo`, and `--regex '^$'` the empty lines of a `dgrep`.
 
-With `--query`, `dtail` reads the lines of the query's table (every line for `from .` or no table), whatever `--regex` or `--grep` say, and it ignores `--invert` with a warning: inverting the table filter would feed the other tables' lines, or only the empty lines, into the aggregation. In an interactive query session (`dmap`, or `dtail --query`, with `--interactive-query`) `:reload --invert` is rejected with the same reason on the terminal, and the current workload keeps running.
-
-Mixed versions: the inverted `.` and `.*` (and `''`) are honoured where the regex is built by a current DTail. In the default command mode the client builds it, so a current client gets the behaviour above from an older `dserver` too. With `--interactive-query` and a server advertising `query-update-v1` (`SESSION START`), `dserver` builds it from the session spec, so a current client talking to an older `dserver` still prints every line. An older client is the other way round: a current `dserver` honours its `--invert` in an interactive session, but not in the default command mode. The same holds for `--query`: a current `dserver` ignores the `--invert` of an older client's interactive `--query` session, while in the default command mode the older client sends the inverted table filter itself. For a named table or `*` the inversion then applies (the query reads every line except those of its table), but for `from .` or no table the filter is `.`, which the older client's regex code turns into a match of every line even when inverted, so such a query still reads every line. Serverless runs always behave as above.
+With `--query`, `dtail` reads the lines of the query's table (every line for `from .` or no table), whatever `--regex` or `--grep` say, and it ignores `--invert` with a warning: inverting the table filter would feed the other tables' lines, or only the empty lines, into the aggregation. An interactive `dtail --query` (on a terminal, the default) prints a one-line note instead: it keeps `--regex`/`--grep`, `--invert`, `--before`, `--after` and `--max` for following lines, which its session can switch to, and sends none of them with the query (see `doc/interactive-query.md`, "How it works"). In an interactive query session (`dmap`, or `dtail --query`, with `--interactive-query`) `:reload --invert` is rejected with the same reason on the terminal, and the current workload keeps running.
 
 ```shell
 % dcat --servers serverlist.txt --trustAllHosts /etc/hostname

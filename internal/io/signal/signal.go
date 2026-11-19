@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	gosignal "os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -100,7 +101,31 @@ func forceExitAfter(wait <-chan time.Time, exit func(int)) {
 }
 
 func forceExit(exit func(int)) {
+	runBeforeForceExit()
 	exit(1)
+}
+
+var (
+	beforeForceExitMu sync.Mutex
+	beforeForceExit   func()
+)
+
+// SetBeforeForceExit registers hook to run right before a forced exit
+// (os.Exit skips deferred calls), e.g. to restore a terminal mode the client
+// changed. It replaces an earlier hook; nil clears it.
+func SetBeforeForceExit(hook func()) {
+	beforeForceExitMu.Lock()
+	defer beforeForceExitMu.Unlock()
+	beforeForceExit = hook
+}
+
+func runBeforeForceExit() {
+	beforeForceExitMu.Lock()
+	hook := beforeForceExit
+	beforeForceExitMu.Unlock()
+	if hook != nil {
+		hook()
+	}
 }
 
 // NoCh doesn't listen on a signal.

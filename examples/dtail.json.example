@@ -85,6 +85,28 @@
         "RawQueryAttr": "Dim",
         "RawQueryBg": "Black",
         "RawQueryFg": "Cyan"
+      },
+      "Interactive": {
+        "Banner": { "Fg": "Cyan", "Attr": "Bold" },
+        "Hint": { "Fg": "Cyan", "Attr": "None" },
+        "Paused": { "Fg": "Yellow", "Attr": "Bold" },
+        "Success": { "Fg": "Green", "Attr": "None" },
+        "Error": { "Fg": "Red", "Attr": "Bold" },
+        "Heading": { "Fg": "Default", "Attr": "Bold" },
+        "Command": { "Fg": "Cyan", "Attr": "Bold" },
+        "Example": { "Fg": "Default", "Attr": "None" },
+        "Key": { "Fg": "Cyan", "Attr": "None" },
+        "Value": { "Fg": "Default", "Attr": "None" },
+        "Prompt": { "Fg": "Yellow", "Attr": "Bold" },
+        "CandidateKeyword": { "Fg": "Magenta", "Attr": "Bold" },
+        "CandidateField": { "Fg": "Green", "Attr": "None" },
+        "CandidateVariable": { "Fg": "Yellow", "Attr": "None" },
+        "CandidateFunction": { "Fg": "Blue", "Attr": "None" },
+        "CandidateOperator": { "Fg": "Magenta", "Attr": "None" },
+        "CandidateValue": { "Fg": "Cyan", "Attr": "None" },
+        "CandidateTable": { "Fg": "Blue", "Attr": "Bold" },
+        "CandidatePath": { "Fg": "Default", "Attr": "None" },
+        "CandidateDirectory": { "Fg": "Blue", "Attr": "Bold" }
       }
     }
   },

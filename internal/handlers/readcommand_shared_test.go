@@ -134,15 +134,15 @@ func (s *sharedReadTestServer) readCommandDependencies() readCommandDependencies
 		readerLogger: logging.NopLogger{},
 		logContext:   "shared-read-test",
 		timings: readTimings{
-			globRetryInterval:         time.Millisecond,
-			readRetryInterval:         10 * time.Millisecond,
-			outputEOFAckTimeout:       time.Millisecond,
-			legacyAggregateInputGrace: time.Millisecond,
-			maxLineLength:             1024 * 1024,
-			maxGlobTargets:            1000,
+			globRetryInterval:            time.Millisecond,
+			readRetryInterval:            10 * time.Millisecond,
+			outputEOFAckTimeout:          time.Millisecond,
+			unbatchedAggregateInputGrace: time.Millisecond,
+			maxLineLength:                1024 * 1024,
+			maxGlobTargets:               1000,
 		},
 		newLineWriter: func(ctx context.Context, generation uint64) LineWriter {
-			return NewNetworkWriter(ctx, protocol.RawFraming, s.outputLines, s.serverMessage, "testhost", true, false,
+			return NewNetworkWriter(ctx, s.outputLines, s.serverMessage, "testhost", true, false,
 				generation, func() uint64 { return 0 }, logging.NopLogger{})
 		},
 		readHub: s.readHub,

@@ -29,6 +29,10 @@ func run() int {
 }
 
 type tailOptions struct {
+	// fs is the parsed flag set, read by InteractiveDefault.Resolve to tell an
+	// explicit --interactive-query from the default.
+	fs                    *flag.FlagSet
+	interactive           *cli.InteractiveDefault
 	checkHealth           bool
 	displayColorTable     bool
 	displayWideColorTable bool
@@ -37,7 +41,7 @@ type tailOptions struct {
 }
 
 func bindTailFlags(fs *flag.FlagSet, args *config.Args) *tailOptions {
-	options := &tailOptions{}
+	options := &tailOptions{fs: fs, interactive: cli.BindInteractiveDefault(fs)}
 	fs.BoolVar(&args.RegexInvert, "invert", false, "Invert regex")
 	fs.BoolVar(&options.checkHealth, "checkHealth", false, "Deprecated, flag will be removed soon")
 	fs.BoolVar(&options.displayColorTable, "colorTable", false, "Show color table")
@@ -58,6 +62,8 @@ func (o *tailOptions) configureRunner(runner *cli.ClientRunner) {
 		if o.grep != "" {
 			args.RegexStr = o.grep
 		}
+		// Interactive query control is dtail's default on a terminal.
+		o.interactive.Resolve(o.fs, args)
 	}).BeforeRuntime(func(args *config.Args) (bool, int) {
 		if args.Plain {
 			return false, 0
@@ -83,8 +89,15 @@ func (o *tailOptions) configureRunner(runner *cli.ClientRunner) {
 	})
 }
 
+// buildTailClient builds the client of dtail. An interactive dtail gets the
+// client that can switch its running session between following lines and a
+// MapReduce query (NewInteractiveTailClient), with or without --query; a
+// non-interactive one the tail client, or the MapReduce client with --query.
 func buildTailClient(args config.Args, cfg config.RuntimeConfig, loggers clients.LoggerDependencies,
 	colorizer *brush.Brush) (clients.Client, error) {
+	if args.InteractiveQuery {
+		return clients.NewInteractiveTailClient(args, cfg, loggers, colorizer)
+	}
 	if args.QueryStr == "" {
 		return clients.NewTailClient(args, cfg, loggers, colorizer)
 	}

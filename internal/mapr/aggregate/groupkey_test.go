@@ -88,15 +88,15 @@ func TestCompoundGroupTransportAndServerMerge(t *testing.T) {
 			a.serializer.serialize(context.Background())
 			for len(messages) > 0 {
 				var wire bytes.Buffer
-				// Sessions of current clients and servers use escaped framing.
-				protocol.EscapedFraming.EncodeMessage(&wire, protocol.Message{Kind: protocol.MessageAggregate,
+				// Every session frames in EscapedControlFraming.
+				protocol.EscapedControlFraming.EncodeMessage(&wire, protocol.Message{Kind: protocol.MessageAggregate,
 					Hostname: server, Content: <-messages})
 				frame := wire.Bytes()
 				if bytes.Count(frame, []byte{protocol.MessageDelimiter}) != 1 {
 					t.Fatalf("group key corrupted stream framing: %q", frame)
 				}
 				var scratch []byte
-				body := protocol.EscapedFraming.DecodeFrame(frame[:len(frame)-1], &scratch)
+				body := protocol.EscapedControlFraming.DecodeFrame(frame[:len(frame)-1], &scratch)
 				message, err := protocol.DecodeMessage(string(body))
 				if err != nil {
 					t.Fatal(err)

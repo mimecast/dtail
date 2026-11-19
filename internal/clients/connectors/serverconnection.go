@@ -18,7 +18,6 @@ import (
 	"github.com/mimecast/dtail/internal/clients/handlers"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/logging"
-	"github.com/mimecast/dtail/internal/protocol"
 	sessionspec "github.com/mimecast/dtail/internal/session"
 	"github.com/mimecast/dtail/internal/ssh/client"
 
@@ -28,7 +27,11 @@ import (
 // SSHSettings provides the connection settings needed by ServerConnection.
 type SSHSettings interface {
 	SSHPort() int
+	// SSHConnectTimeout bounds the TCP connect.
 	SSHConnectTimeout() time.Duration
+	// SSHHandshakeTimeout bounds the SSH handshake after the TCP connect,
+	// not counting the host key check (see handshakeDeadline).
+	SSHHandshakeTimeout() time.Duration
 }
 
 type sshSession interface {
@@ -50,6 +53,7 @@ type sshSessionIO struct {
 
 const (
 	defaultSSHConnectTimeout    = 2 * time.Second
+	defaultSSHHandshakeTimeout  = 30 * time.Second
 	defaultSSHPort              = 2222
 	defaultCapabilityWait       = 250 * time.Millisecond
 	defaultSSHCloseDrainTimeout = 6 * time.Second
@@ -63,17 +67,19 @@ type ServerConnection struct {
 	// Only the hostname or FQDN (without the port number)
 	hostname string
 	// Only the port number.
-	port            int
-	config          *ssh.ClientConfig
-	handler         handlers.Handler
-	commands        []string
-	sessionSpec     sessionspec.Spec
-	sessionState    committedSessionState
-	interactive     bool
-	authKeyPath     string
-	authKeyDisabled bool
-	hostKeyCallback client.HostKeyCallback
-	logger          logging.Logger
+	port int
+	// handshakeTimeout bounds the SSH handshake (see handshakeDeadline).
+	handshakeTimeout time.Duration
+	config           *ssh.ClientConfig
+	handler          handlers.Handler
+	commands         []string
+	sessionSpec      sessionspec.Spec
+	sessionState     committedSessionState
+	interactive      bool
+	authKeyPath      string
+	authKeyDisabled  bool
+	hostKeyCallback  client.HostKeyCallback
+	logger           logging.Logger
 	// dialFn is an optional seam for connection lifecycle tests.
 	dialFn serverDialFunc
 	// throttleReleased ensures the throttle slot is returned to throttleCh
@@ -95,35 +101,28 @@ func NewServerConnection(server string, userName string,
 
 	logger = logging.OrNop(logger)
 	logger.Debug(server, "Creating new connection", server, handler, config.RedactReadShares(commands))
-	sshConnectTimeout := defaultSSHConnectTimeout
-	defaultPort := defaultSSHPort
-	if settings != nil {
-		sshConnectTimeout = settings.SSHConnectTimeout()
-		defaultPort = settings.SSHPort()
-	}
-	if sshConnectTimeout <= 0 {
-		sshConnectTimeout = defaultSSHConnectTimeout
-	}
-	if defaultPort == 0 {
-		defaultPort = defaultSSHPort
-	}
+	connectTimeout, handshakeTimeout, defaultPort := resolveSSHSettings(settings)
 
 	c := ServerConnection{
-		hostKeyCallback: hostKeyCallback,
-		server:          server,
-		handler:         handler,
-		commands:        commands,
-		sessionSpec:     sessionSpec,
-		interactive:     interactive,
-		authKeyPath:     resolveAuthKeyPath(authKeyPath),
-		authKeyDisabled: authKeyDisabled,
-		logger:          logger,
+		hostKeyCallback:  hostKeyCallback,
+		server:           server,
+		handler:          handler,
+		commands:         commands,
+		sessionSpec:      sessionSpec,
+		interactive:      interactive,
+		authKeyPath:      resolveAuthKeyPath(authKeyPath),
+		authKeyDisabled:  authKeyDisabled,
+		logger:           logger,
+		handshakeTimeout: handshakeTimeout,
 		config: &ssh.ClientConfig{
-			User:    userName,
-			Auth:    authMethods,
-			Timeout: sshConnectTimeout,
-			// HostKeyCallback is assigned per-handshake in dial() so the
-			// callback can honour the handshake's context (see dial()).
+			User: userName,
+			Auth: authMethods,
+			// Timeout is the TCP connect timeout of dial(); the handshake
+			// has its own (handshakeTimeout).
+			Timeout: connectTimeout,
+			// HostKeyCallback is assigned per-handshake in handshake() so
+			// the callback can honour the handshake's context and pause
+			// the handshake deadline (see handshake()).
 		},
 	}
 
@@ -131,6 +130,26 @@ func NewServerConnection(server string, userName string,
 		return nil, err
 	}
 	return &c, nil
+}
+
+// resolveSSHSettings returns the connect and handshake timeouts and the
+// default port of settings, with the defaults for nil settings and values
+// that are not positive.
+func resolveSSHSettings(settings SSHSettings) (time.Duration, time.Duration, int) {
+	connectTimeout, handshakeTimeout, port := defaultSSHConnectTimeout, defaultSSHHandshakeTimeout, defaultSSHPort
+	if settings == nil {
+		return connectTimeout, handshakeTimeout, port
+	}
+	if timeout := settings.SSHConnectTimeout(); timeout > 0 {
+		connectTimeout = timeout
+	}
+	if timeout := settings.SSHHandshakeTimeout(); timeout > 0 {
+		handshakeTimeout = timeout
+	}
+	if settingsPort := settings.SSHPort(); settingsPort != 0 {
+		port = settingsPort
+	}
+	return connectTimeout, handshakeTimeout, port
 }
 
 // Server returns the server hostname connected to.
@@ -141,15 +160,8 @@ func (c *ServerConnection) log() logging.Logger { return logging.OrNop(c.logger)
 // Handler returns the handler used for the connection.
 func (c *ServerConnection) Handler() handlers.Handler { return c.handler }
 
-// SupportsQueryUpdates reports whether the remote server advertised the
-// runtime query replacement capability. Older servers simply time out and
-// return false here without affecting the legacy command path.
-func (c *ServerConnection) SupportsQueryUpdates(timeout time.Duration) bool {
-	return supportsQueryUpdates(c.handler, timeout)
-}
-
 // ApplySessionSpec starts or updates the interactive session state on the
-// existing SSH connection when runtime query updates are supported.
+// existing SSH connection.
 func (c *ServerConnection) ApplySessionSpec(spec sessionspec.Spec, timeout time.Duration) error {
 	return applySessionSpec(c.server, c.handler, &c.sessionState, spec, timeout, c.logger)
 }
@@ -163,6 +175,18 @@ func (c *ServerConnection) ApplySessionSpecWithGeneration(spec sessionspec.Spec,
 // CommittedSession returns the last server-acknowledged session state.
 func (c *ServerConnection) CommittedSession() (sessionspec.Spec, uint64, bool) {
 	return c.sessionState.snapshot()
+}
+
+// ReplaceStartSessionSpec makes spec the workload of the initial SESSION
+// START if that has not begun yet (see Connector).
+func (c *ServerConnection) ReplaceStartSessionSpec(spec sessionspec.Spec) (bool, error) {
+	return c.sessionState.replaceStartSpec(spec)
+}
+
+// RestoreStartSessionSpec rolls the start spec back after a failed reload
+// (see Connector).
+func (c *ServerConnection) RestoreStartSessionSpec(spec sessionspec.Spec) (bool, error) {
+	return c.sessionState.restoreStartSpec(spec)
 }
 
 // RestoreCommittedSession resets the local session snapshot without advancing
@@ -275,9 +299,13 @@ func validateServerHost(hostname string) error {
 	return nil
 }
 
-// Start the connection to the server.
+// Start the connection to the server. It returns once the connection
+// ended; its handler is shut down by then, also when no session came up
+// (see shutdownHandlerWithoutSession).
 func (c *ServerConnection) Start(ctx context.Context, cancel context.CancelFunc,
 	throttleCh, statsCh chan struct{}) {
+
+	defer c.shutdownHandlerWithoutSession()
 
 	// Throttle how many connections can be established concurrently (based on ch length)
 	c.log().Debug(c.server, "Throttling connection", len(throttleCh), cap(throttleCh))
@@ -326,6 +354,26 @@ func (c *ServerConnection) Start(ctx context.Context, cancel context.CancelFunc,
 	<-done
 }
 
+// shutdownHandlerWithoutSession shuts the handler down if Start ended
+// without a session that did (finishSessionWork shuts down the handler of
+// every session it ran): the context ended before a throttle slot was
+// free, or the dial, the SSH handshake, the session or its shell failed.
+// Otherwise whoever waits on the handler would wait for a session that
+// never comes: a probe waiting for the capabilities frame held its probe
+// round (and so :probe) and every path listing for the whole round timeout
+// when the first server in --servers was down, and a :reload waited until
+// sending its SESSION UPDATE timed out. A retrying client (dtail follow
+// mode) replaces the connection, and with it the handler, before the next
+// attempt, so the shutdown does not affect its reconnects. The handler's
+// status keeps the connection error reported by Start.
+func (c *ServerConnection) shutdownHandlerWithoutSession() {
+	select {
+	case <-c.handler.Done():
+	default:
+		c.handler.Shutdown()
+	}
+}
+
 // Dail into a new SSH connection. Close connection in case of an error.
 func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc,
 	throttleCh, statsCh chan struct{}) error {
@@ -343,7 +391,7 @@ func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc,
 	// Use context-aware dialing to enable proper cancellation during connection establishment.
 	// TCP KeepAlive (30s) prevents silent connection failures on long-lived connections.
 	dialer := &net.Dialer{
-		Timeout:   c.config.Timeout, // Use the SSH config timeout (2 seconds)
+		Timeout:   c.config.Timeout, // The connect timeout (Common.SSHConnectTimeoutMs)
 		KeepAlive: 30 * time.Second, // Standard Go default for connection health monitoring
 	}
 
@@ -359,22 +407,13 @@ func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc,
 	})
 	defer stopContextClose()
 
-	// Perform SSH handshake over the established TCP connection. Build a
-	// per-handshake ssh.ClientConfig so the host-key callback is bound to
-	// ctx and unblocks cleanly if the handshake is cancelled (e.g. when the
-	// user aborts before responding to the unknown-host prompt).
-	handshakeConfig := *c.config
-	handshakeConfig.HostKeyCallback = c.hostKeyCallback.Wrap(ctx)
-	sshConn, chans, reqs, err := ssh.NewClientConn(conn, address, &handshakeConfig)
+	client, err := c.handshake(ctx, conn, address)
 	if err != nil {
 		if closeErr := conn.Close(); closeErr != nil {
 			c.log().Trace(closeErr)
 		}
-		return preferContextError(ctx, fmt.Errorf("SSH handshake failed for %s: %w", address, err))
+		return err
 	}
-
-	// Create SSH client from the connection components
-	client := ssh.NewClient(sshConn, chans, reqs)
 	defer func() {
 		if closeErr := client.Close(); closeErr != nil {
 			c.log().Trace(closeErr)
@@ -382,6 +421,41 @@ func (c *ServerConnection) dial(ctx context.Context, cancel context.CancelFunc,
 	}()
 
 	return c.session(ctx, cancel, client, throttleCh)
+}
+
+// handshake performs the SSH handshake over the established TCP connection
+// within c.handshakeTimeout, not counting the host key check, which may ask
+// the user (see handshakeDeadline). It builds a per-handshake
+// ssh.ClientConfig so the host key callback is bound to ctx and unblocks
+// cleanly if the handshake is cancelled (e.g. when the user aborts before
+// answering the unknown host question). The caller closes conn on an error.
+func (c *ServerConnection) handshake(ctx context.Context, conn net.Conn, address string) (*ssh.Client, error) {
+	deadline, err := startHandshakeDeadline(conn, c.handshakeTimeout)
+	if err != nil {
+		return nil, preferContextError(ctx, fmt.Errorf("SSH handshake failed for %s: %w", address, err))
+	}
+	handshakeConfig := *c.config
+	handshakeConfig.HostKeyCallback = deadline.wrapHostKeyCallback(c.hostKeyCallback.Wrap(ctx))
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, address, &handshakeConfig)
+	expired, clearErr := deadline.finish()
+	if err != nil {
+		if expired {
+			err = fmt.Errorf("SSH handshake failed for %s: no handshake within %v: %w",
+				address, c.handshakeTimeout, err)
+		} else {
+			err = fmt.Errorf("SSH handshake failed for %s: %w", address, err)
+		}
+		return nil, preferContextError(ctx, err)
+	}
+	client := ssh.NewClient(sshConn, chans, reqs)
+	if clearErr != nil {
+		if closeErr := client.Close(); closeErr != nil {
+			c.log().Trace(closeErr)
+		}
+		return nil, preferContextError(ctx,
+			fmt.Errorf("clear SSH handshake deadline for %s: %w", address, clearErr))
+	}
+	return client, nil
 }
 
 // Create the SSH session. Close the session in case of an error.
@@ -551,11 +625,11 @@ func preferContextError(ctx context.Context, err error) error {
 }
 
 // shouldReportConnectionError reports whether err, which ended a connection,
-// still has to be reported to the user. A missing read-target capability was
-// already reported by requireSpecCapabilities, and a canceled context is no
-// error of the connection.
+// still has to be reported to the user. Missing journal support was already
+// reported by requireJournalCapability, and a canceled context is no error of
+// the connection.
 func shouldReportConnectionError(ctx context.Context, err error) bool {
-	if errors.Is(err, ErrJournalUnsupported) || errors.Is(err, ErrEncodedReadPathUnsupported) {
+	if errors.Is(err, ErrJournalUnsupported) {
 		return false
 	}
 	ctxErr := ctx.Err()
@@ -643,19 +717,4 @@ func extractAuthKeyBase64(authKeyPubBytes []byte) (string, error) {
 	}
 
 	return "", fmt.Errorf("no public key found")
-}
-
-func supportsQueryUpdates(handler handlers.Handler, timeout time.Duration) bool {
-	if handler == nil {
-		return false
-	}
-
-	if timeout <= 0 {
-		timeout = defaultCapabilityWait
-	}
-	if !handler.WaitForCapabilities(timeout) {
-		return false
-	}
-
-	return handler.HasCapability(protocol.CapabilityQueryUpdateV1)
 }

@@ -157,3 +157,114 @@ func (t *interactiveArgTokenizer) finish() ([]string, error) {
 	t.flush()
 	return t.tokens, nil
 }
+
+// partialArgs is the result of tokenizing a :reload line typed up to the
+// cursor (splitInteractiveArgsPartial): the finished tokens and the token
+// the cursor is in, which may be inside an open quote.
+type partialArgs struct {
+	// tokens are the finished tokens before the current one.
+	tokens []string
+	// current is the decoded current token so far ("" when none started).
+	current string
+	// started is true when a current token began (also an empty quoted one).
+	started bool
+	// quote is the open quote of the current token, 0 outside quotes.
+	quote byte
+	// escaped is true when the line ends in an escaping backslash.
+	escaped bool
+	// rawStarts maps every byte of current to the offset in the raw line
+	// where its encoding starts (the backslash of an escape), so that a
+	// completion can replace a decoded suffix in the raw line.
+	rawStarts []int
+	// quotes holds, for every byte of current, the quote it was read in (0
+	// outside quotes): a suffix whose bytes were all read in the current
+	// quote can be replaced by text escaped for that quote.
+	quotes []byte
+}
+
+// suffixInQuote reports whether the decoded bytes of current from i on were
+// all read inside the open quote of the current token, so that its raw
+// text can be replaced by text escaped for that quote.
+func (a partialArgs) suffixInQuote(i int) bool {
+	for _, q := range a.quotes[i:] {
+		if q != a.quote {
+			return false
+		}
+	}
+	return true
+}
+
+// rawOffset returns the offset in the raw line where the decoded byte i of
+// the current token starts, or rawLen for i == len(current).
+func (a partialArgs) rawOffset(i, rawLen int) int {
+	if i >= len(a.rawStarts) {
+		return rawLen
+	}
+	return a.rawStarts[i]
+}
+
+// splitInteractiveArgsPartial tokenizes raw like splitInteractiveArgs, but
+// for a line still being typed: an open quote or a trailing backslash is no
+// error but reported for the current token, whose decoded bytes are mapped
+// back to their raw offsets. It uses the same consume methods as the strict
+// tokenizer, so both split alike.
+func splitInteractiveArgsPartial(raw string) partialArgs {
+	var t interactiveArgTokenizer
+	var rawStarts []int
+	var quotes []byte
+	escapeStart := -1
+	for i := 0; i < len(raw); i++ {
+		before := t.current.Len()
+		tokensBefore := len(t.tokens)
+		quoteBefore := t.quote
+		if !t.escaped {
+			escapeStart = i
+		}
+		t.consume(raw[i])
+		if len(t.tokens) != tokensBefore {
+			rawStarts = rawStarts[:0]
+			quotes = quotes[:0]
+		}
+		// Every byte written for raw[i] starts where its encoding started:
+		// at the backslash for an escaped byte (also the kept backslash of
+		// an escape inside double quotes that escapes nothing).
+		for n := before; n < t.current.Len(); n++ {
+			rawStarts = append(rawStarts, escapeStart)
+			quotes = append(quotes, quoteBefore)
+		}
+	}
+	return partialArgs{
+		tokens:    t.tokens,
+		current:   t.current.String(),
+		started:   t.started,
+		quote:     t.quote,
+		escaped:   t.escaped,
+		rawStarts: rawStarts,
+		quotes:    quotes,
+	}
+}
+
+// escapeForQuote encodes text so that splitInteractiveArgs decodes it back
+// unchanged inside the quote context quote (0 outside quotes, otherwise the
+// single or double quote byte),
+// for a completion inserted into an open quoted value. A single quote
+// inside single quotes closes them, adds a backslash-escaped quote and
+// opens them again; inside double quotes the four escapable characters get
+// a backslash; outside quotes every blank, quote and backslash does.
+func escapeForQuote(text string, quote byte) string {
+	var b strings.Builder
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case quote == '\'' && c == '\'':
+			b.WriteString(`'\''`)
+			continue
+		case quote == '"' && isDoubleQuoteEscapable(c):
+			b.WriteByte('\\')
+		case quote == 0 && strings.IndexByte(" \t'\"\\", c) >= 0:
+			b.WriteByte('\\')
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}

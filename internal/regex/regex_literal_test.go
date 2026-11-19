@@ -377,36 +377,33 @@ func TestNonLiteralPatternsUseRegexp(t *testing.T) {
 	}
 }
 
+// TestSerializationWithLiteral verifies that the serialized form carries no
+// literal hint, for literals or not, and that the receiver still derives the
+// literal from the pattern alone, so a literal stays a literal over the wire.
 func TestSerializationWithLiteral(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name       string
 		pattern    string
-		wantHint   bool
 		wantLiter  bool
 		matchTexts []string
 	}{
 		{
-			name:       "plain literal keeps the wire hint",
+			name:       "plain literal",
 			pattern:    "ERROR",
-			wantHint:   true,
 			wantLiter:  true,
 			matchTexts: []string{"This is an ERROR message", "nothing here"},
 		},
 		{
-			// Older peers trust the hint verbatim and would search for the
-			// backslashes, so an unescaped literal must not carry it.
-			name:       "escaped literal drops the wire hint",
+			name:       "escaped literal",
 			pattern:    `\|MAPREDUCE:STATS\|`,
-			wantHint:   false,
 			wantLiter:  true,
 			matchTexts: []string{"INFO|1|MAPREDUCE:STATS|a=b", "INFO|1|MAPREDUCE:OTHER|a=b"},
 		},
 		{
-			name:       "regexp pattern has no hint",
+			name:       "regexp pattern",
 			pattern:    `\d+`,
-			wantHint:   false,
 			wantLiter:  false,
 			matchTexts: []string{"count 42", "no digits"},
 		},
@@ -428,9 +425,8 @@ func TestSerializationWithLiteral(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to serialize: %v", err)
 			}
-			if gotHint := strings.Contains(serialized, "literal"); gotHint != tt.wantHint {
-				t.Fatalf("serialized %q literal hint = %v, want %v",
-					serialized, gotHint, tt.wantHint)
+			if flags, _, _ := strings.Cut(serialized, " "); strings.Contains(flags, "literal") {
+				t.Fatalf("serialized %q carries a literal hint", serialized)
 			}
 
 			deserialized, err := Deserialize(serialized)
@@ -453,8 +449,9 @@ func TestSerializationWithLiteral(t *testing.T) {
 	}
 }
 
-// TestDeserializeIgnoresUntrustedLiteralHint makes sure a hint from a peer with
-// a different notion of a literal cannot turn a pattern into the wrong search.
+// TestDeserializeIgnoresUntrustedLiteralHint makes sure a literal hint, which
+// Serialize no longer sends but Deserialize still ignores, cannot turn a
+// pattern into the wrong search.
 func TestDeserializeIgnoresUntrustedLiteralHint(t *testing.T) {
 	t.Parallel()
 

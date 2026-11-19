@@ -12,15 +12,16 @@ import (
 const avgClientTestQuery = "select avg(lat),count(status) from stats group by host"
 
 // TestAggregateAvgValueCount verifies how the client averages the avg() sums
-// of server messages: by the value count a current dserver sends with each
-// sum, by the message's samples for an older dserver that sends none (so its
-// average is what it always was), and by both for a mix of the two. A count
-// that is not a positive number rejects the avg() field of that message (its
-// sum included), while the message's other fields are still aggregated.
+// of server messages: by the value count dserver sends with each sum, added
+// up over the messages of every server. A sum without its count, or with a
+// count that is not a positive number, rejects the avg() field of that
+// message (its sum included) instead of averaging by the message's samples,
+// while the message's other fields are still aggregated.
 func TestAggregateAvgValueCount(t *testing.T) {
 	countKey := mapr.AvgCountKey("avg(lat)")
 	current := aggregateTestMessage("4", "avg(lat)", "30", countKey, "2", "count(status)", "4")
-	older := aggregateTestMessage("4", "avg(lat)", "30", "count(status)", "4")
+	other := aggregateTestMessage("4", "avg(lat)", "45", countKey, "1", "count(status)", "4")
+	noCount := aggregateTestMessage("4", "avg(lat)", "30", "count(status)", "4")
 	badCount := func(count string) []serverMessages {
 		return []serverMessages{{"srv1", []string{current,
 			aggregateTestMessage("4", "avg(lat)", "1000", countKey, count, "count(status)", "4")}}}
@@ -33,9 +34,11 @@ func TestAggregateAvgValueCount(t *testing.T) {
 		wantAvg   string
 	}{
 		{"current server", []serverMessages{{"srv1", []string{current}}}, 30, 2, "15.000000"},
-		{"older server", []serverMessages{{"srv1", []string{older}}}, 30, 4, "7.500000"},
-		{"current and older server",
-			[]serverMessages{{"srv1", []string{current}}, {"srv2", []string{older}}}, 60, 6, "10.000000"},
+		{"two servers",
+			[]serverMessages{{"srv1", []string{current}}, {"srv2", []string{other}}}, 75, 3, "25.000000"},
+		{"sum without count", []serverMessages{{"srv1", []string{noCount}}}, 0, 0, "0.000000"},
+		{"sum without count next to a valid one",
+			[]serverMessages{{"srv1", []string{current}}, {"srv2", []string{noCount}}}, 30, 2, "15.000000"},
 		{"unparsable count", badCount("x"), 30, 2, "15.000000"},
 		{"zero count", badCount("0"), 30, 2, "15.000000"},
 		{"negative count", badCount("-1"), 30, 2, "15.000000"},

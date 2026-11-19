@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/mimecast/dtail/internal/authkey"
 	"github.com/mimecast/dtail/internal/config"
@@ -40,10 +41,42 @@ type ServerHandler struct {
 	sessionState        sessionCommandState
 	commandBatch        commandBatch
 	idleShutdownStarted atomic.Bool
-	// escapedFramingAdvertised is set when the session's capabilities frame
-	// lists protocol.CapabilityEscapedFramingV1, the only case in which the
-	// client's protocol.EscapedFramingCommand switches the session framing.
-	escapedFramingAdvertised bool
+	// idleShutdownWanted is set once work of the session asked for the idle
+	// shutdown (wantIdleShutdown), so that a probe finishing later starts
+	// it in its place (see shutdownOnCompletion).
+	//
+	// It is never cleared. Clearing it where a claim is refused for a
+	// keep-alive SESSION or an open input batch would race with the batch
+	// end or the work that sets it again. The edge this leaves: work that
+	// finished while a SESSION kept the session alive sets it, and should
+	// that SESSION later be reset (a START/UPDATE whose commands could not
+	// be dispatched), a probe finishing afterwards ends the now idle
+	// session, as any other command finishing then would.
+	idleShutdownWanted atomic.Bool
+	// probeRunning is set while a probe command samples or lists, up to its
+	// answer (handleProbeCommand); a probe arriving meanwhile is busy.
+	probeRunning atomic.Bool
+	// probeInFlight holds a token from a probe's start until its answer is
+	// queued (or the session ends), so that at most one probe answer waits
+	// to be queued (startProbe).
+	probeInFlight chan struct{}
+	// probeInFlightWait bounds the command input's wait for probeInFlight;
+	// zero means the constant probeInFlightWait. Tests lower it.
+	probeInFlightWait time.Duration
+	// probeSampler samples a probed file; nil means probe.Sample. Tests
+	// replace it to hold a probe while it runs.
+	probeSampler probeSampler
+	// probeUnitLister lists the journal units for a path listing: the
+	// dserver's shared cache (Dependencies.JournalUnits) when there is one,
+	// nil (journal.ListUnits, a journalctl run per listing) otherwise, as
+	// in serverless mode. Tests replace it.
+	probeUnitLister probeUnitLister
+	// probeListLimits bounds a path listing; zero fields mean the
+	// defaults (probeListLimits.withDefaults). Tests lower them.
+	probeListLimits probeListLimits
+	// journalSupported is set when the session advertised
+	// protocol.CapabilityJournalV1, which probes of journal targets need.
+	journalSupported bool
 	// mapQueryFailures records which command streams had a failed map
 	// command, so that their reads are rejected (see mapqueryfailure.go).
 	mapQueryFailures mapQueryFailures
@@ -51,11 +84,6 @@ type ServerHandler struct {
 	// means logformat.NewParserWithHostname. Tests replace it to make
 	// building a map command fail after its query parsed.
 	mapParserFactory mapParserFactory
-	// controlFramesAdvertised is set when the capabilities frame lists
-	// protocol.CapabilityControlFramesV1, the only case in which the
-	// client's protocol.ControlFramesCommand marks the session's control
-	// frames.
-	controlFramesAdvertised bool
 	// Track pending files waiting for limiter slots
 	pendingFiles int32
 }
@@ -123,10 +151,12 @@ func NewServerHandler(ctx context.Context, user *user.User, dependencies Depende
 		authKeyStore: dependencies.AuthKeyStore,
 		colorizer:    dependencies.Colorizer,
 		regex:        ".",
-		escapedFramingAdvertised: slices.Contains(dependencies.Capabilities,
-			protocol.CapabilityEscapedFramingV1),
-		controlFramesAdvertised: slices.Contains(dependencies.Capabilities,
-			protocol.CapabilityControlFramesV1),
+		journalSupported: slices.Contains(dependencies.Capabilities,
+			protocol.CapabilityJournalV1),
+		probeInFlight: make(chan struct{}, 1),
+	}
+	if dependencies.JournalUnits != nil {
+		h.probeUnitLister = dependencies.JournalUnits.ListUnits
 	}
 	h.handleCommandCb = h.handleUserCommand
 	h.prepareCommandContextCb = h.prepareCommandContext
@@ -140,7 +170,12 @@ func NewServerHandler(ctx context.Context, user *user.User, dependencies Depende
 
 	s := strings.Split(dependencies.Hostname, ".")
 	h.hostname = s[0]
-	h.send(h.serverMessages, protocol.HiddenCapabilitiesPrefix+strings.Join(dependencies.Capabilities, " "))
+	// The capabilities frame must be the session's first frame: the client
+	// rejects a session whose first frame is anything else. Queued as a
+	// server message it could be overtaken by payload or a MapReduce
+	// message, which reach the output through other queues, so the framer
+	// holds it as its first pending output instead.
+	h.queueFirstFrame(protocol.HiddenCapabilitiesPrefix + strings.Join(dependencies.Capabilities, " "))
 
 	return &h, nil
 }
@@ -187,21 +222,22 @@ func minimumOutputBufferMaxBytes(maxLineLength int) (int, bool) {
 	return maxLineLength + outputBufferLineOverhead, true
 }
 
-// escapedOutputBufferMaxBytes is the output buffer cap of a session that
-// uses escaped framing: minimumOutputBufferMaxBytes plus another
-// maxLineLength, i.e. 2*maxLineLength + outputBufferLineOverhead. Escaping
-// replaces each 0xAC and 0xFF byte by two bytes, so the frame of a
-// maximum-length line can grow to almost twice its raw size, and the batch
-// holding it with it; this cap admits that batch just as the minimum admits
-// the raw one. A session switching to escaped framing raises
-// its cap to this value when OutputBufferMaxBytes is smaller, so every
-// configuration valid for raw framing keeps working, at a higher memory
-// bound of about one more maximum-length line per session. It reports false
-// when the sum does not fit an int; the session then keeps the configured
-// cap (which is then at least about half of math.MaxInt anyway).
+// escapedOutputBufferMaxBytes is the smallest output buffer cap of a
+// session: minimumOutputBufferMaxBytes plus another maxLineLength, i.e.
+// 2*maxLineLength + outputBufferLineOverhead. Every session escapes its
+// frames (protocol.EscapedControlFraming), which replaces each 0xAC and 0xFF
+// byte by two bytes, so the frame of a maximum-length line can grow to
+// almost twice its unescaped size, and the batch holding it with it; this
+// cap admits that batch just as the minimum admits the unescaped one. A
+// session raises its cap to this value when OutputBufferMaxBytes is smaller
+// (sessionOutputBufferMaxBytes), so every configuration
+// ValidateOutputBufferConfig accepts keeps working, at a higher memory bound
+// of about one more maximum-length line per session. It reports false when
+// the sum does not fit an int; the session then keeps the configured cap
+// (which is then at least about half of math.MaxInt anyway).
 //
 // It builds on minimumOutputBufferMaxBytes, so the escaped cap always exceeds
-// the raw minimum ValidateOutputBufferConfig enforces by exactly one
+// the minimum ValidateOutputBufferConfig enforces by exactly one
 // maxLineLength, and both report an overflow the same way.
 func escapedOutputBufferMaxBytes(maxLineLength int) (int, bool) {
 	minimum, ok := minimumOutputBufferMaxBytes(maxLineLength)
@@ -209,6 +245,18 @@ func escapedOutputBufferMaxBytes(maxLineLength int) (int, bool) {
 		return 0, false
 	}
 	return minimum + maxLineLength, true
+}
+
+// sessionOutputBufferMaxBytes returns the output buffer cap of a session:
+// OutputBufferMaxBytes (or its default), raised to
+// escapedOutputBufferMaxBytes when that is larger.
+func sessionOutputBufferMaxBytes(serverCfg *config.ServerConfig) int {
+	bufferMaxBytes := positiveIntOrDefault(serverCfg.OutputBufferMaxBytes, defaultOutputBufferMaxBytes)
+	maxLineLength := positiveIntOrDefault(serverCfg.MaxLineLength, 1024*1024)
+	if minimum, ok := escapedOutputBufferMaxBytes(maxLineLength); ok && minimum > bufferMaxBytes {
+		return minimum
+	}
+	return bufferMaxBytes
 }
 
 func (h *ServerHandler) handleUserCommand(ctx context.Context, ltx lcontext.LContext,
@@ -227,7 +275,7 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, ltx lcontext.LCon
 	if commandName == "SESSION" {
 		ctx = withSessionCommandAdmission(ctx)
 	}
-	commandFinished := h.newCommandFinished(ctx, shouldShutdownOnCommandCompletion(commandName))
+	commandFinished := h.newCommandFinished(ctx, commandName)
 	defer recoverHandlerPanic(h.Logger(), h.user, "command dispatch cleanup", h.abortAfterPanic)
 	defer h.finishCommandInitialization()
 	defer recoverHandlerPanic(h.Logger(), h.user, "command dispatch", func() {
@@ -248,20 +296,63 @@ func (h *ServerHandler) handleUserCommand(ctx context.Context, ltx lcontext.LCon
 }
 
 // newCommandFinished returns the commandFinished callback of an admitted
-// command: it finishes the command once (finishUserCommand), however often
-// and from whichever goroutine it is called.
-func (h *ServerHandler) newCommandFinished(ctx context.Context, shutdownOnCompletion bool) func() {
+// command named commandName: it finishes the command once
+// (finishUserCommand), however often and from whichever goroutine it is
+// called.
+func (h *ServerHandler) newCommandFinished(ctx context.Context, commandName string) func() {
 	var once sync.Once
 	return func() {
-		once.Do(func() { h.finishUserCommand(ctx, shutdownOnCompletion) })
+		once.Do(func() { h.finishUserCommand(ctx, h.shutdownOnCompletion(commandName)) })
 	}
+}
+
+// commandShutdown tells finishUserCommand whether a finished command ends
+// an idle session.
+type commandShutdown int
+
+const (
+	// commandShutdownNever: the command keeps the session open (AUTHKEY,
+	// SESSION).
+	commandShutdownNever commandShutdown = iota
+	// commandShutdownIdle: the command is the session's work; the session
+	// ends when it was the last (cat, grep, tail, map, unknown commands).
+	commandShutdownIdle
+	// commandShutdownIfWanted: the command runs next to the session's work
+	// (probe); it ends the session only when other work asked for the idle
+	// shutdown while it ran (idleShutdownWanted).
+	commandShutdownIfWanted
+)
+
+// shutdownOnCompletion returns how commandName ends an idle session.
+func (h *ServerHandler) shutdownOnCompletion(commandName string) commandShutdown {
+	switch {
+	case commandName == protocol.ProbeCommand:
+		return commandShutdownIfWanted
+	case shouldShutdownOnCommandCompletion(commandName):
+		return commandShutdownIdle
+	default:
+		return commandShutdownNever
+	}
+}
+
+// wantIdleShutdown records that work of the session asked for the idle
+// shutdown. Callers set it before they read the pending and active counts:
+// a probe that finishes concurrently either sees it after its own
+// decrement, or decremented before those counts were read, so that the
+// caller sees no active command left; one of the two claims the shutdown.
+func (h *ServerHandler) wantIdleShutdown() {
+	h.idleShutdownWanted.Store(true)
 }
 
 // finishUserCommand ends an admitted command. When it was the session's last
 // work it starts the idle shutdown, which drains the output and then runs the
 // close handshake. AUTHKEY and SESSION are session-side commands and do not
 // end the session (shouldShutdownOnCommandCompletion), as user commands may
-// still follow in it.
+// still follow in it. A probe runs next to the session's work and must not
+// end it either, e.g. when it finishes before the SESSION START sent after
+// it was handled; but other work finishing while it ran found it still
+// active and left the idle shutdown to it, so it starts the idle shutdown
+// when that work asked for it (commandShutdownIfWanted).
 //
 // Whether the session is idle is decided, and the idle shutdown claimed,
 // right here (claimIdleShutdown), while the counts read are still current:
@@ -279,18 +370,24 @@ func (h *ServerHandler) newCommandFinished(ctx context.Context, shutdownOnComple
 // The command's context and its commandWg slot are only released once the
 // shutdown returned, as when it ran inline: the shutdown uses that context,
 // and graceful shutdown waits on commandWg.
-func (h *ServerHandler) finishUserCommand(ctx context.Context, shutdownOnCompletion bool) {
+func (h *ServerHandler) finishUserCommand(ctx context.Context, shutdown commandShutdown) {
 	handedOver := false
 	defer func() {
 		if !handedOver {
 			h.finishCommand()
 		}
 	}()
+	if shutdown == commandShutdownIdle {
+		h.wantIdleShutdown()
+	}
 	activeCommands := h.decrementActiveCommands()
 	pendingFiles := atomic.LoadInt32(&h.pendingFiles)
 	h.Logger().Debug(h.user, "Command finished", "activeCommands", activeCommands, "pendingFiles", pendingFiles)
 
-	if shutdownOnCompletion && h.claimIdleShutdown(pendingFiles, activeCommands) {
+	// A probe reads the flag only after its own decrement (wantIdleShutdown).
+	endsSession := shutdown == commandShutdownIdle ||
+		(shutdown == commandShutdownIfWanted && h.idleShutdownWanted.Load())
+	if endsSession && h.claimIdleShutdown(pendingFiles, activeCommands) {
 		handedOver = true
 		go h.idleShutdownAfterCommand(ctx)
 		return
@@ -324,9 +421,7 @@ func (h *ServerHandler) idleShutdownAfterCommand(ctx context.Context) {
 // control traffic rather than new workload. All of them are processed even
 // after graceful shutdown has sealed command admission, and kept out of
 // commandWg so shutdown never waits on its own acknowledgement. Unknown ones
-// are ignored (handleAckCommand), which is what lets a client send
-// protocol.EscapedFramingCommand and protocol.ControlFramesCommand to
-// servers that do not know them.
+// are ignored (handleAckCommand).
 func (h *ServerHandler) handleAckControl(ctx context.Context, argc int, args []string) {
 	defer cancelCommandContext(ctx)
 	switch {
@@ -334,85 +429,9 @@ func (h *ServerHandler) handleAckControl(ctx context.Context, argc int, args []s
 		h.BeginCommandBatch()
 	case isInputBatchComplete(argc, args):
 		h.completeCommandBatch(h.connCtx)
-	case isEscapedFramingRequest(argc, args):
-		h.handleEscapedFramingRequest(ctx)
-	case isControlFramesRequest(argc, args):
-		h.handleControlFramesRequest()
 	default:
 		h.handleAckCommand(argc, args)
 	}
-}
-
-// handleEscapedFramingRequest switches the session to escaped framing when
-// its capabilities frame advertised it and the request is the session's
-// first command, as clients send it. Otherwise the request is ignored, as by
-// a server that does not know it, and the session keeps its framing: a
-// switch after other commands could change the framing of output those
-// commands already produce, under a client that decided its framing from
-// the session's first frame. A switch also raises the session's output
-// buffer cap to escapedOutputBufferMaxBytes, so that escaping can never make
-// a batch with a maximum-length line too large to queue.
-func (h *ServerHandler) handleEscapedFramingRequest(ctx context.Context) {
-	switch {
-	case !h.escapedFramingAdvertised:
-		h.Logger().Debug(h.user, "Ignoring escaped framing request of a session not advertising it")
-		return
-	case !h.handlingCommandFrame(1):
-		h.Logger().Warn(h.user, "Ignoring escaped framing request that is not the session's first command")
-		return
-	}
-	if !h.enableEscapedFraming(ctx) {
-		return
-	}
-	h.Logger().Debug(h.user, "Switched session to escaped framing")
-	if !h.controlFramesAdvertised {
-		// No control frames request can switch the session any more.
-		h.settleFraming()
-	}
-	maxLineLength := positiveIntOrDefault(h.serverCfg.MaxLineLength, 1024*1024)
-	if minimum, ok := escapedOutputBufferMaxBytes(maxLineLength); ok {
-		h.output.raiseBufferMaxBytes(minimum)
-	}
-}
-
-// handleControlFramesRequest switches the session to
-// protocol.EscapedControlFraming when its capabilities frame advertised it,
-// the session is escaped and the request is its second command, as clients
-// send it right after the escaped framing request. The session then marks
-// every control frame it sends, so the client never takes a --plain log line
-// for one. Otherwise the request is ignored, as by a server that does not
-// know it, and the session keeps its framing: the client marks control
-// frames only when the session's first frame advertised both capabilities,
-// and output of earlier commands than the escaped framing request could
-// already be framed unmarked. Either way the session framing is final
-// afterwards, so the frames Read held back since the capabilities frame go
-// out (settleFraming).
-func (h *ServerHandler) handleControlFramesRequest() {
-	defer h.settleFraming()
-	switch {
-	case !h.controlFramesAdvertised:
-		h.Logger().Debug(h.user, "Ignoring control frames request of a session not advertising it")
-	case !h.handlingCommandFrame(2):
-		h.Logger().Warn(h.user, "Ignoring control frames request that is not the session's second command")
-	case !h.enableControlFrames():
-		h.Logger().Warn(h.user, "Ignoring control frames request of a session without escaped framing")
-	default:
-		h.Logger().Debug(h.user, "Switched session to escaped framing with control frames")
-	}
-}
-
-// isFramingRequest reports whether a decoded command is one of the framing
-// requests, the only commands that can switch the session framing.
-func isFramingRequest(argc int, args []string) bool {
-	return isEscapedFramingRequest(argc, args) || isControlFramesRequest(argc, args)
-}
-
-func isEscapedFramingRequest(argc int, args []string) bool {
-	return argc == 3 && strings.Join(args, " ") == protocol.EscapedFramingCommand
-}
-
-func isControlFramesRequest(argc int, args []string) bool {
-	return argc == 3 && strings.Join(args, " ") == protocol.ControlFramesCommand
 }
 
 func isInputBatchBegin(argc int, args []string) bool {
@@ -460,12 +479,17 @@ func (h *ServerHandler) frameRejected() {
 // version was rejected (commandDispatcher.rejectProtocolVersion), when that
 // left the session without work, like frameRejected, but without the close
 // handshake (closeWithoutHandshake): the client may not recognize or
-// acknowledge it. It does not run for a legacy client (protocol <= 3, an
-// unparsable version or no protocol prefix), whose session stays open. Its
-// mismatch error is already queued and is read before the session ends. The
-// claim also makes the dispatcher drop later frames of that version without
-// another error (sessionClosingCb).
-func (h *ServerHandler) versionRejected() {
+// acknowledge it. The session of an older client (protocol <= 4, an
+// unparsable version or no protocol prefix: legacyClient and
+// protocol4Client) stays open instead, as some of them reconnect in a loop
+// when it ends. Its mismatch error is already queued and is read before the
+// session ends. The claim also makes the dispatcher drop later frames of
+// that version without another error (sessionClosingCb).
+func (h *ServerHandler) versionRejected(client mismatchedClient) {
+	if client == legacyClient || client == protocol4Client {
+		h.keepMismatchedSessionOpen()
+		return
+	}
 	h.startIdleEnd(h.connCtx, h.closeWithoutHandshake)
 }
 
@@ -481,7 +505,11 @@ func (h *ServerHandler) startIdleShutdown(ctx context.Context) {
 // client-to-server writer, which also handles the client's close
 // acknowledgement: a shutdown on it would wait for the acknowledgement
 // timeout (5 s). The claim is made here, synchronously, while the counts it
-// depends on are still current.
+// depends on are still current. The wish is recorded first
+// (wantIdleShutdown): a probe still running then ends the session when it
+// finishes, always with the close handshake (h.shutdown), also when end was
+// h.closeWithoutHandshake. That takes a client sending probes in a session
+// of another protocol version, which no client does.
 //
 // end holds a commandWg slot (beginShutdownWork) while it runs, like the
 // shutdown finishUserCommand hands over, so Shutdown and
@@ -492,6 +520,7 @@ func (h *ServerHandler) startIdleShutdown(ctx context.Context) {
 // context ends. If command admission was sealed after the claim, the
 // teardown that sealed it ends the session and end does not run.
 func (h *ServerHandler) startIdleEnd(ctx context.Context, end func(context.Context)) {
+	h.wantIdleShutdown()
 	if !h.claimIdleShutdown(h.PendingAndActive()) {
 		return
 	}
@@ -568,10 +597,12 @@ func (h *ServerHandler) prepareCommandContext(ctx context.Context, commandName s
 
 func (h *ServerHandler) newCommandRegistry() map[string]commandHandler {
 	return map[string]commandHandler{
-		"grep":    h.makeReadCommandHandler(omode.GrepClient, 1),
-		"cat":     h.makeReadCommandHandler(omode.CatClient, 1),
-		"tail":    h.makeReadCommandHandler(omode.TailClient, 10),
-		"map":     h.handleMapCommand,
+		"grep": h.makeReadCommandHandler(omode.GrepClient, 1),
+		"cat":  h.makeReadCommandHandler(omode.CatClient, 1),
+		"tail": h.makeReadCommandHandler(omode.TailClient, 10),
+		"map":  h.handleMapCommand,
+		// protocol.ProbeCommand; matched exactly like the others.
+		"probe":   h.handleProbeCommand,
 		".ack":    h.handleAckUserCommand,
 		"AUTHKEY": h.handleAuthKeyCommand,
 		"SESSION": h.handleSessionCommand,
@@ -615,7 +646,7 @@ func (h *ServerHandler) makeReadCommandHandler(mode omode.Mode, tailBackoff int)
 func (h *ServerHandler) handleMapCommand(ctx context.Context, _ lcontext.LContext, _ int, args []string, commandFinished func()) {
 	command, aggregate, err := h.mapCommandFor(ctx, args)
 	if err != nil {
-		h.sendln(h.serverMessages, h.messageText(err.Error()))
+		h.sendln(h.serverMessages, err.Error())
 		h.Logger().Error(h.user, err)
 		h.reportCommandFailure(commandFailureMapQuery)
 		h.mapQueryFailures.mark(sessionGenerationFromContext(ctx))

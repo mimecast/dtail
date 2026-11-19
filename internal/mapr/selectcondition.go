@@ -23,11 +23,42 @@ const (
 	Percentile              AggregateOperation = iota
 )
 
+// aggregationTable lists every aggregation of a select field (e.g. the sum of
+// sum(foo)) with its operation, in the order of doc/querylanguage.md. The
+// parser (parseAggregateOperation) and AggregationNames, which the
+// interactive query completer reads, share this one table so that they
+// cannot drift apart. It is only read while a query is parsed.
+var aggregationTable = [...]struct {
+	name      string
+	operation AggregateOperation
+}{
+	{"count", Count},
+	{"sum", Sum},
+	{"min", Min},
+	{"max", Max},
+	{"avg", Avg},
+	{"last", Last},
+	{"len", Len},
+	{"percentage", Percentage},
+	{"percentile", Percentile},
+}
+
 // Represents a parsed "select" clause, used by mapr.Query.
 type selectCondition struct {
 	Field        string
 	FieldStorage string
 	Operation    AggregateOperation
+}
+
+// AggregationNames returns the names of the select aggregations, such as
+// count or sum, in the order of the parser's table. The names are case
+// sensitive. The result is a new slice, which the caller may change.
+func AggregationNames() []string {
+	names := make([]string, len(aggregationTable))
+	for i, entry := range aggregationTable {
+		names[i] = entry.name
+	}
+	return names
 }
 
 func (sc selectCondition) String() string {
@@ -47,9 +78,9 @@ func (sc selectCondition) String() string {
 // came out 8 times too high, percentage() too low). A backtick-quoted field
 // named like an aggregation (`count(x)`) would send its value under the same
 // wire key as that aggregation. Such a query is rejected instead, by the
-// client before it connects and by dserver, so that neither a new client
-// talking to an old dserver nor an old client talking to a new dserver can
-// produce wrong numbers from it (see doc/querylanguage.md).
+// client before it connects and by dserver (which also rejects clients of
+// another protocol version), so it never produces wrong numbers (see
+// doc/querylanguage.md).
 func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 	var sel []selectCondition
 	seen := make(map[string]selectCondition, len(tokens))
@@ -122,29 +153,13 @@ func parseSelectCondition(token token) (selectCondition, error) {
 }
 
 // parseAggregateOperation maps the name of a select aggregation to its
-// operation.
+// operation, looked up in aggregationTable. The name is case sensitive.
 func parseAggregateOperation(agg string) (AggregateOperation, error) {
-	switch agg {
-	case "count":
-		return Count, nil
-	case "sum":
-		return Sum, nil
-	case "min":
-		return Min, nil
-	case "max":
-		return Max, nil
-	case "last":
-		return Last, nil
-	case "avg":
-		return Avg, nil
-	case "len":
-		return Len, nil
-	case "percentage":
-		return Percentage, nil
-	case "percentile":
-		return Percentile, nil
-	default:
-		return UndefAggregateOperation,
-			errors.New(invalidQuery + "Unknown aggregation in 'select' clause: " + agg)
+	for _, entry := range aggregationTable {
+		if entry.name == agg {
+			return entry.operation, nil
+		}
 	}
+	return UndefAggregateOperation,
+		errors.New(invalidQuery + "Unknown aggregation in 'select' clause: " + agg)
 }

@@ -24,7 +24,7 @@ func TestSessionSpecCommands(t *testing.T) {
 				Options: "plain=true",
 				Regex:   "ERROR",
 			},
-			want: []string{"tail:plain=true /var/log/app.log regex:default,literal ERROR"},
+			want: []string{"tail:plain=true /var/log/app.log regex:default ERROR"},
 		},
 		{
 			name: "map client commands",
@@ -52,7 +52,7 @@ func TestSessionSpecCommands(t *testing.T) {
 			},
 			want: []string{
 				"map:plain=true from STATS select count(*)",
-				"timeout 15 tail /var/log/app.log regex:default,literal WARN",
+				"timeout 15 tail /var/log/app.log regex:default WARN",
 			},
 		},
 		{

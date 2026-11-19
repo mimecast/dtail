@@ -42,13 +42,13 @@ func startSession(t *testing.T, handler *ServerHandler, dispatched chan []string
 			[]string{"SESSION", "START", mustSessionPayload(t, session.Spec{
 				Mode: omode.GrepClient, Files: []string{"/var/log/old.log"}, Regex: "old",
 			})}, func() {})
-		readServerMessage(t, handler.serverMessages)
+		readSessionAck(t, handler)
 		<-dispatched
 		verb, ack = "UPDATE", sessionAckUpdateOKPrefix
 	}
 	handler.handleSessionCommand(context.Background(), lcontext.LContext{}, 3,
 		[]string{"SESSION", verb, mustSessionPayload(t, spec)}, func() {})
-	if message := readServerMessage(t, handler.serverMessages); !strings.HasPrefix(message, ack) {
+	if message := readSessionAck(t, handler); !strings.HasPrefix(message, ack) {
 		t.Fatalf("session %s answered %q, want prefix %q", verb, message, ack)
 	}
 
@@ -65,7 +65,7 @@ func startSession(t *testing.T, handler *ServerHandler, dispatched chan []string
 
 // TestSessionCommandsKeepBlanksInTheRegex checks that the blanks of a regex
 // reach the read command unchanged through SESSION START and UPDATE, as they
-// do through the legacy base64 command path: a trailing blank, a run of
+// do through the base64 command path: a trailing blank, a run of
 // blanks, a tab and a leading blank.
 func TestSessionCommandsKeepBlanksInTheRegex(t *testing.T) {
 	patterns := []string{"foo ", "x  y", "a\tb", " lead", "x  y  "}
@@ -109,7 +109,7 @@ func TestSessionQueryCommandsKeepBlanks(t *testing.T) {
 
 // TestSessionCommandsWithoutRegexMatchEverything checks the empty pattern:
 // the builder serializes it as "regex:noop " and the trailing empty field
-// rejoins to a regex matching every line, as on the legacy path.
+// rejoins to a regex matching every line, as on the command path.
 func TestSessionCommandsWithoutRegexMatchEverything(t *testing.T) {
 	handler, dispatched := newArgsRecordingSessionHandler(t)
 	commands := startSession(t, handler, dispatched, session.Spec{

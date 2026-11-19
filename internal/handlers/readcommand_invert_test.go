@@ -81,7 +81,7 @@ func splitSpaces(command string) []string {
 
 // TestSessionCommandsHonourInvertedEmptyPattern runs an inverted empty
 // pattern through the whole server path: SESSION START builds the read command
-// ("grep:... regex:invert,literal "), handleRawCommand splits it and
+// ("grep:... regex:invert "), handleRawCommand splits it and
 // dispatchCommand hands its words to the grep command, which a real
 // readCommand then runs. It must print no line, not every line.
 func TestSessionCommandsHonourInvertedEmptyPattern(t *testing.T) {
@@ -94,8 +94,8 @@ func TestSessionCommandsHonourInvertedEmptyPattern(t *testing.T) {
 		t.Fatalf("dispatched %d commands, want 1: %q", len(commands), commands)
 	}
 	args := commands[0]
-	if got := strings.Join(args[2:], " "); got != "regex:invert,literal " {
-		t.Fatalf("dispatched regex = %q, want %q", got, "regex:invert,literal ")
+	if got := strings.Join(args[2:], " "); got != "regex:invert " {
+		t.Fatalf("dispatched regex = %q, want %q", got, "regex:invert ")
 	}
 
 	server := newSharedReadTestServer(t, nil)

@@ -53,6 +53,14 @@ type MaprClient struct {
 	// Publication state prevents an empty interval from replacing a result
 	// produced earlier in the same query generation.
 	outfileState outfileReportState
+	// queryMarks are the failures every server reported before interactive
+	// dtail switched its session to the active query, which are not the
+	// query's (see incompleteResultReasons).
+	queryMarks queryFailureMarks
+	// liveServers returns the servers the first report of a query waits
+	// for (firstReportWindow); nil means the connections whose handler is
+	// not done. Tests replace it.
+	liveServers func() []string
 }
 
 type outfileReportState struct {
@@ -67,11 +75,92 @@ func NewMaprClient(args config.Args, cfg config.RuntimeConfig, maprClientMode Ma
 	if args.QueryStr == "" {
 		return nil, errors.New("no mapreduce query specified, use '-query' flag")
 	}
-	loggers = loggers.normalized()
+	return newMaprClient(args, cfg, maprClientMode, loggers, firstColorizer(colorizers), false)
+}
 
+// NewInteractiveTailClient returns the client of an interactive dtail
+// (--interactive-query, dtail's default on a terminal): a MapReduce client
+// in tail mode whose query is optional, so that its running session can
+// switch between following lines (no query, args.QueryStr empty) and a
+// MapReduce query, both ways, with SESSION UPDATE (switchToQuery,
+// switchToTail). Its handlers are MaprHandlers, which print every payload
+// line and aggregate the aggregate frames; results are reported only while
+// a query is active. A --plain line that starts like an aggregate frame
+// (protocol.CutAggregateContent) is printed while the session follows lines;
+// while a query runs or a switch to one is pending
+// (maprclient.SessionState.AggregatesExpected) it is taken for aggregate
+// data, as with dtail --query. It keeps the exit statuses of dtail's follow
+// mode, as TailClient and the MaprClient of dtail --query do (no
+// failed-command or cut-short status). A non-interactive dtail keeps
+// TailClient (no --query) or NewMaprClient (--query).
+func NewInteractiveTailClient(args config.Args, cfg config.RuntimeConfig, loggers LoggerDependencies,
+	colorizers ...*brush.Brush) (*MaprClient, error) {
+	if !args.InteractiveQuery {
+		return nil, errors.New("the switchable dtail client needs --interactive-query")
+	}
+	args.Mode = omode.TailClient
+	return newMaprClient(args, cfg, DefaultMode, loggers, firstColorizer(colorizers), true)
+}
+
+// newMaprClient returns a mapreduce client for args. With switchable (see
+// NewInteractiveTailClient) the query may be empty, and the line filter of
+// the tail read a query replaces is set aside for the switch back
+// (tailFilter): the query then reads without the tail's --invert, context
+// lines and --max.
+func newMaprClient(args config.Args, cfg config.RuntimeConfig, maprClientMode MaprClientMode,
+	loggers LoggerDependencies, colorizer *brush.Brush, switchable bool) (*MaprClient, error) {
+	loggers = loggers.normalized()
+	query, saved, err := prepareMaprArgs(&args, loggers, switchable)
+	if err != nil {
+		return nil, err
+	}
+	// Reconnect only in tail mode and without an outfile. A switchable
+	// client keeps what it was created with when it switches later.
+	retry := args.Mode == omode.TailClient && (query == nil || !query.HasOutfile())
+
+	c := MaprClient{
+		session: maprclient.NewSessionState(query, loggers.Client),
+		mode:    maprClientMode,
+	}
+	// Only the command-line clients (DefaultMode) may run interactively.
+	// dserver's scheduled and continuous jobs (every other mode) have no
+	// terminal: an interactive session would never end by itself and the
+	// control loop would fail to open the control TTY.
+	if maprClientMode != DefaultMode {
+		args.InteractiveQuery = false
+	}
+
+	base, initErr := newBaseClient(args, cfg, loggers, colorizer, clientProfile{
+		newHandler: func(server string) handlers.Handler {
+			return handlers.NewMaprHandler(server, c.session, loggers.Client)
+		},
+		retry:          retry,
+		commit:         c.commitSessionSpec,
+		switchWorkload: switchable,
+		expectQuery:    c.session.ExpectAggregates,
+	})
+	if initErr != nil {
+		return nil, fmt.Errorf("initialize mapreduce client: %w", initErr)
+	}
+	c.baseClient = base
+	c.tailFilter = saved
+	loggers.Client.Debug("Cumulative mapreduce mode?", c.isCumulative(query))
+
+	return &c, nil
+}
+
+// prepareMaprArgs parses the query of args, nil for a switchable client
+// without one, and sets the query's line filter on args (applyQueryRegex).
+// For a switchable client with a query it returns the tail filter of args
+// (see tailFilter), cleared from args; otherwise an undefined one.
+func prepareMaprArgs(args *config.Args, loggers LoggerDependencies, switchable bool) (*mapr.Query,
+	tailFilter, error) {
+	if switchable && args.QueryStr == "" {
+		return nil, tailFilter{}, nil
+	}
 	query, err := mapr.NewQuery(args.QueryStr, loggers.Client)
 	if err != nil {
-		return nil, fmt.Errorf("parse mapreduce query %q: %w", args.QueryStr, err)
+		return nil, tailFilter{}, fmt.Errorf("parse mapreduce query %q: %w", args.QueryStr, err)
 	}
 
 	// Warn once, at plan time, about $-variables the selected parser cannot
@@ -79,31 +168,21 @@ func NewMaprClient(args config.Args, cfg config.RuntimeConfig, maprClientMode Ma
 	// serverless mode, so the warning reaches the user's stderr even though the
 	// actual field resolution happens server-side.
 	warnUnknownQueryVariables(os.Stderr, query, loggers.Client)
-	warnIgnoredInvert(os.Stderr, args, loggers.Client)
-
-	// Don't retry connection if in tail mode and no outfile specified.
-	retry := args.Mode == omode.TailClient && !query.HasOutfile()
-
-	c := MaprClient{
-		session: maprclient.NewSessionState(query, loggers.Client),
-		mode:    maprClientMode,
+	var saved tailFilter
+	if switchable {
+		// The --invert applies to the tail read a switch goes back to.
+		saved = tailFilterOf(*args)
+		clearTailFilter(args)
+		if saved.invert {
+			if _, err := fmt.Fprintln(os.Stderr, "NOTE: "+invertSetAsideNote); err != nil {
+				loggers.Client.Debug("Unable to write invert note", err)
+			}
+		}
+	} else {
+		warnIgnoredInvert(os.Stderr, *args, loggers.Client)
 	}
-
-	applyQueryRegex(&args, query)
-	base, initErr := newBaseClient(args, cfg, loggers, firstColorizer(colorizers), clientProfile{
-		newHandler: func(server string) handlers.Handler {
-			return handlers.NewMaprHandler(server, c.session, loggers.Client)
-		},
-		retry:  retry,
-		commit: c.commitSessionSpec,
-	})
-	if initErr != nil {
-		return nil, fmt.Errorf("initialize mapreduce client: %w", initErr)
-	}
-	c.baseClient = base
-	loggers.Client.Debug("Cumulative mapreduce mode?", c.isCumulative(query))
-
-	return &c, nil
+	applyQueryRegex(args, query)
+	return query, saved, nil
 }
 
 // Start starts the mapreduce client.
@@ -165,6 +244,11 @@ func (mode MaprClientMode) scheduled() bool {
 func (c *MaprClient) finish(ctxErr error, status int) int {
 	if c.mode.scheduled() {
 		return c.finishScheduled(ctxErr, status)
+	}
+	if c.session.Snapshot().Query == nil {
+		// Interactive dtail ended while following lines: no query, no
+		// result, nothing to warn about (see dropQuery).
+		return status
 	}
 
 	if reasons := c.incompleteResultReasons(); len(reasons) > 0 {
@@ -238,10 +322,6 @@ func (c *MaprClient) scheduledQueryOutcome(ctxErr error, status int) scheduledOu
 			return scheduledOutcome{incomplete: incomplete}
 		}
 		outcome.fileFailures = append(outcome.fileFailures, fileFailures...)
-		if !conn.Handler().HasCapability(protocol.CapabilityCommandFailureV1) {
-			c.clientLogger().Debug(conn.Server(), "Server does not report failed commands, "+
-				"only an incomplete session fails the query", protocol.CapabilityCommandFailureV1)
-		}
 	}
 	return outcome
 }
@@ -252,8 +332,7 @@ func (c *MaprClient) scheduledQueryOutcome(ctxErr error, status int) scheduledOu
 // <reason>". The session completed when the server ended it with its close
 // handshake (so it was not cut short, e.g. by a killed or shut down server or
 // a lost connection) and reported no failed command other than file read
-// failures. A server not advertising protocol.CapabilityCommandFailureV1
-// reports no failed commands, so for it only the close handshake counts.
+// failures.
 func sessionOutcome(server string, handler handlers.Handler) (incomplete string, fileFailures []string) {
 	reporter, ok := handler.(sessionOutcomeReporter)
 	if !ok {
@@ -293,7 +372,9 @@ const sessionCutShortReason = "ended before the server completed it"
 // read failures are left out: they mean that a file had no data to give (it
 // was missing, not permitted or unreadable), not that a command was rejected
 // or data the server read was lost on the way. A handler that cannot tell
-// how its session ended is left out too.
+// how its session ended is left out too, and so are the failures a server
+// reported before interactive dtail switched its session from following
+// lines to the active query (queryMarks).
 func (c *MaprClient) incompleteResultReasons() []string {
 	var reasons []string
 	for _, session := range c.snapshotSessions() {
@@ -306,7 +387,7 @@ func (c *MaprClient) incompleteResultReasons() []string {
 		if !outcome.Completed && !session.endedByClient {
 			reasons = append(reasons, conn.Server()+": the session "+sessionCutShortReason)
 		}
-		for _, reason := range outcome.Failures {
+		for _, reason := range c.queryMarks.since(conn.Handler(), outcome.Failures) {
 			if !protocol.IsFileReadFailure(reason) {
 				reasons = append(reasons, conn.Server()+": "+reason)
 			}
@@ -328,48 +409,81 @@ func incompleteQueryReason(ctxErr error, status int) string {
 	}
 }
 
+// periodicReportResults reports the interim results (prints them or writes
+// the outfile) until ctx is done, one query generation at a time
+// (reportGeneration). It does not run in the scheduled modes.
 func (c *MaprClient) periodicReportResults(ctx context.Context) {
-	var (
-		lastGeneration uint64
-		seenGeneration bool
-	)
-
-	for {
-		if ctx.Err() != nil {
+	for ctx.Err() == nil {
+		snapshot := c.session.Snapshot()
+		if snapshot.Query == nil {
+			// Interactive dtail follows lines: nothing to report (and to
+			// log about) until a query is committed.
+			if !c.awaitQueryChange(ctx) {
+				return
+			}
+			continue
+		}
+		if !c.reportGeneration(ctx, snapshot) {
 			return
 		}
-		snapshot := c.session.Snapshot()
-		rampUp := !seenGeneration || snapshot.Generation != lastGeneration
-		lastGeneration = snapshot.Generation
-		seenGeneration = true
+	}
+}
 
-		delay := c.reportDelay(snapshot.Query, rampUp)
-		c.clientLogger().Debug("Sleeping before processing mapreduce results", "generation", snapshot.Generation, "delay", delay)
+// reportGeneration reports the interim results of snapshot's query
+// generation until the session state changes (true) or ctx is done (false).
+//
+// The first report comes half an interval after the generation started.
+// Each dserver sends its first aggregates only one interval after it started
+// the query, though, so that report has nothing to show (an empty table is
+// not printed) and, on a fixed cadence, the first table would follow only
+// 1.5 intervals after the start. So, except for continuous jobs
+// (earlyFirstReport), the servers' first aggregates merged for the
+// generation (SessionSnapshot.AggregatesArrived) move the next report to
+// shortly after them (firstReportWindow: firstReportSettle after the last
+// live server's, or, while one is missing, half an interval after the first
+// server's). Every report
+// after it follows one interval after the previous one, which keeps the
+// reports between the servers' sends, at most half an interval behind them,
+// so each table holds one send of every server.
+func (c *MaprClient) reportGeneration(ctx context.Context, snapshot maprclient.SessionSnapshot) bool {
+	interval := c.reportDelay(snapshot.Query, false)
+	window := c.newFirstReportWindow(snapshot, interval)
+	delay := c.reportDelay(snapshot.Query, true)
+	c.clientLogger().Debug("Sleeping before processing mapreduce results", "generation", snapshot.Generation, "delay", delay)
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
 
-		timer := time.NewTimer(delay)
+	for {
 		select {
+		case <-window.arrived:
+			all := c.allLiveArrived(snapshot)
+			timer.Reset(window.settle(time.Now(), all))
+			c.clientLogger().Debug("Mapreduce aggregates of a server arrived", "generation", snapshot.Generation,
+				"allLiveServers", all)
 		case <-timer.C:
+			window.reporting()
 			c.clientLogger().Debug("Gathering interim mapreduce result")
 			if err := c.reportResults(false); err != nil {
 				c.clientLogger().Error("Unable to gather mapreduce result", err)
 			}
+			timer.Reset(interval)
 		case <-c.session.Changes():
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
 			c.clientLogger().Debug("Mapreduce query generation changed, recalculating report interval")
+			return true
 		case <-ctx.Done():
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			return
+			return false
 		}
+	}
+}
+
+// awaitQueryChange waits until the session state changes (a query is
+// committed or cleared) and reports false once ctx is done.
+func (c *MaprClient) awaitQueryChange(ctx context.Context) bool {
+	select {
+	case <-c.session.Changes():
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
@@ -450,14 +564,12 @@ func (c *MaprClient) writeCurrentResultsToOutfile(snapshot maprclient.SessionSna
 	cumulative := c.isCumulative(snapshot.Query)
 	c.clientLogger().Debug("writeResultsToOutfile called", "finalResult", finalResult, "cumulative", cumulative, "generation", snapshot.Generation)
 	if cumulative {
-		if err := snapshot.GlobalGroup.WriteResult(snapshot.Query, finalResult); err != nil {
-			return fmt.Errorf("unable to write cumulative mapreduce result: %w", err)
-		}
-		c.clientLogger().Debug("WriteResult completed for cumulative mode")
-		return nil
+		return c.writeCumulativeResult(snapshot, finalResult)
 	}
 
 	if snapshot.Query.Outfile.AppendMode {
+		// Each interval's rows are swapped out, so every report appends
+		// only what arrived since the previous one, once.
 		group := snapshot.GlobalGroup.SwapOut()
 		if err := group.WriteResult(snapshot.Query, true); err != nil {
 			return fmt.Errorf("unable to write non-cumulative mapreduce result: %w", err)
@@ -493,21 +605,129 @@ func (c *MaprClient) writeCurrentResultsToOutfile(snapshot maprclient.SessionSna
 	return nil
 }
 
+// writeCumulativeResult writes the whole result so far of a cumulative
+// query. Without append every report replaces the outfile (via .tmp and
+// rename), so interim reports keep it up to date. With "outfile append" an
+// interim report appends no rows: the result so far contains every earlier
+// report's rows again, so appending it would repeat them on every interval.
+// It only checks that the outfile can be opened for appending
+// (checkAppendOutfile), so an unwritable path is reported every interval
+// instead of only when the final write fails at the end of the run. Only the
+// final result of the query is appended, once (finish, or dropQuery and
+// commitSessionSpec when a reload ends the query). Until then the result
+// lives only in memory.
+func (c *MaprClient) writeCumulativeResult(snapshot maprclient.SessionSnapshot, finalResult bool) error {
+	if snapshot.Query.Outfile.AppendMode {
+		if !finalResult {
+			c.clientLogger().Debug("Not appending interim cumulative mapreduce result", "generation", snapshot.Generation)
+			return checkAppendOutfile(snapshot.Query.Outfile.FilePath)
+		}
+		// Serializes with appendReplacedResult, which writes a replaced
+		// generation's result outside of the session's read lock.
+		c.outfileState.mu.Lock()
+		defer c.outfileState.mu.Unlock()
+	}
+	if err := snapshot.GlobalGroup.WriteResult(snapshot.Query, finalResult); err != nil {
+		return fmt.Errorf("unable to write cumulative mapreduce result: %w", err)
+	}
+	c.clientLogger().Debug("WriteResult completed for cumulative mode")
+	return nil
+}
+
+// checkAppendOutfile opens path for appending, as the final write will, and
+// closes it again without writing. It creates path when it is missing (an
+// empty file, to which the final result then appends its CSV header), so a
+// missing directory, a denied permission or a directory at path fail here.
+func checkAppendOutfile(path string) error {
+	fd, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return fmt.Errorf("unable to open mapreduce outfile for appending: %w", err)
+	}
+	if err := fd.Close(); err != nil {
+		return fmt.Errorf("unable to close mapreduce outfile %q: %w", path, err)
+	}
+	return nil
+}
+
 // commitSessionSpec is the profile commit of an interactive reload: it
 // switches the client-side aggregation to the reloaded query at the new
 // generation. It does not touch c.Args: reconnects read them concurrently
 // under the state lock, and applyInteractiveReload stores the reloaded args
 // (with the query and its normalized line filter, see
 // normalizeInteractiveArgs) under that lock right after this commit.
+//
+// A spec without a query is rejected, except by the switchable client of
+// interactive dtail (clientProfile.switchWorkload), whose session then
+// follows lines: see dropQuery. A query that follows none starts with the
+// failures the servers reported so far marked as not its own (queryMarks).
+// A replaced cumulative "outfile append" query gets its result appended once
+// (appendReplacedResult), as its interim reports appended nothing.
 func (c *MaprClient) commitSessionSpec(spec SessionSpec, generation uint64) error {
 	if spec.Query == "" {
-		return errors.New("missing mapreduce query")
+		if !c.profile.switchWorkload {
+			return errors.New("missing mapreduce query")
+		}
+		c.dropQuery(generation)
+		return nil
 	}
 
-	_, err := c.session.CommitQuery(spec.Query, generation)
-	return err
+	previous := c.session.Snapshot()
+	if _, err := c.session.CommitQuery(spec.Query, generation); err != nil {
+		return err
+	}
+	if previous.Query == nil {
+		c.queryMarks.mark(c.snapshotConnections())
+		return nil
+	}
+	c.appendReplacedResult(previous)
+	return nil
 }
 
+// appendReplacedResult appends the result of previous, a query a reload just
+// replaced, if it is a cumulative "outfile append" query: its interim
+// reports wrote nothing (writeCumulativeResult), so without this what it
+// received would never reach the outfile. As for dropQuery, the servers
+// aborted its aggregate, so this is what arrived until the reload. The
+// snapshot is stale by now (CommitQuery replaced it), so it is written
+// directly; later aggregates go to the new generation's group set (a merge
+// that took the old snapshot just before the commit may still finish after
+// this write, its rows are then lost like the aborted ones). Other queries
+// are left alone: their interim reports already wrote their results.
+func (c *MaprClient) appendReplacedResult(previous maprclient.SessionSnapshot) {
+	if previous.GlobalGroup == nil || !previous.Query.HasOutfile() ||
+		!previous.Query.Outfile.AppendMode || !c.isCumulative(previous.Query) {
+		return
+	}
+	if err := c.writeCumulativeResult(previous, true); err != nil {
+		c.clientLogger().Error("Unable to append the replaced query's mapreduce result", err)
+	}
+}
+
+// dropQuery ends the active query, if any, of a switchable client whose
+// session switched back to following lines at generation. The servers
+// already stopped the query (they acknowledged the update), and they abort
+// its aggregate when the generation is replaced instead of sending it once
+// more: what they aggregated since their last periodic serialization (up to
+// one interval of the query) never reaches the client. What did arrive is
+// reported once more, as the query's last result, as finish does
+// (reportResults(true)): with an outfile it is always written; without one
+// printResults prints it only if the rendered table has rows and changed
+// since the last print, and for interactive dtail without an outfile (not
+// cumulative) it covers only what arrived since the last report. Then the
+// client-side state is cleared (SessionState.ClearQuery), which also ends
+// the periodic reports until a new query is committed.
+func (c *MaprClient) dropQuery(generation uint64) {
+	if c.session.Snapshot().Query != nil {
+		if err := c.reportResults(true); err != nil {
+			c.clientLogger().Error("Unable to write final mapreduce result", err)
+		}
+	}
+	c.session.ClearQuery(generation)
+}
+
+// isCumulative reports whether the results of query add up over the
+// intervals. The args are read under the state lock: an interactive reload
+// or workload switch replaces them while the reporter runs.
 func (c *MaprClient) isCumulative(query *mapr.Query) bool {
 	switch c.mode {
 	case CumulativeMode, ScheduledMode, ScheduledPartialMode:
@@ -515,7 +735,8 @@ func (c *MaprClient) isCumulative(query *mapr.Query) bool {
 	case NonCumulativeMode:
 		return false
 	default:
-		return c.Mode == omode.MapClient || (query != nil && query.HasOutfile())
+		args, _ := c.snapshotConnectionState()
+		return args.Mode == omode.MapClient || (query != nil && query.HasOutfile())
 	}
 }
 
@@ -535,6 +756,13 @@ func warnUnknownQueryVariables(w io.Writer, query *mapr.Query, logger logging.Lo
 	}
 }
 
+// reportDelay is the time until the next interim report: the query's
+// interval (mapr.NewQuery defaults it to 5 s), which also paces each
+// dserver's periodic serialization (aggregate.Start), or half of it for the
+// first report of a query generation (rampUp; reportGeneration moves that
+// report to shortly after the generation's first aggregates). The 1 s
+// fallback only applies to "interval 0" (and a missing query), matching the
+// server's fallback.
 func (c *MaprClient) reportDelay(query *mapr.Query, rampUp bool) time.Duration {
 	interval := time.Second
 	if query != nil && query.Interval > 0 {

@@ -14,16 +14,15 @@ import (
 )
 
 // TestMaprHandlerOutcome feeds a mapreduce client handler the hidden messages
-// a session ends with and checks how it reports the session's end: complete
+// (marked control frames) a session ends with and checks how it reports the session's end: complete
 // only after the server's close handshake, and with the distinct failed
 // commands the server reported.
 func TestMaprHandlerOutcome(t *testing.T) {
 	const (
-		capabilities = protocol.HiddenCapabilitiesPrefix + protocol.CapabilityQueryUpdateV1 + " " +
-			protocol.CapabilityCommandFailureV1
-		closeSync = ".syn close connection"
-		noFile    = protocol.HiddenCommandFailedPrefix + "read: no file to read\n"
-		noPerm    = protocol.HiddenCommandFailedPrefix + "read: no permission to read file\n"
+		capabilities = protocol.HiddenCapabilitiesPrefix + protocol.CapabilityJournalV1
+		closeSync    = ".syn close connection"
+		noFile       = protocol.HiddenCommandFailedPrefix + "read: no file to read\n"
+		noPerm       = protocol.HiddenCommandFailedPrefix + "read: no permission to read file\n"
 	)
 	tests := []struct {
 		name     string
@@ -59,7 +58,7 @@ func TestMaprHandlerOutcome(t *testing.T) {
 			defer handler.Shutdown()
 
 			for _, message := range tt.messages {
-				if _, err := handler.Write(append([]byte(message), protocol.MessageDelimiter)); err != nil {
+				if _, err := handler.Write(controlFrames(message)); err != nil {
 					t.Fatalf("Write(%q) error = %v", message, err)
 				}
 			}
@@ -82,11 +81,32 @@ func TestMaprHandlerOutcomeBoundsFailures(t *testing.T) {
 	defer handler.Shutdown()
 	for i := range 2 * maxReportedFailures {
 		message := fmt.Sprintf("%sreason %d", protocol.HiddenCommandFailedPrefix, i)
-		if _, err := handler.Write(append([]byte(message), protocol.MessageDelimiter)); err != nil {
+		if _, err := handler.Write(controlFrames(message)); err != nil {
 			t.Fatalf("Write(%q) error = %v", message, err)
 		}
 	}
 	if got := len(handler.Outcome().Failures); got != maxReportedFailures {
 		t.Fatalf("kept %d failures, want %d", got, maxReportedFailures)
+	}
+}
+
+// TestMaprHandlerOutcomeIgnoresUnmarkedControlLookalikes: unmarked frames
+// reading like the close handshake or a failure report are payload, so they
+// neither complete the session nor report a failure.
+func TestMaprHandlerOutcomeIgnoresUnmarkedControlLookalikes(t *testing.T) {
+	query, err := mapr.NewQuery("from STATS select count($line)", logging.NopLogger{})
+	if err != nil {
+		t.Fatalf("NewQuery() error = %v", err)
+	}
+	handler := NewMaprHandler("srv1", maprclient.NewSessionState(query, logging.NopLogger{}), clientlog.NopLogger{})
+	defer handler.Shutdown()
+	stream := capabilitiesFrame()
+	stream = append(stream, payloadFrames(protocol.EscapedControlFraming,
+		protocol.HiddenCommandFailedPrefix+"read: no file to read", ".syn close connection")...)
+	if _, err := handler.Write(stream); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if got := handler.Outcome(); got.Completed || len(got.Failures) != 0 {
+		t.Fatalf("Outcome() = %+v, want an incomplete session without failures", got)
 	}
 }

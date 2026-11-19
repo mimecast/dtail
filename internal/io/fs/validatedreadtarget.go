@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
 )
 
 // JournalSpecPrefix marks a read target as a systemd journal source.
@@ -65,6 +64,9 @@ func NewValidatedReadTarget(resolvedPath string) (ValidatedReadTarget, error) {
 }
 
 // NewValidatedJournalTarget returns a validated journal-backed read target.
+// The unit after the prefix must be one literal systemd unit name (see
+// validateJournalSpec), so the readfiles rules that were checked against spec
+// cover exactly the entries journalctl -u reads for it.
 func NewValidatedJournalTarget(spec string) (ValidatedReadTarget, error) {
 	if !IsJournalSpec(spec) {
 		return ValidatedReadTarget{}, fmt.Errorf("journal read target requires %q prefix: %s", JournalSpecPrefix, spec)
@@ -76,22 +78,6 @@ func NewValidatedJournalTarget(spec string) (ValidatedReadTarget, error) {
 		Kind:         JournalKind,
 		resolvedPath: spec,
 	}, nil
-}
-
-func validateJournalSpec(spec string) error {
-	source := strings.TrimPrefix(spec, JournalSpecPrefix)
-	if source == "" {
-		return fmt.Errorf("journal read target requires a unit name after %q", JournalSpecPrefix)
-	}
-	if strings.HasPrefix(source, "-") {
-		return fmt.Errorf("journal read target unit must not start with '-'")
-	}
-	for _, r := range source {
-		if unicode.IsControl(r) || unicode.IsSpace(r) {
-			return fmt.Errorf("journal read target unit contains invalid whitespace or control character")
-		}
-	}
-	return nil
 }
 
 // ResolvedPath returns the absolute path the target was validated for. Two

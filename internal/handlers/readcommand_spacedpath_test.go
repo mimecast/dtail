@@ -66,7 +66,7 @@ func writeSpacedPathTestFile(t *testing.T, dir, name string) string {
 	return path
 }
 
-// readSpecOutput runs the legacy command stream of a one-shot spec reading
+// readSpecOutput runs the plain command stream of a one-shot spec reading
 // files and returns what reached the transport and the serverless output.
 func readSpecOutput(t *testing.T, handler *ServerHandler, serverless *testOutput,
 	mode omode.Mode, files ...string) (string, string) {
@@ -76,7 +76,7 @@ func readSpecOutput(t *testing.T, handler *ServerHandler, serverless *testOutput
 	if err != nil {
 		t.Fatalf("build commands: %v", err)
 	}
-	transport := runLegacyCommandsOn(t, handler, commands)
+	transport := runCommandStreamOn(t, handler, commands)
 	if serverless == nil {
 		return transport, ""
 	}
@@ -158,7 +158,7 @@ func TestReadCommandRejectsInvalidEncodedPath(t *testing.T) {
 			// The test logger logs nothing, but the client still gets the
 			// message text (see logging.ErrorMessage) along with the hidden
 			// failed-command reason.
-			output := runLegacyCommandsOn(t, handler, []string{"cat: " + word + " regex:noop "})
+			output := runCommandStreamOn(t, handler, []string{"cat: " + word + " regex:noop "})
 			if want := protocol.HiddenCommandFailedPrefix + protocol.CommandFailureReadCommand; !strings.Contains(output, want) {
 				t.Fatalf("invalid encoded path %q did not report %q: %q", word, want, output)
 			}

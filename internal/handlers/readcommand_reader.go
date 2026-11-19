@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/mimecast/dtail/internal/io/fs"
 	"github.com/mimecast/dtail/internal/io/journal"
@@ -57,7 +56,7 @@ func makeReader(options readerFactoryOptions, mode omode.Mode, seekEOF bool) (fs
 	if options.target != nil && options.target.Kind == fs.JournalKind {
 		// Journal entries are cut at MaxLineLength like file lines.
 		return journal.NewReader(journal.ReaderOptions{
-			Args:           journalArgs(options.path),
+			Args:           journal.UnitArgs(options.path),
 			SourceID:       options.path,
 			Follow:         mode == omode.TailClient,
 			ServerMessages: options.serverMessages,
@@ -84,12 +83,4 @@ func readerFactoryFor(mode omode.Mode) readerFactory {
 		return readerFactories[omode.TailClient]
 	}
 	return factory
-}
-
-func journalArgs(spec string) []string {
-	source := strings.TrimPrefix(spec, fs.JournalSpecPrefix)
-	if source == "" {
-		return nil
-	}
-	return []string{"-u", source}
 }

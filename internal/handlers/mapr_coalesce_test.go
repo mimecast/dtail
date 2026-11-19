@@ -20,11 +20,11 @@ func newMaprCoalesceTestHandler(activeGeneration uint64) *baseHandler {
 	})
 }
 
-// encodeAggregateFrames returns the raw aggregate frames of contents in order.
+// encodeAggregateFrames returns the aggregate frames of contents in order.
 func encodeAggregateFrames(contents ...string) []byte {
 	var want bytes.Buffer
 	for _, content := range contents {
-		protocol.RawFraming.EncodeMessage(&want, protocol.Message{
+		sessionFraming.EncodeMessage(&want, protocol.Message{
 			Kind: protocol.MessageAggregate, Hostname: "testhost", Content: content})
 	}
 	return want.Bytes()
@@ -173,28 +173,24 @@ func TestReadCoalescingFillsEveryWriteAfterSplitFrame(t *testing.T) {
 }
 
 // TestReadCoalescingEscapesEachFrame checks that every coalesced frame is
-// escaped on its own under the escaped framings, also when a frame is split
+// escaped on its own, also when a frame is split
 // across Reads, so group content with MessageDelimiter (0xAC, e.g. in '€'
 // and '¬') or FrameEscape (0xFF) bytes decodes back unchanged.
 func TestReadCoalescingEscapesEachFrame(t *testing.T) {
 	contents := []string{"€uro≔1", "not¬≔2", "esc\xff≔3", "both\xac\xff\xac≔4", "plain≔5",
 		"\xff\xff\xac\xac≔6"}
-	for _, framing := range []protocol.Framing{protocol.EscapedFraming,
-		protocol.EscapedControlFraming} {
-		handler := newMaprCoalesceTestHandler(0)
-		handler.framingState.Store(uint32(framing))
-		var want bytes.Buffer
-		for _, content := range contents {
-			handler.maprMessages <- content
-			framing.EncodeMessage(&want, protocol.Message{
-				Kind: protocol.MessageAggregate, Hostname: "testhost", Content: content})
-		}
-		stream := readExactly(t, handler, 13, want.Len())
-		if !bytes.Equal(stream, want.Bytes()) {
-			t.Fatalf("%v: stream = %q, want %q", framing, stream, want.Bytes())
-		}
-		assertAggregateFramesDecode(t, framing, stream, contents)
+	handler := newMaprCoalesceTestHandler(0)
+	var want bytes.Buffer
+	for _, content := range contents {
+		handler.maprMessages <- content
+		sessionFraming.EncodeMessage(&want, protocol.Message{
+			Kind: protocol.MessageAggregate, Hostname: "testhost", Content: content})
 	}
+	stream := readExactly(t, handler, 13, want.Len())
+	if !bytes.Equal(stream, want.Bytes()) {
+		t.Fatalf("stream = %q, want %q", stream, want.Bytes())
+	}
+	assertAggregateFramesDecode(t, sessionFraming, stream, contents)
 }
 
 // assertAggregateFramesDecode splits stream at MessageDelimiter and checks
@@ -231,7 +227,7 @@ func TestReadCoalescedMaprPrecedesCloseSync(t *testing.T) {
 	want := encodeAggregateFrames(queueMaprContents(handler, 20)...)
 	handler.requestCloseSync(context.Background())
 	var closeFrame bytes.Buffer
-	protocol.RawFraming.EncodeControl(&closeFrame, ".syn close connection")
+	sessionFraming.EncodeControl(&closeFrame, ".syn close connection")
 	want = append(want, closeFrame.Bytes()...)
 
 	if got := readExactly(t, handler, 70, len(want)); !bytes.Equal(got, want) {

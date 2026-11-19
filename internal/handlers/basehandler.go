@@ -1,14 +1,10 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"sync/atomic"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/logging"
@@ -121,6 +117,7 @@ func newBaseHandler(connCtx context.Context, cfg baseHandlerConfig) *baseHandler
 		handler:          h,
 		maprMessages:     maprMessages,
 		serverMessages:   serverMessages,
+		sessionAcks:      make(chan sessionAck, sessionAckQueueSize),
 		hostname:         cfg.hostname,
 		ackCloseReceived: make(chan struct{}),
 		outputAbort:      internal.NewDone(),
@@ -128,6 +125,7 @@ func newBaseHandler(connCtx context.Context, cfg baseHandlerConfig) *baseHandler
 	}
 	// Set before any goroutine uses the manager, like its configuration.
 	h.outputCoordinator.output.clientSlow = h.outputCoordinator.clientSlow
+	h.output.heldGeneration = h.ackGate.holds
 	return h
 }
 
@@ -198,12 +196,11 @@ func (h *baseHandler) shutdown(ctx context.Context) {
 // session without the close handshake (no ".syn close connection", no wait
 // for its acknowledgement). It ends sessions whose client speaks another
 // protocol version, which can not be relied on to recognize or acknowledge
-// the handshake; a legacy client (protocol <= 3, an unparsable version or no
-// protocol prefix) keeps its session instead
-// (commandDispatcher.rejectProtocolVersion). The client sees
-// the queued error and then the end of the session without its close
-// handshake, i.e. an incomplete session. Read still hands out everything
-// queued before it reports EOF.
+// the handshake; an older client (see mismatchedClient) keeps its session
+// instead (keepMismatchedSessionOpen). The client sees the queued error and
+// then the end of the session without its close handshake, i.e. an
+// incomplete session. Read still hands out everything queued before it
+// reports EOF.
 func (h *baseHandler) closeWithoutHandshake(ctx context.Context) {
 	if ctx == nil {
 		panic("handlers: nil close context")
@@ -212,6 +209,13 @@ func (h *baseHandler) closeWithoutHandshake(ctx context.Context) {
 	h.drainSessionOutput(ctx)
 	h.cancelCommands()
 	h.done.Shutdown()
+}
+
+// keepMismatchedSessionOpen leaves the session of an older client of another
+// protocol version open after its mismatch error (see mismatchedClient): it
+// ends when the client exits or at IdleSessionTimeoutS.
+func (h *baseHandler) keepMismatchedSessionOpen() {
+	h.Logger().Debug(h.user, "Keeping session of an older protocol version open")
 }
 
 // drainSessionOutput flushes the session's direct output, shuts its output
@@ -276,35 +280,6 @@ func (h *baseHandler) reportIncompleteMapResult(aggregate *mapaggregate.Aggregat
 // the session's close handshake.
 func (h *baseHandler) reportCommandFailure(reason string) {
 	h.sendln(h.serverMessages, protocol.HiddenCommandFailedPrefix+reason)
-}
-
-// messageText returns text, which may contain text the client sent such as
-// its query, for a server message whose content is not fixed, e.g. a session
-// error acknowledgement or a map command's diagnostic. Under EscapedFraming
-// and EscapedControlFraming every byte of a frame body is transported as it
-// is (control frames are escaped too, and their marker is unforgeable), so
-// text is returned unchanged. Raw framing (clients that did not negotiate
-// escaped framing, such as older ones) has no escaping: a character whose
-// UTF-8 encoding contains the message delimiter byte would split the message,
-// so such characters, and control characters, are replaced with blanks.
-func (h *baseHandler) messageText(text string) string {
-	if h.framing() != protocol.RawFraming {
-		return text
-	}
-	return rawFramingText(text)
-}
-
-// rawFramingText replaces the characters of text that raw framing can not
-// carry in a message, and control characters, with blanks.
-func rawFramingText(text string) string {
-	return strings.Map(func(r rune) rune {
-		var encoded [utf8.UTFMax]byte
-		n := utf8.EncodeRune(encoded[:], r)
-		if unicode.IsControl(r) || bytes.IndexByte(encoded[:n], protocol.MessageDelimiter) >= 0 {
-			return ' '
-		}
-		return r
-	}, text)
 }
 
 // abortAfterPanic signals every session-owned producer and consumer to stop.

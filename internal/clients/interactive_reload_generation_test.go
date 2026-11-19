@@ -13,10 +13,10 @@ import (
 // to the same generation instead of failing with mismatched generations.
 func TestInteractiveReloadAfterReconnectAlignsGenerations(t *testing.T) {
 	oldSpec := SessionSpec{Mode: omode.GrepClient, Files: []string{"/var/log/app.log"}, Regex: "ERROR"}
-	connA := &interactiveReloadConnector{server: "srv1", supported: true,
+	connA := &interactiveReloadConnector{server: "srv1",
 		committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
 	// srv2 reconnected: its SESSION START was acknowledged with generation 1.
-	connB := &interactiveReloadConnector{server: "srv2", supported: true,
+	connB := &interactiveReloadConnector{server: "srv2",
 		committedSpec: oldSpec, liveSpec: oldSpec, generation: 1}
 	recorder := &interactiveReloadRecorder{}
 
@@ -30,7 +30,7 @@ func TestInteractiveReloadAfterReconnectAlignsGenerations(t *testing.T) {
 	nextArgs := config.Args{Mode: omode.GrepClient, What: "/tmp/new.log", RegexStr: "WARN"}
 	nextSpec := SessionSpec{Mode: omode.GrepClient, Files: []string{"/tmp/new.log"}, Regex: "WARN"}
 	for i := 0; i < 2; i++ {
-		if err := client.applyInteractiveReload(nextArgs, nextSpec); err != nil {
+		if _, err := client.applyInteractiveReload(nextArgs, nextSpec); err != nil {
 			t.Fatalf("reload %d: %v", i+1, err)
 		}
 		_, genA, _ := connA.CommittedSession()

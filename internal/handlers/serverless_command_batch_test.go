@@ -18,7 +18,6 @@ import (
 
 func TestServerlessCommandBatchDefersIdleShutdownUntilAllCommandsAreAdmitted(t *testing.T) {
 	handler := newMapTestHandler(t)
-	readServerMessage(t, handler.serverMessages) // Initial capability advertisement.
 
 	var processed []string
 	handler.commands["probe"] = func(_ context.Context, _ lcontext.LContext, _ int, args []string, commandFinished func()) {
@@ -372,7 +371,6 @@ func TestServerlessMapBatchAcceptsReadAfterEarlierReadFullyCompletes(t *testing.
 func TestInputBatchKeepsUnclaimedReadFromFinishingBeforeLaterValidRead(t *testing.T) {
 	handler := newServerlessMapTestHandler(t, handlerTestLogger)
 	path := writeTestStatsFile(t, 3)
-	readServerMessage(t, handler.serverMessages) // Initial capability advertisement.
 
 	commandWg := wrapHandlerCommandsForJoin(handler)
 	validCat := handler.commands["cat"]
@@ -431,7 +429,6 @@ func TestInputBatchKeepsUnclaimedReadFromFinishingBeforeLaterValidRead(t *testin
 
 func TestSessionCommandBatchContextsKeepOverlappingGenerationsSeparate(t *testing.T) {
 	handler := newMapTestHandler(t)
-	readServerMessage(t, handler.serverMessages) // Initial capability advertisement.
 	handler.sessionState.mu.Lock()
 	handler.sessionState.active = true
 	handler.sessionState.mu.Unlock()

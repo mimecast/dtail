@@ -28,7 +28,7 @@ func TestSessionUpdateWithRepeatedClientGenerationGetsNewServerGeneration(t *tes
 
 	handler.handleSessionCommand(context.Background(), lcontext.LContext{}, 3,
 		[]string{"SESSION", "START", payload("/var/log/a.log")}, func() {})
-	if message := readServerMessage(t, handler.serverMessages); message != sessionAckStartOKPrefix+" 1" {
+	if message := readSessionAck(t, handler); message != sessionAckStartOKPrefix+" 1" {
 		t.Fatalf("unexpected session start ack: %q", message)
 	}
 	recorder.waitForStart(t)
@@ -37,7 +37,7 @@ func TestSessionUpdateWithRepeatedClientGenerationGetsNewServerGeneration(t *tes
 	for _, file := range []string{"/var/log/b.log", "/var/log/c.log"} {
 		handler.handleSessionCommand(context.Background(), lcontext.LContext{}, 4,
 			[]string{"SESSION", "UPDATE", "2", payload(file)}, func() {})
-		if message := readServerMessage(t, handler.serverMessages); message != sessionAckUpdateOKPrefix+" 2" {
+		if message := readSessionAck(t, handler); message != sessionAckUpdateOKPrefix+" 2" {
 			t.Fatalf("unexpected session update ack: %q", message)
 		}
 		recorder.waitForStart(t)

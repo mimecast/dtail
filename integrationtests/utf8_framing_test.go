@@ -17,7 +17,7 @@ import (
 
 // The UTF-8 encodings of '€' (E2 82 AC), 'Ь' (D0 AC), '¬' (C2 AC) and '丬'
 // (E4 B8 AC) end in 0xAC, the byte that delimits protocol messages. Before
-// escaped framing (protocol.CapabilityEscapedFramingV1), server mode cut each
+// escaped framing (protocol.EscapedControlFraming), server mode cut each
 // such line at that byte and lost it, while serverless mode printed it whole.
 const (
 	utf8FramingCatFile         = "dcat_utf8.txt"

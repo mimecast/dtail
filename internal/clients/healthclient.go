@@ -18,10 +18,20 @@ type HealthClient struct {
 }
 
 // NewHealthClient returns a new health client.
+//
+// It never registers an auth key (NoAuthKey), whatever --no-auth-key says:
+// the health user authenticates by password, dserver refuses keys for it,
+// and the health handler of a protocol 5 dserver from before task 7c4 took
+// the AUTHKEY command for an unknown health command and ended the session
+// before the health command, so a healthy server was reported CRITICAL
+// whenever the auth key's .pub file existed. Newer dservers ignore AUTHKEY
+// in health sessions (HealthHandler.ignoreAuthKey) for older dtailhealth
+// binaries that still send it.
 func NewHealthClient(args config.Args, cfg config.RuntimeConfig, loggers LoggerDependencies,
 	colorizers ...*brush.Brush) (*HealthClient, error) {
 	args.Mode = omode.HealthClient
 	args.UserName = config.HealthUser
+	args.NoAuthKey = true
 	args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(config.HealthUser))
 	loggers = loggers.normalized()
 

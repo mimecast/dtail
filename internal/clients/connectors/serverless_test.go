@@ -448,7 +448,7 @@ func (h *serverlessLifecycleClient) Status() int {
 }
 func (h *serverlessLifecycleClient) Done() <-chan struct{}                { return h.done }
 func (*serverlessLifecycleClient) WaitForCapabilities(time.Duration) bool { return false }
-func (*serverlessLifecycleClient) WaitForSessionAck(time.Duration) (handlers.SessionAck, bool) {
+func (*serverlessLifecycleClient) WaitForSessionAck(time.Duration, time.Duration) (handlers.SessionAck, bool) {
 	return handlers.SessionAck{}, false
 }
 

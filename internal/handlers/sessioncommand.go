@@ -67,45 +67,52 @@ func (s *sessionCommandState) nextGeneration() uint64 {
 
 // handleSessionCommand handles SESSION START and SESSION UPDATE. An error
 // acknowledgement may carry the reason a query was rejected, which contains
-// the client's query text, so it goes through messageText.
+// the client's query text; escaping (sessionFraming) carries every byte of
+// it, so it is sent as it is.
+//
+// Every acknowledgement goes to the session's acknowledgement queue, not to
+// the server messages: the output of the started workload is held back
+// until its acknowledgement went out (sessionAckGate), so that a client on a
+// slow link gets it in time rather than behind the session output buffer.
 func (h *ServerHandler) handleSessionCommand(parentCtx context.Context, _ lcontext.LContext, argc int, args []string, commandFinished func()) {
 	defer commandFinished()
 
-	action, generation, spec, err := parseSessionCommand(args, argc, h.Logger())
+	action, acked, spec, err := parseSessionCommand(args, argc, h.Logger())
 	if err != nil {
 		h.sendSessionError(err.Error())
 		return
 	}
 
+	var prefix string
+	var generation uint64
 	switch action {
 	case "START":
-		generation, err = h.sessionState.start(parentCtx, h, spec)
-		if err != nil {
-			h.sendSessionError(err.Error())
-			return
-		}
-		h.send(h.serverMessages, fmt.Sprintf("%s %d", sessionAckStartOKPrefix, generation))
+		prefix = sessionAckStartOKPrefix
+		acked, generation, err = h.sessionState.start(parentCtx, h, spec)
 	case "UPDATE":
 		if !h.sessionState.activeSession() {
 			h.sendSessionError("session not started")
 			return
 		}
-		generation, err = h.sessionState.update(parentCtx, h, spec, generation)
-		if err != nil {
-			h.sendSessionError(err.Error())
-			return
-		}
-		h.send(h.serverMessages, fmt.Sprintf("%s %d", sessionAckUpdateOKPrefix, generation))
+		prefix = sessionAckUpdateOKPrefix
+		acked, generation, err = h.sessionState.update(parentCtx, h, spec, acked)
 	default:
 		h.sendSessionError("unknown action")
+		return
 	}
+	if err != nil {
+		h.sendSessionError(err.Error())
+		return
+	}
+	h.sendSessionAck(sessionAck{message: fmt.Sprintf("%s %d", prefix, acked), generation: generation})
 }
 
-// sendSessionError sends a session error acknowledgement. Clients, also
-// older ones, take the whole rest of the acknowledgement as the error and
-// show it, so it may say why a query was rejected.
+// sendSessionError sends a session error acknowledgement. Clients take the
+// whole rest of the acknowledgement as the error and show it, so it may say
+// why a query was rejected. It releases no held output: a workload that
+// failed to start released its own (sessionCommandState.dispatch).
 func (h *ServerHandler) sendSessionError(reason string) {
-	h.send(h.serverMessages, sessionAckErrorPrefix+h.messageText(reason))
+	h.sendSessionAck(sessionAck{message: sessionAckErrorPrefix + reason})
 }
 
 func parseSessionCommand(args []string, argc int, logger logging.Logger) (action string, generation uint64, spec session.Spec, err error) {
@@ -168,77 +175,77 @@ func validateSessionSpec(spec session.Spec, logger logging.Logger) error {
 	return nil
 }
 
-// start starts the session with generation 1. Its map command, if any, is
-// built before the session changes, so that one that can not be built
-// rejects the request (see prepareSessionMapCommand).
-func (s *sessionCommandState) start(parentCtx context.Context, handler *ServerHandler, spec session.Spec) (uint64, error) {
+// start starts the session with generation 1, the number the client knows
+// it by (acked), and returns that and the server's number of the workload.
+// Its map command, if any, is built before the session changes, so that one
+// that can not be built rejects the request (see prepareSessionMapCommand).
+func (s *sessionCommandState) start(parentCtx context.Context, handler *ServerHandler,
+	spec session.Spec) (acked, generation uint64, err error) {
+
 	commands, err := prepareSessionCommands(spec)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	// Checked before building the map command too, so that a repeated START
 	// gets this error rather than one of its query, without building it.
 	if s.activeSession() {
-		return 0, fmt.Errorf("session already started")
+		return 0, 0, fmt.Errorf("session already started")
 	}
 	ctx, err := handler.prepareSessionMapCommand(
 		sessionCommandContext(handler.commandRootCtx, parentCtx), commands)
 	if err != nil {
-		return 0, fmt.Errorf("invalid session query: %w", err)
+		return 0, 0, fmt.Errorf("invalid session query: %w", err)
 	}
 
 	s.mu.Lock()
 	if s.active {
 		s.mu.Unlock()
-		return 0, fmt.Errorf("session already started")
+		return 0, 0, fmt.Errorf("session already started")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	generation := s.nextGeneration()
+	generation = s.nextGeneration()
 	s.active = true
 	s.generation.Store(generation)
 	s.acked = 1
 	s.spec = spec
 	s.cancel = cancel
 	s.mu.Unlock()
-	ctx = withSessionGeneration(ctx, generation)
 
-	handler.mapQueryFailures.clear(generation)
-	handler.resetSessionAggregates()
-	if dispatchErr := handler.dispatchSessionCommands(ctx, commands); dispatchErr != nil {
-		cancel()
-		s.reset()
-		return 0, dispatchErr
+	if err := s.dispatch(ctx, handler, commands, generation, cancel); err != nil {
+		return 0, 0, err
 	}
-
-	return 1, nil
+	return 1, generation, nil
 }
 
-// update replaces the running generation with a new one, the client's
-// generation or else the next one. Its map command, if any, is built before
-// the previous generation is cancelled, so that one that can not be built
-// rejects the update while the running generation keeps running (see
-// prepareSessionMapCommand).
-func (s *sessionCommandState) update(parentCtx context.Context, handler *ServerHandler, spec session.Spec, generation uint64) (uint64, error) {
+// update replaces the running generation with a new one, which the client
+// knows by its own number (clientGeneration) or else the next one, and
+// returns that number (acked) and the server's number of the workload. Its
+// map command, if any, is built before the previous generation is
+// cancelled, so that one that can not be built rejects the update while the
+// running generation keeps running (see prepareSessionMapCommand).
+func (s *sessionCommandState) update(parentCtx context.Context, handler *ServerHandler,
+	spec session.Spec, clientGeneration uint64) (acked, generation uint64, err error) {
+
 	commands, err := prepareSessionCommands(spec)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	ctx, err := handler.prepareSessionMapCommand(
 		sessionCommandContext(handler.commandRootCtx, parentCtx), commands)
 	if err != nil {
-		return 0, fmt.Errorf("invalid session query: %w", err)
+		return 0, 0, fmt.Errorf("invalid session query: %w", err)
 	}
 
 	s.mu.Lock()
 	if !s.active {
 		s.mu.Unlock()
-		return 0, fmt.Errorf("session not started")
+		return 0, 0, fmt.Errorf("session not started")
 	}
 	oldCancel := s.cancel
 	ctx, cancel := context.WithCancel(ctx)
 	// acked is what the client knows the workload by: its own number, or
 	// else the next one. generation is the server's (see the type comment).
-	acked := generation
+	acked = clientGeneration
 	if acked == 0 {
 		acked = s.acked + 1
 	}
@@ -249,21 +256,35 @@ func (s *sessionCommandState) update(parentCtx context.Context, handler *ServerH
 	s.spec = spec
 	s.cancel = cancel
 	s.mu.Unlock()
-	ctx = withSessionGeneration(ctx, generation)
 
 	if oldCancel != nil {
 		oldCancel()
 	}
+	if err := s.dispatch(ctx, handler, commands, generation, cancel); err != nil {
+		return 0, 0, err
+	}
+	return acked, generation, nil
+}
 
+// dispatch dispatches the commands of the new workload generation. It first
+// holds back the output of the generation until the workload's
+// acknowledgement went out (sessionAckGate); no output of it exists before
+// the dispatch. A workload that fails to start is cancelled, the session
+// reset and the hold released, as no ok acknowledgement follows.
+func (s *sessionCommandState) dispatch(ctx context.Context, handler *ServerHandler,
+	commands []string, generation uint64, cancel context.CancelFunc) error {
+
+	handler.holdSessionOutput(generation)
+	ctx = withSessionGeneration(ctx, generation)
 	handler.mapQueryFailures.clear(generation)
 	handler.resetSessionAggregates()
-	if dispatchErr := handler.dispatchSessionCommands(ctx, commands); dispatchErr != nil {
+	if err := handler.dispatchSessionCommands(ctx, commands); err != nil {
 		cancel()
 		s.reset()
-		return 0, dispatchErr
+		handler.releaseSessionOutput(generation)
+		return err
 	}
-
-	return acked, nil
+	return nil
 }
 
 func prepareSessionCommands(spec session.Spec) ([]string, error) {

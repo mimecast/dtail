@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -10,6 +11,7 @@ import (
 	"github.com/mimecast/dtail/internal/authkey"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/lcontext"
+	"github.com/mimecast/dtail/internal/protocol"
 	userserver "github.com/mimecast/dtail/internal/sessionuser"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -130,6 +132,24 @@ func handlerTestPublicKey(t *testing.T, seedByte byte) gossh.PublicKey {
 	}
 
 	return publicKey
+}
+
+// queuedFirstFrame returns the decoded message the session framer holds as
+// the session's first frame (queueFirstFrame), i.e. the capabilities frame,
+// and fails unless it is a marked control frame.
+func queuedFirstFrame(t *testing.T, h *baseHandler) string {
+	t.Helper()
+	raw := h.readBuf.Bytes()
+	frame, ok := bytes.CutSuffix(raw, []byte{protocol.MessageDelimiter})
+	if !ok {
+		t.Fatalf("queued first frame %q has no delimiter", raw)
+	}
+	body, control := sessionFraming.CutControl(frame)
+	if !control {
+		t.Fatalf("queued first frame %q is no marked control frame", raw)
+	}
+	var scratch []byte
+	return string(sessionFraming.DecodeFrame(body, &scratch))
 }
 
 func readServerMessage(t *testing.T, messages <-chan string) string {

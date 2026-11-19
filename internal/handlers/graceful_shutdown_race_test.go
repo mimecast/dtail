@@ -121,7 +121,7 @@ func TestGracefulShutdownLetsAdmittedSessionUpdateDispatchReplacement(t *testing
 	})
 	handler.handleUserCommand(context.Background(), lcontext.LContext{}, 3,
 		[]string{"SESSION", "START", startPayload}, "SESSION")
-	if message := readServerMessage(t, handler.serverMessages); message != sessionAckStartOKPrefix+" 1" {
+	if message := readSessionAck(t, handler); message != sessionAckStartOKPrefix+" 1" {
 		t.Fatalf("unexpected session start ack: %q", message)
 	}
 	old := waitForRecordedCommand(t, dispatched)
@@ -160,7 +160,7 @@ func TestGracefulShutdownLetsAdmittedSessionUpdateDispatchReplacement(t *testing
 	if !strings.Contains(replacement.command, "/var/log/replacement.log") {
 		t.Fatalf("replacement command = %q, want replacement workload", replacement.command)
 	}
-	if message := readServerMessage(t, handler.serverMessages); message != sessionAckUpdateOKPrefix+" 2" {
+	if message := readSessionAck(t, handler); message != sessionAckUpdateOKPrefix+" 2" {
 		t.Fatalf("unexpected session update ack: %q", message)
 	}
 	waitForContextDone(old.ctx, t)

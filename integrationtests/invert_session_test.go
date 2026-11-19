@@ -102,7 +102,7 @@ func signalAfterReads(ctx context.Context, serverLogs *processOutputCollector, r
 
 // TestDTailInvertEmptyRegex follows a file with dtail, an empty --regex and
 // --invert in the default command mode, where the client sends the read command
-// "regex:invert,literal " that dserver splits at single spaces: it must print
+// "regex:invert " that dserver splits at single spaces: it must print
 // no line. A second client inverting a regex that never matches runs as a
 // control and must print the appended lines, which proves they reached the
 // follow sessions.

@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/base64"
+	"slices"
 	"strings"
 	"testing"
 
@@ -21,13 +22,20 @@ var framingTestLines = []string{
 	"byte \xff\xac end\n",
 }
 
+// capabilitiesFrame is the capabilities frame a protocol 5 server starts a
+// session with: a marked control frame.
 func capabilitiesFrame(capabilities ...string) []byte {
 	var stream bytes.Buffer
-	protocol.RawFraming.EncodeMessage(&stream, protocol.Message{
-		Kind:    protocol.MessagePlain,
-		Content: protocol.HiddenCapabilitiesPrefix + strings.Join(capabilities, " "),
-	})
+	protocol.EscapedControlFraming.EncodeControl(&stream,
+		protocol.HiddenCapabilitiesPrefix+strings.Join(capabilities, " "))
 	return stream.Bytes()
+}
+
+// unmarkedCapabilitiesFrame is the capabilities frame of a server of an
+// older protocol version: an unmarked, unescaped frame.
+func unmarkedCapabilitiesFrame(capabilities ...string) []byte {
+	return payloadFrames(protocol.TerminalFraming,
+		protocol.HiddenCapabilitiesPrefix+strings.Join(capabilities, " "))
 }
 
 func payloadFrames(framing protocol.Framing, lines ...string) []byte {
@@ -48,22 +56,18 @@ func readFirstFrame(t *testing.T, handler *baseHandler) string {
 	return string(p[:n])
 }
 
-// TestClientHandlersRequestEscapedFramingFirst: the escaped framing request
-// is the first command frame and the control frames request the second, both
-// in the same Read, ahead of every other command.
-func TestClientHandlersRequestEscapedFramingFirst(t *testing.T) {
+// TestClientHandlersSendNoFramingRequest: protocol 5 negotiates no framing,
+// so the first command frame of a client or mapreduce session is its first
+// command, framed in the current protocol version.
+func TestClientHandlersSendNoFramingRequest(t *testing.T) {
 	want := "protocol " + protocol.ProtocolCompat + " base64 " +
-		base64.StdEncoding.EncodeToString([]byte(protocol.EscapedFramingCommand)) + ";" +
-		"protocol " + protocol.ProtocolCompat + " base64 " +
-		base64.StdEncoding.EncodeToString([]byte(protocol.ControlFramesCommand)) + ";"
+		base64.StdEncoding.EncodeToString([]byte("AUTHKEY abc")) + ";"
 
 	client := NewClientHandler("srv1", nil)
+	defer client.Shutdown()
 	go func() { _ = client.SendMessage("AUTHKEY abc") }()
 	if got := readFirstFrame(t, &client.baseHandler); got != want {
-		t.Fatalf("first client frames = %q, want the framing requests %q", got, want)
-	}
-	if got := readFirstFrame(t, &client.baseHandler); !strings.Contains(got, "base64") {
-		t.Fatalf("second client frame = %q, want the AUTHKEY command", got)
+		t.Fatalf("first client frame = %q, want %q", got, want)
 	}
 
 	query, err := mapr.NewQuery("select count(status) from stats group by status", logging.NopLogger{})
@@ -71,108 +75,130 @@ func TestClientHandlersRequestEscapedFramingFirst(t *testing.T) {
 		t.Fatalf("NewQuery() error = %v", err)
 	}
 	mapClient := NewMaprHandler("srv1", maprclient.NewSessionState(query, logging.NopLogger{}), nil)
+	defer mapClient.Shutdown()
+	go func() { _ = mapClient.SendMessage("AUTHKEY abc") }()
 	if got := readFirstFrame(t, &mapClient.baseHandler); got != want {
-		t.Fatalf("first mapr frames = %q, want the framing requests %q", got, want)
+		t.Fatalf("first mapr frame = %q, want %q", got, want)
 	}
 }
 
-// TestHealthHandlerDoesNotRequestEscapedFraming: the server's health handler
-// ends the session after the first command, so a framing request must not
-// precede the health command.
-func TestHealthHandlerDoesNotRequestEscapedFraming(t *testing.T) {
-	health := NewHealthHandler("srv1", nil)
-	if health.framingRequested || len(health.pendingCommand) != 0 {
-		t.Fatalf("health handler requested escaped framing: pending %q", health.pendingCommand)
-	}
-	if _, err := health.Write(capabilitiesFrame(protocol.CapabilityEscapedFramingV1)); err != nil {
-		t.Fatalf("Write() error = %v", err)
-	}
-	if health.framing() != protocol.RawFraming {
-		t.Fatal("health handler switched to escaped framing without requesting it")
+// TestClientHandlerDecodesEscapedFrames: every frame after the capabilities
+// frame is decoded as escaped, so lines holding 0xAC or 0xFF bytes arrive
+// whole and byte for byte, however the stream is chunked.
+func TestClientHandlerDecodesEscapedFrames(t *testing.T) {
+	stream := append(capabilitiesFrame(protocol.CapabilityJournalV1),
+		payloadFrames(protocol.EscapedControlFraming, framingTestLines...)...)
+	for _, size := range []int{1, 3, len(stream)} {
+		recorder := &payloadRecorder{}
+		handler := NewClientHandler("srv1", recorder)
+		writeInChunks(t, handler, stream, size)
+		if got, want := recorder.payload.String(), strings.Join(framingTestLines, ""); got != want {
+			t.Fatalf("chunk size %d: payload = %q, want %q", size, got, want)
+		}
+		if handler.Status() > 0 {
+			t.Fatalf("chunk size %d: status = %d, want no error", size, handler.Status())
+		}
+		if !handler.HasCapability(protocol.CapabilityJournalV1) {
+			t.Fatalf("chunk size %d: capabilities frame not handled", size)
+		}
+		handler.Shutdown()
 	}
 }
 
-func TestClientHandlerDecodesFramesPerNegotiatedFraming(t *testing.T) {
-	escapedLines := payloadFrames(protocol.EscapedFraming, framingTestLines...)
+// TestFirstFrameAcceptsEmptyCapabilities: a protocol 5 server without
+// journal support advertises no capability, and its capabilities frame is
+// still a valid first frame.
+func TestFirstFrameAcceptsEmptyCapabilities(t *testing.T) {
+	stream := append(capabilitiesFrame(), payloadFrames(protocol.EscapedControlFraming, "line\n")...)
+	recorder := &payloadRecorder{}
+	handler := NewClientHandler("srv1", recorder)
+	defer handler.Shutdown()
+	writeInChunks(t, handler, stream, 1)
+	if handler.Status() > 0 {
+		t.Fatalf("status = %d, want no error", handler.Status())
+	}
+	if !handler.WaitForCapabilities(0) || len(handler.Capabilities()) != 0 {
+		t.Fatalf("capabilities = %q (arrived %v), want none arrived", handler.Capabilities(),
+			handler.WaitForCapabilities(0))
+	}
+	if got := recorder.payload.String(); got != "line\n" {
+		t.Fatalf("payload = %q, want %q", got, "line\n")
+	}
+}
+
+// TestFirstFrameRejectsServerOfOlderProtocol: a first frame that is not the
+// marked capabilities frame of a protocol 5 server sets status 1, also when a
+// marked capabilities frame follows. An unmarked hidden first frame (an older
+// server's capabilities frame) is not printed; any other one is.
+func TestFirstFrameRejectsServerOfOlderProtocol(t *testing.T) {
 	tests := []struct {
-		name         string
-		request      bool
-		capabilities []string
-		payload      []byte
-		want         string
+		name  string
+		first []byte
+		want  string
 	}{
-		{
-			name: "requested and advertised", request: true,
-			capabilities: []string{protocol.CapabilityQueryUpdateV1, protocol.CapabilityEscapedFramingV1},
-			payload:      escapedLines,
-			want:         strings.Join(framingTestLines, ""),
-		},
-		{
-			// An older server: raw frames cut lines at 0xAC, as before.
-			name: "requested but not advertised", request: true,
-			capabilities: []string{protocol.CapabilityQueryUpdateV1},
-			payload:      payloadFrames(protocol.RawFraming, "price 5\xe2\x82", " ok\n"),
-			want:         "price 5\xe2\x82\n ok\n",
-		},
-		{
-			// Never decoded as escaped unless requested: the escape
-			// sequences reach the output verbatim.
-			name: "advertised but not requested", request: false,
-			capabilities: []string{protocol.CapabilityEscapedFramingV1},
-			payload:      payloadFrames(protocol.RawFraming, "a\xff\x01b\n"),
-			want:         "a\xff\x01b\n",
-		},
+		{name: "unmarked capabilities frame",
+			first: unmarkedCapabilitiesFrame(protocol.CapabilityJournalV1)},
+		{name: "marked other control frame", first: controlFrames(".syn close soon")},
+		{name: "payload first", first: payloadFrames(protocol.TerminalFraming, "version mismatch\n"),
+			want: "version mismatch\n"},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := &payloadRecorder{}
 			handler := NewClientHandler("srv1", recorder)
-			handler.framingRequested = test.request
-			stream := append(capabilitiesFrame(test.capabilities...), test.payload...)
-			for _, size := range []int{1, 3, len(stream)} {
-				recorder.payload.Reset()
-				handler.framingState.Store(uint32(protocol.RawFraming))
-				handler.framingDecided = false
-				writeInChunks(t, handler, stream, size)
-				if got := recorder.payload.String(); got != test.want {
-					t.Fatalf("chunk size %d: payload = %q, want %q", size, got, test.want)
-				}
+			defer handler.Shutdown()
+			writeInChunks(t, handler, test.first, 1)
+			if handler.Status() != 1 {
+				t.Fatalf("status = %d, want 1", handler.Status())
+			}
+			// A later capabilities frame must not rehabilitate the session.
+			writeInChunks(t, handler, capabilitiesFrame(protocol.CapabilityJournalV1), 1)
+			if handler.Status() != 1 {
+				t.Fatal("a late capabilities frame cleared the error")
+			}
+			if got := recorder.payload.String(); got != test.want {
+				t.Fatalf("payload = %q, want %q", got, test.want)
 			}
 		})
 	}
 }
 
-// TestClientHandlerDecidesFramingFromFirstFrameOnly: only the session's first
-// frame decides the framing. A capabilities frame listing escaped framing
-// that arrives later, e.g. a log line of a raw --plain session from an older
-// server that reads like one, leaves the session raw.
-func TestClientHandlerDecidesFramingFromFirstFrameOnly(t *testing.T) {
-	lateCapabilities := capabilitiesFrame(protocol.CapabilityEscapedFramingV1)
+// TestHealthHandlerDecodesEscapedFrames: the health check session has no
+// capabilities frame, so its first frame is not checked; its frames are
+// escaped and marked like those of every other session.
+func TestHealthHandlerDecodesEscapedFrames(t *testing.T) {
 	tests := []struct {
-		name  string
-		first []byte
+		name       string
+		message    protocol.Message
+		wantStatus int
 	}{
-		{name: "payload first", first: payloadFrames(protocol.RawFraming, "early \xff\x01\n")},
-		{name: "capabilities without escaped framing first",
-			first: capabilitiesFrame(protocol.CapabilityQueryUpdateV1)},
+		{name: "server OK", message: protocol.Message{Kind: protocol.MessageServer, Hostname: "h", Content: "OK"},
+			wantStatus: 0},
+		{name: "server OK with newline", message: protocol.Message{Kind: protocol.MessageServer,
+			Hostname: "h", Content: "OK\n"}, wantStatus: 0},
+		{name: "server error", message: protocol.Message{Kind: protocol.MessageServer, Hostname: "h",
+			Content: "ERROR|not ok"}, wantStatus: 2},
+		{name: "plain NOT OK", message: protocol.Message{Kind: protocol.MessagePlain, Content: "NOT OK"},
+			wantStatus: 2},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			recorder := &payloadRecorder{}
-			handler := NewClientHandler("srv1", recorder)
-			var stream []byte
-			stream = append(stream, test.first...)
-			stream = append(stream, lateCapabilities...)
-			stream = append(stream, payloadFrames(protocol.RawFraming, "late \xff\x01 raw\n")...)
-			if _, err := handler.Write(stream); err != nil {
-				t.Fatalf("Write() error = %v", err)
+			health := NewHealthHandler("srv1", nil)
+			defer health.Shutdown()
+			var stream bytes.Buffer
+			protocol.EscapedControlFraming.EncodeMessage(&stream, test.message)
+			protocol.EscapedControlFraming.EncodeControl(&stream,
+				protocol.HiddenCommandFailedPrefix+protocol.CommandFailureNoFile)
+			for _, b := range stream.Bytes() {
+				if _, err := health.Write([]byte{b}); err != nil {
+					t.Fatalf("Write() error = %v", err)
+				}
 			}
-			if handler.framing() != protocol.RawFraming {
-				t.Fatal("a capabilities frame after the first frame switched the framing")
+			if health.Status() != test.wantStatus {
+				t.Fatalf("status = %d, want %d", health.Status(), test.wantStatus)
 			}
-			if got := recorder.payload.String(); !strings.HasSuffix(got, "late \xff\x01 raw\n") {
-				t.Fatalf("payload = %q, want the late frame kept raw", got)
+			if got := health.Outcome().Failures; !slices.Equal(got, []string{protocol.CommandFailureNoFile}) {
+				t.Fatalf("Failures = %q, want the marked control frame handled", got)
 			}
 		})
 	}
@@ -195,12 +221,12 @@ func TestMaprHandlerDecodesEscapedAggregateFrames(t *testing.T) {
 		"",
 	}, protocol.AggregateDelimiter)
 	var aggregate bytes.Buffer
-	protocol.EscapedFraming.EncodeMessage(&aggregate, protocol.Message{
+	protocol.EscapedControlFraming.EncodeMessage(&aggregate, protocol.Message{
 		Kind:     protocol.MessageAggregate,
 		Hostname: "host1",
 		Content:  serialized + "\n",
 	})
-	stream := append(capabilitiesFrame(protocol.CapabilityEscapedFramingV1), aggregate.Bytes()...)
+	stream := append(capabilitiesFrame(protocol.CapabilityJournalV1), aggregate.Bytes()...)
 	if _, writeErr := handler.Write(stream); writeErr != nil {
 		t.Fatalf("Write() error = %v", writeErr)
 	}

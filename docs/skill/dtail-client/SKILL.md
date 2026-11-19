@@ -13,7 +13,7 @@ Use DTail to answer log questions across hosts or on the local machine. Choose t
 | Search existing files with a Go regular expression | `dgrep` |
 | Follow new lines, optionally filtering them | `dtail` |
 | Aggregate existing logs or CSV data | `dmap` |
-| Aggregate new lines continuously | `dtail --query` |
+| Aggregate new lines continuously | `dtail --query`, or `:query` in an interactive `dtail` |
 | Check a dserver endpoint | `dtailhealth` |
 
 ## Working procedure
@@ -35,6 +35,6 @@ dcat --plain --logger stdout --files /etc/hostname  # local, no dserver
 dtailhealth --server web01:2222
 ```
 
-Read [client operations](references/client-operations.md) for server selection, SSH, config, all client flags, local input, compression, and command-specific options. Read [MapReduce](references/mapreduce.md) when writing a `--query`, selecting a log format, reading CSV, or producing an outfile. Read [results and limits](references/results-and-limits.md) for interactive reloads, output, exit codes, capability requirements, and incomplete results.
+Read [client operations](references/client-operations.md) for server selection, SSH, config, all client flags, local input, compression, and command-specific options. Read [MapReduce](references/mapreduce.md) when writing a `--query`, selecting a log format, reading CSV, or producing an outfile. Read [results and limits](references/results-and-limits.md) for interactive control (`:reload`, `:query`/`:tail`, `:fields`, `:probe`, Tab completion of queries and remote paths, colors), output, exit codes, capability requirements, and incomplete results.
 
-This skill describes the clients in this repository. When a deployed binary may differ, inspect its `-h` output and version before relying on a newer flag or capability. The full user documentation is in `doc/quickstart.md`, `doc/examples.md`, `doc/querylanguage.md`, `doc/logformats.md`, and `doc/interactive-query.md` at the repository root.
+This skill describes the clients in this repository. Clients and dservers speak wire protocol 5 and must be upgraded together; a peer of another protocol version is rejected (see [results and limits](references/results-and-limits.md)). When a deployed binary may differ, inspect its `-h` output and version before relying on a newer flag or capability. The full user documentation is in `doc/quickstart.md`, `doc/examples.md`, `doc/querylanguage.md`, `doc/logformats.md`, and `doc/interactive-query.md` at the repository root.

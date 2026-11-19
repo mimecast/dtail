@@ -22,20 +22,23 @@ type shutdownCoordinator struct {
 	oneShotInput bool
 	// inputBatchOwned is set when this read was admitted inside an explicit
 	// input batch. The batch's end marker owns FinishInput for this aggregate.
-	inputBatchOwned bool
-	legacyInputWait func(context.Context, time.Duration) bool
+	inputBatchOwned    bool
+	unbatchedInputWait func(context.Context, time.Duration) bool
 }
 
 type aggregateInputBatchCoordinator interface {
 	coordinateAggregateInputCompletion(*mapaggregate.Aggregate) bool
 }
 
-// legacyUnbatchedAggregateInputGrace preserves old-client -> new-server
-// compatibility. Older clients do not send an explicit input-batch boundary,
-// so a brief recheck remains the only way to cover a following frame that has
-// not reached dispatch yet. Current clients always send batch boundaries and
-// never take this path.
-const legacyUnbatchedAggregateInputGrace = 100 * time.Millisecond
+// defaultUnbatchedAggregateInputGrace is the grace for one-shot reads that
+// arrive outside an input batch (readTimings.unbatchedAggregateInputGrace).
+// DTail clients enclose every command stream holding a read in an input
+// batch (protocol.InputBatchBeginCommand), and SESSION START and UPDATE
+// admit their commands in one, so they never take this path; for a client
+// sending reads without the batch markers no protocol event proves that the
+// next frame is not another read, so a brief recheck remains the only way to
+// cover a following frame that has not reached dispatch yet.
+const defaultUnbatchedAggregateInputGrace = 100 * time.Millisecond
 
 func newShutdownCoordinator(lifecycle readCommandLifecycle, aggregates readCommandAggregates,
 	timings readTimings, oneShotInput bool, aggregate *mapaggregate.Aggregate) *shutdownCoordinator {
@@ -99,14 +102,14 @@ func (c *shutdownCoordinator) maybeFinishAggregateInput(ctx context.Context) {
 		return
 	}
 
-	// A markerless peer predates input batching, so there is no protocol event
-	// that proves the next transport frame is not another read. Preserve the
-	// legacy bounded recheck for that mixed-version direction only.
-	wait := c.legacyInputWait
+	// Without batch markers there is no protocol event that proves the next
+	// transport frame is not another read: recheck once after a bounded
+	// grace (defaultUnbatchedAggregateInputGrace).
+	wait := c.unbatchedInputWait
 	if wait == nil {
 		wait = ctxutil.Sleep
 	}
-	if !wait(ctx, c.timings.legacyAggregateInputGrace) {
+	if !wait(ctx, c.timings.unbatchedAggregateInputGrace) {
 		return
 	}
 	if pending, _ := c.lifecycle.PendingAndActive(); pending != 0 {

@@ -152,3 +152,31 @@ func mustSessionStateQuery(t *testing.T, queryStr string) *mapr.Query {
 	}
 	return query
 }
+
+// TestSessionStateClearQuery drops the query and its results at a new
+// generation and signals the change; a nil query starts without one.
+func TestSessionStateClearQuery(t *testing.T) {
+	if snapshot := NewSessionState(nil, logging.NopLogger{}).Snapshot(); snapshot.Query != nil ||
+		snapshot.GlobalGroup != nil {
+		t.Fatalf("state without query = %#v", snapshot)
+	}
+	query := mustSessionStateQuery(t, "select count(status) from stats group by status")
+	state := NewSessionState(query, logging.NopLogger{})
+	if _, ok := state.CommitRenderedResult(0, "old-result"); !ok {
+		t.Fatal("CommitRenderedResult() rejected the current generation")
+	}
+
+	state.ClearQuery(7)
+	select {
+	case <-state.Changes():
+	default:
+		t.Fatal("expected change notification after ClearQuery")
+	}
+	snapshot := state.Snapshot()
+	if snapshot.Generation != 7 || snapshot.Query != nil || snapshot.GlobalGroup != nil || snapshot.LastResult != "" {
+		t.Fatalf("state after ClearQuery = %#v", snapshot)
+	}
+	if _, ok := state.CommitRenderedResult(0, "stale"); ok {
+		t.Fatal("CommitRenderedResult() accepted a result of the cleared generation")
+	}
+}

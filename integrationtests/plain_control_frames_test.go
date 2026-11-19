@@ -12,7 +12,7 @@ import (
 )
 
 // plainLookalikeLines are log lines that read like protocol control
-// messages. Before control frames (protocol.CapabilityControlFramesV1),
+// messages. Before marked control frames (protocol.EscapedControlFraming),
 // --plain server-mode output dropped every line starting with '.' and the
 // AUTHKEY replies, and acted upon the '.syn' ones: '.syn close connection'
 // marked the session complete, '.syn command failed x' added a failed command

@@ -7,22 +7,20 @@ import (
 
 func TestEncodeControlMarksOnlyUnderEscapedControlFraming(t *testing.T) {
 	const message = ".syn command failed 5€\n"
-	for _, framing := range []Framing{RawFraming, EscapedFraming} {
-		var control, plain bytes.Buffer
-		framing.EncodeControl(&control, message)
-		framing.EncodeMessage(&plain, Message{Kind: MessagePlain, Content: message})
-		if !bytes.Equal(control.Bytes(), plain.Bytes()) {
-			t.Fatalf("%v: control frame %q differs from the untagged frame %q",
-				framing, control.Bytes(), plain.Bytes())
-		}
-		if _, ok := framing.CutControl(control.Bytes()[:control.Len()-1]); ok {
-			t.Fatalf("%v: CutControl found a control frame", framing)
-		}
+	// TerminalFraming, which is never sent to a client, marks nothing.
+	var terminal, plain bytes.Buffer
+	TerminalFraming.EncodeControl(&terminal, message)
+	TerminalFraming.EncodeMessage(&plain, Message{Kind: MessagePlain, Content: message})
+	if !bytes.Equal(terminal.Bytes(), plain.Bytes()) {
+		t.Fatalf("terminal control frame %q differs from the untagged frame %q", terminal.Bytes(), plain.Bytes())
+	}
+	if _, ok := TerminalFraming.CutControl(terminal.Bytes()[:terminal.Len()-1]); ok {
+		t.Fatal("TerminalFraming.CutControl found a control frame")
 	}
 
 	var encoded, escaped bytes.Buffer
 	EscapedControlFraming.EncodeControl(&encoded, message)
-	EscapedFraming.EncodePayload(&escaped, []byte(message))
+	EscapedControlFraming.EncodePayload(&escaped, []byte(message))
 	want := append([]byte{FrameEscape, controlFrameCode}, escaped.Bytes()...)
 	if !bytes.Equal(encoded.Bytes(), want) {
 		t.Fatalf("control frame = %q, want %q", encoded.Bytes(), want)
@@ -70,27 +68,6 @@ func TestEscapedControlFramingPayloadNeverReadsAsControl(t *testing.T) {
 	}
 }
 
-// TestEscapedControlFramingFramesLikeEscapedFraming: apart from control
-// frames, EscapedControlFraming writes the same bytes as EscapedFraming.
-func TestEscapedControlFramingFramesLikeEscapedFraming(t *testing.T) {
-	line := Line{Hostname: "h€", TransmittedPercent: "100", Number: 7, SourceID: "s", Content: []byte("a\xac\xff\n")}
-	message := Message{Kind: MessageServer, Hostname: "h", Content: "5€"}
-	var escaped, control bytes.Buffer
-	for _, out := range []struct {
-		framing Framing
-		dst     *bytes.Buffer
-	}{{EscapedFraming, &escaped}, {EscapedControlFraming, &control}} {
-		out.framing.EncodeLine(out.dst, line)
-		out.framing.NewLineEncoder(line.Hostname, line.TransmittedPercent).Encode(out.dst,
-			line.Number, line.SourceID, line.Content)
-		out.framing.EncodeMessage(out.dst, message)
-		out.framing.EncodePayload(out.dst, line.Content)
-	}
-	if !bytes.Equal(escaped.Bytes(), control.Bytes()) {
-		t.Fatalf("escaped-control frames %q differ from escaped frames %q", control.Bytes(), escaped.Bytes())
-	}
-}
-
 func TestIsControlMessage(t *testing.T) {
 	tests := map[string]bool{
 		".syn close connection": true,
@@ -110,7 +87,7 @@ func TestIsControlMessage(t *testing.T) {
 }
 
 func TestFramingString(t *testing.T) {
-	for framing, want := range map[Framing]string{RawFraming: "raw", EscapedFraming: "escaped",
+	for framing, want := range map[Framing]string{TerminalFraming: "terminal",
 		EscapedControlFraming: "escaped-control"} {
 		if got := framing.String(); got != want {
 			t.Errorf("%d.String() = %q, want %q", framing, got, want)

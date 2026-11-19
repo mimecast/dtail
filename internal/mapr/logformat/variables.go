@@ -2,6 +2,7 @@ package logformat
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/mimecast/dtail/internal/mapr"
@@ -9,7 +10,8 @@ import (
 
 // The $-variable sets below enumerate every $-prefixed variable a given parser
 // is able to populate. They are the single source of truth for the plan-time
-// "unknown $-variable" diagnostic (see PlanVariableWarnings).
+// "unknown $-variable" diagnostic (see PlanVariableWarnings) and for the
+// variables a probe reports (KnownVariables, Probe).
 //
 // Keep them in sync with defaultParser in default.go:
 //   - addDefaultFields populates commonVariables for every parser that
@@ -70,6 +72,24 @@ func knownVariables(logFormatName string) (map[string]struct{}, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// KnownVariables returns the sorted $-variables the named log format can
+// populate, and whether that set is enumerable at all. It returns (nil, false)
+// for formats whose variable set cannot be determined statically
+// (proprietary, stub, custom or unknown formats). The slice is the caller's
+// own copy; the sets above stay the single source of truth.
+func KnownVariables(logFormatName string) ([]string, bool) {
+	known, enumerable := knownVariables(logFormatName)
+	if !enumerable {
+		return nil, false
+	}
+	names := make([]string, 0, len(known))
+	for name := range known {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names, true
 }
 
 // PlanVariableWarnings returns one warning per unknown $-variable referenced by

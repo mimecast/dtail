@@ -68,9 +68,7 @@ var errOutputFlushTimeout = errors.New("timed out flushing output")
 // accessed while holding mu. The configuration fields (bufferMaxBytes,
 // flushTimeout, ...) are set without locking: configure() runs exactly once
 // from the handler constructor before any goroutine can touch the manager,
-// so goroutine creation establishes the necessary happens-before edge. The
-// one exception is bufferMaxBytes, which raiseBufferMaxBytes may raise later
-// and which is therefore only read and written under mu after configure.
+// so goroutine creation establishes the necessary happens-before edge.
 type outputManager struct {
 	logger logging.Logger
 	mu     sync.Mutex
@@ -106,18 +104,13 @@ type outputManager struct {
 	// timing out. Set once by the handler constructor, like the
 	// configuration fields.
 	clientSlow func() bool
-}
-
-// raiseBufferMaxBytes raises the session's buffer cap to minimum when it is
-// lower; it never lowers the cap. A session switching to escaped framing
-// calls it (see escapedOutputBufferMaxBytes). bufferMaxBytes is only read
-// under mu once the manager is in use, so raising it under mu is safe.
-func (t *outputManager) raiseBufferMaxBytes(minimum int) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if minimum > t.resolvedBufferMaxBytes() {
-		t.bufferMaxBytes = minimum
-	}
+	// heldGeneration, if set, reports whether the output of a generation is
+	// held back until its SESSION acknowledgement went out (see
+	// sessionAckGate). tryRead then stops at the first queued entry of that
+	// generation, leaving it and everything behind it queued. Set once by the
+	// handler constructor, like clientSlow. It runs under mu and must not
+	// take a lock (it is one atomic load).
+	heldGeneration func(uint64) bool
 }
 
 // configure sets the tunables. It must be called before the manager is used
@@ -563,6 +556,16 @@ func stopOptionalTimer(timer *time.Timer) {
 	}
 }
 
+// atRecordBoundary reports whether the next payload byte tryRead returns
+// starts a frame: no frame was left part way through by the previous read.
+// Something else may then go to the client before it without splitting a
+// frame (see outputCoordinator.tryReadSessionAckFirst).
+func (t *outputManager) atRecordBoundary() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.buffer.payload) == 0 || !t.buffer.mustFinishRecord
+}
+
 func (t *outputManager) bufferedLen() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -723,9 +726,10 @@ func (t *outputManager) flush(ctx context.Context, user *user.User) error {
 // Lock ordering: the shouldDropGeneration callback is invoked (via
 // consumeLocked) while t.mu is held. In production it reads the session
 // generation with an atomic load (sessionCommandState.currentGeneration) and
-// takes no lock, so it adds no lock-ordering edge. A callback must never call
-// back into outputManager, and it must not take a lock that is held by code
-// which calls into outputManager.
+// takes no lock, so it adds no lock-ordering edge. The same holds for
+// heldGeneration (an atomic load). A callback must never call back into
+// outputManager, and it must not take a lock that is held by code which
+// calls into outputManager.
 func (t *outputManager) tryRead(p []byte, user *user.User, shouldDropGeneration func(uint64) bool) (n int, handled bool) {
 	// tryRead runs on the session output goroutine once per Read (i.e. per output
 	// payload / ~64KB in server mode). Decide trace state once, before taking
@@ -796,6 +800,12 @@ func (t *outputManager) tryRead(p []byte, user *user.User, shouldDropGeneration 
 	}
 
 	for len(t.queue) > 0 {
+		if t.heldGeneration != nil && t.heldGeneration(t.queue[0].generation) {
+			// Its acknowledgement goes first (sessionAckGate); the caller
+			// goes on with the server messages, the acknowledgement among
+			// them.
+			return 0, false
+		}
 		outputData := t.dequeueLocked()
 		if n, delivered := t.consumeLocked(p, outputData, user, traceEnabled, shouldDropGeneration); delivered {
 			return n, true

@@ -327,3 +327,21 @@ func TestForceExitAfterUsesFailureStatusWithoutDelay(t *testing.T) {
 		t.Fatalf("delayed forced exit status = %d, want 1", status)
 	}
 }
+
+// TestForceExitRunsHook checks that a forced exit runs the registered hook
+// first (os.Exit skips deferred terminal restores), and that a cleared hook
+// no longer runs.
+func TestForceExitRunsHook(t *testing.T) {
+	var order []string
+	SetBeforeForceExit(func() { order = append(order, "hook") })
+	forceExit(func(code int) { order = append(order, fmt.Sprintf("exit %d", code)) })
+	if len(order) != 2 || order[0] != "hook" || order[1] != "exit 1" {
+		t.Fatalf("order = %q, want hook before exit 1", order)
+	}
+	SetBeforeForceExit(nil)
+	order = nil
+	forceExit(func(int) { order = append(order, "exit") })
+	if len(order) != 1 || order[0] != "exit" {
+		t.Fatalf("cleared hook still ran: %q", order)
+	}
+}

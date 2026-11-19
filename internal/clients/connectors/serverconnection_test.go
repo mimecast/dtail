@@ -169,6 +169,9 @@ func TestNewServerConnectionFallsBackToDefaults(t *testing.T) {
 	if conn.config.Timeout != defaultSSHConnectTimeout {
 		t.Fatalf("Expected default timeout %v, got %v", defaultSSHConnectTimeout, conn.config.Timeout)
 	}
+	if conn.handshakeTimeout != defaultSSHHandshakeTimeout {
+		t.Fatalf("Expected default handshake timeout %v, got %v", defaultSSHHandshakeTimeout, conn.handshakeTimeout)
+	}
 }
 
 func TestNewServerConnectionReturnsInvalidPortError(t *testing.T) {
@@ -285,55 +288,12 @@ func TestNewServerConnectionRejectsInvalidConfiguredDefaultPort(t *testing.T) {
 	}
 }
 
-func TestServerConnectionSupportsQueryUpdates(t *testing.T) {
-
-	conn := &ServerConnection{
-		handler: &mockHandler{
-			waitForCapabilities: true,
-			capabilities: map[string]bool{
-				protocol.CapabilityQueryUpdateV1: true,
-			},
-		},
-	}
-
-	if !conn.SupportsQueryUpdates(10 * time.Millisecond) {
-		t.Fatalf("expected query-update capability to be detected")
-	}
-}
-
-func TestServerConnectionSupportsQueryUpdatesFallsBackForOlderServers(t *testing.T) {
-
-	conn := &ServerConnection{
-		handler: &mockHandler{},
-	}
-
-	if conn.SupportsQueryUpdates(5 * time.Millisecond) {
-		t.Fatalf("expected old-server fallback when no capability is advertised")
-	}
-}
-
-func TestServerConnectionSupportsQueryUpdatesRequiresCapabilityFlag(t *testing.T) {
-
-	conn := &ServerConnection{
-		handler: &mockHandler{
-			waitForCapabilities: true,
-		},
-	}
-
-	if conn.SupportsQueryUpdates(10 * time.Millisecond) {
-		t.Fatalf("expected capability wait success alone to be insufficient")
-	}
-}
-
 func TestServerConnectionApplySessionSpecStart(t *testing.T) {
 
 	conn := &ServerConnection{
 		server: "srv1",
 		handler: &mockHandler{
 			waitForCapabilities: true,
-			capabilities: map[string]bool{
-				protocol.CapabilityQueryUpdateV1: true,
-			},
 			sessionAcks: []handlers.SessionAck{{
 				Action:     "start",
 				Generation: 1,
@@ -363,9 +323,6 @@ func TestServerConnectionApplySessionSpecUpdateUsesNextGeneration(t *testing.T) 
 
 	mock := &mockHandler{
 		waitForCapabilities: true,
-		capabilities: map[string]bool{
-			protocol.CapabilityQueryUpdateV1: true,
-		},
 		sessionAcks: []handlers.SessionAck{
 			{Action: "start", Generation: 4},
 			{Action: "update", Generation: 5},
@@ -405,9 +362,6 @@ func TestServerConnectionApplySessionSpecReappliesPreviousSpecForRollback(t *tes
 
 	mock := &mockHandler{
 		waitForCapabilities: true,
-		capabilities: map[string]bool{
-			protocol.CapabilityQueryUpdateV1: true,
-		},
 		sessionAcks: []handlers.SessionAck{
 			{Action: "start", Generation: 4},
 			{Action: "update", Generation: 5},
@@ -447,15 +401,54 @@ func TestServerConnectionApplySessionSpecReappliesPreviousSpecForRollback(t *tes
 	}
 }
 
-func TestServerConnectionApplySessionSpecFallsBackForUnsupportedServer(t *testing.T) {
+// TestServerConnectionApplySessionSpecNeedsNoCapability: every protocol 5
+// server supports SESSION START, so it is sent to a server advertising no
+// capability at all (a host without journal support), and also before any
+// capabilities frame arrived: only a journal target waits for it.
+func TestServerConnectionApplySessionSpecNeedsNoCapability(t *testing.T) {
+	for _, arrived := range []bool{true, false} {
+		mock := &mockHandler{
+			waitForCapabilities: arrived,
+			sessionAcks:         []handlers.SessionAck{{Action: "start", Generation: 1}},
+		}
+		conn := &ServerConnection{server: "srv1", handler: mock}
 
-	conn := &ServerConnection{
-		handler: &mockHandler{},
+		if err := conn.ApplySessionSpec(sessionspec.Spec{Mode: omode.TailClient, Regex: "ERROR"},
+			10*time.Millisecond); err != nil {
+			t.Fatalf("capabilities arrived=%v: ApplySessionSpec() error = %v", arrived, err)
+		}
+		if len(mock.commands) != 1 || !strings.HasPrefix(mock.commands[0], "SESSION START ") {
+			t.Fatalf("capabilities arrived=%v: sent commands %#v, want one SESSION START",
+				arrived, mock.commands)
+		}
+		if mock.Status() != 0 || mock.serverError != "" {
+			t.Fatalf("capabilities arrived=%v: reported %q, status %d", arrived, mock.serverError, mock.Status())
+		}
 	}
+}
 
-	err := conn.ApplySessionSpec(sessionspec.Spec{Mode: omode.TailClient, Regex: "ERROR"}, 5*time.Millisecond)
-	if !errors.Is(err, ErrSessionUnsupported) {
-		t.Fatalf("expected ErrSessionUnsupported, got %v", err)
+// TestDispatchInitialCommandsDoesNotFallBackToCommandStream: an interactive
+// bootstrap whose SESSION START fails (here: no acknowledgement) fails the
+// connection; the client no longer falls back to the plain command stream,
+// so nothing but the SESSION START is sent and no session is committed.
+func TestDispatchInitialCommandsDoesNotFallBackToCommandStream(t *testing.T) {
+	mock := &mockHandler{waitForCapabilities: true}
+	spec := sessionspec.Spec{Mode: omode.TailClient, Files: []string{"/var/log/app.log"}}
+	commands, err := spec.Commands()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := &committedSessionState{}
+
+	err = dispatchInitialCommands("srv1", mock, commands, true, spec, state, logging.NopLogger{})
+	if !errors.Is(err, ErrSessionAckTimeout) {
+		t.Fatalf("expected ErrSessionAckTimeout, got %v", err)
+	}
+	if len(mock.commands) != 1 || !strings.HasPrefix(mock.commands[0], "SESSION START ") {
+		t.Fatalf("sent commands %#v, want only the SESSION START", mock.commands)
+	}
+	if _, _, ok := state.snapshot(); ok {
+		t.Fatalf("failed bootstrap left a committed session")
 	}
 }
 
@@ -486,11 +479,8 @@ func TestRequireJournalCapability(t *testing.T) {
 				Files: []string{"journal:ssh.service"},
 			},
 			waitForCapabilities: true,
-			capabilities: map[string]bool{
-				protocol.CapabilityQueryUpdateV1: true,
-			},
-			wantErr:         ErrJournalUnsupported,
-			wantServerError: true,
+			wantErr:             ErrJournalUnsupported,
+			wantServerError:     true,
 		},
 		{
 			name: "journal file without capabilities advertisement",
@@ -508,9 +498,6 @@ func TestRequireJournalCapability(t *testing.T) {
 				Files: []string{"/var/log/app.log"},
 			},
 			waitForCapabilities: true,
-			capabilities: map[string]bool{
-				protocol.CapabilityQueryUpdateV1: true,
-			},
 		},
 	}
 
@@ -521,9 +508,9 @@ func TestRequireJournalCapability(t *testing.T) {
 				capabilities:        tc.capabilities,
 			}
 
-			err := requireSpecCapabilities("srv1", handler, tc.spec, 10*time.Millisecond, true)
+			err := requireJournalCapability("srv1", handler, tc.spec, 10*time.Millisecond, true)
 			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("requireSpecCapabilities() error = %v, want %v", err, tc.wantErr)
+				t.Fatalf("requireJournalCapability() error = %v, want %v", err, tc.wantErr)
 			}
 			if got := handler.serverError != ""; got != tc.wantServerError {
 				t.Fatalf("server error recorded = %v, want %v", got, tc.wantServerError)
@@ -539,9 +526,6 @@ func TestDispatchInitialCommandsRejectsJournalWithoutCapability(t *testing.T) {
 
 	handler := &mockHandler{
 		waitForCapabilities: true,
-		capabilities: map[string]bool{
-			protocol.CapabilityQueryUpdateV1: true,
-		},
 	}
 	spec := sessionspec.Spec{
 		Mode:  omode.CatClient,
@@ -565,9 +549,6 @@ func TestDispatchInitialCommandsRejectsInteractiveJournalWithoutCapability(t *te
 
 	handler := &mockHandler{
 		waitForCapabilities: true,
-		capabilities: map[string]bool{
-			protocol.CapabilityQueryUpdateV1: true,
-		},
 	}
 	spec := sessionspec.Spec{
 		Mode:  omode.TailClient,
@@ -591,9 +572,6 @@ func TestServerConnectionApplySessionSpecPreservesCommittedStateOnRejectedUpdate
 
 	mock := &mockHandler{
 		waitForCapabilities: true,
-		capabilities: map[string]bool{
-			protocol.CapabilityQueryUpdateV1: true,
-		},
 		sessionAcks: []handlers.SessionAck{
 			{Action: "start", Generation: 2},
 			{Action: "error", Error: "bad reload"},
@@ -622,9 +600,6 @@ func TestServerConnectionApplySessionSpecRejectsUnexpectedAck(t *testing.T) {
 
 	mock := &mockHandler{
 		waitForCapabilities: true,
-		capabilities: map[string]bool{
-			protocol.CapabilityQueryUpdateV1: true,
-		},
 		sessionAcks: []handlers.SessionAck{
 			{Action: "update", Generation: 1},
 		},
@@ -651,9 +626,6 @@ func TestServerConnectionApplySessionSpecTimesOutWaitingForAck(t *testing.T) {
 
 	mock := &mockHandler{
 		waitForCapabilities: true,
-		capabilities: map[string]bool{
-			protocol.CapabilityQueryUpdateV1: true,
-		},
 	}
 	conn := &ServerConnection{
 		server:  "srv1",
@@ -1112,8 +1084,9 @@ func TestServerConnectionStartReportsShellRejection(t *testing.T) {
 }
 
 type testSSHSettings struct {
-	port    int
-	timeout time.Duration
+	port             int
+	timeout          time.Duration
+	handshakeTimeout time.Duration
 }
 
 type lifecycleHandler struct {
@@ -1152,7 +1125,7 @@ func (*lifecycleHandler) Server() string                         { return "lifec
 func (*lifecycleHandler) Status() int                            { return 0 }
 func (h *lifecycleHandler) Done() <-chan struct{}                { return h.done }
 func (*lifecycleHandler) WaitForCapabilities(time.Duration) bool { return false }
-func (*lifecycleHandler) WaitForSessionAck(time.Duration) (handlers.SessionAck, bool) {
+func (*lifecycleHandler) WaitForSessionAck(time.Duration, time.Duration) (handlers.SessionAck, bool) {
 	return handlers.SessionAck{}, false
 }
 
@@ -1342,6 +1315,10 @@ func (s testSSHSettings) SSHConnectTimeout() time.Duration {
 	return s.timeout
 }
 
+func (s testSSHSettings) SSHHandshakeTimeout() time.Duration {
+	return s.handshakeTimeout
+}
+
 type testHostKeyCallback struct{}
 
 func (testHostKeyCallback) Wrap(context.Context) ssh.HostKeyCallback {
@@ -1409,7 +1386,7 @@ func (m *mockHandler) WaitForCapabilities(timeout time.Duration) bool {
 	return m.waitForCapabilities
 }
 
-func (m *mockHandler) WaitForSessionAck(timeout time.Duration) (handlers.SessionAck, bool) {
+func (m *mockHandler) WaitForSessionAck(timeout, _ time.Duration) (handlers.SessionAck, bool) {
 	if timeout <= 0 {
 		return handlers.SessionAck{}, false
 	}
@@ -1442,9 +1419,6 @@ func newBlockingSessionHandler() *blockingSessionHandler {
 	return &blockingSessionHandler{
 		commandsCh: make(chan string, 8),
 		ackCh:      make(chan handlers.SessionAck, 8),
-		capabilities: map[string]bool{
-			protocol.CapabilityQueryUpdateV1: true,
-		},
 	}
 }
 
@@ -1490,7 +1464,7 @@ func (*blockingSessionHandler) WaitForCapabilities(time.Duration) bool {
 	return true
 }
 
-func (h *blockingSessionHandler) WaitForSessionAck(timeout time.Duration) (handlers.SessionAck, bool) {
+func (h *blockingSessionHandler) WaitForSessionAck(timeout, _ time.Duration) (handlers.SessionAck, bool) {
 	if timeout <= 0 {
 		select {
 		case ack := <-h.ackCh:

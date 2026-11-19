@@ -7,12 +7,12 @@ import (
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
-func TestSendLegacyCommandsFramesReadBatchWithoutCapabilityWait(t *testing.T) {
+func TestSendCommandStreamFramesReadBatchWithoutCapabilityWait(t *testing.T) {
 	handler := &mockHandler{}
 	commands := []string{"map query", "cat first.log .", "cat second.log ."}
 
-	if err := sendLegacyCommands(handler, commands); err != nil {
-		t.Fatalf("send legacy commands: %v", err)
+	if err := sendCommandStream(handler, commands); err != nil {
+		t.Fatalf("send command stream: %v", err)
 	}
 	want := []string{
 		protocol.InputBatchBeginCommand,
@@ -26,12 +26,12 @@ func TestSendLegacyCommandsFramesReadBatchWithoutCapabilityWait(t *testing.T) {
 	}
 }
 
-func TestSendLegacyCommandsFramesTimeoutPrefixedReadBatch(t *testing.T) {
+func TestSendCommandStreamFramesTimeoutPrefixedReadBatch(t *testing.T) {
 	handler := &mockHandler{}
 	commands := []string{"timeout 10 grep:plain=true error app.log"}
 
-	if err := sendLegacyCommands(handler, commands); err != nil {
-		t.Fatalf("send legacy commands: %v", err)
+	if err := sendCommandStream(handler, commands); err != nil {
+		t.Fatalf("send command stream: %v", err)
 	}
 	want := []string{
 		protocol.InputBatchBeginCommand,
@@ -43,12 +43,12 @@ func TestSendLegacyCommandsFramesTimeoutPrefixedReadBatch(t *testing.T) {
 	}
 }
 
-func TestSendLegacyCommandsLeavesHealthCommandUnframed(t *testing.T) {
+func TestSendCommandStreamLeavesHealthCommandUnframed(t *testing.T) {
 	handler := &mockHandler{}
 	commands := []string{"health"}
 
-	if err := sendLegacyCommands(handler, commands); err != nil {
-		t.Fatalf("send legacy commands: %v", err)
+	if err := sendCommandStream(handler, commands); err != nil {
+		t.Fatalf("send command stream: %v", err)
 	}
 	if !slices.Equal(handler.commands, commands) {
 		t.Fatalf("sent commands = %q, want %q", handler.commands, commands)

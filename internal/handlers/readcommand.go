@@ -263,7 +263,7 @@ func (r *readCommand) parsePath(ctx context.Context, word string) (string, bool)
 //
 // The lone third word branch is a defensive tolerance, whichever way the
 // dispatcher splits commands: a serialized empty pattern ends the command in a
-// space ("regex:invert,literal "), and a split at runs of whitespace would drop
+// space ("regex:invert "), and a split at runs of whitespace would drop
 // that empty last word, turning an inverted empty pattern (no line) into a noop
 // (every line). So a lone third word starting with "regex:" is read by
 // regex.Deserialize as flags with an empty pattern; flags it cannot parse

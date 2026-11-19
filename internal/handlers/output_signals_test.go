@@ -10,8 +10,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/mimecast/dtail/internal/protocol"
 )
 
 func TestBaseHandlerReadWakesWhenOutputArrives(t *testing.T) {
@@ -184,7 +182,7 @@ func TestOutputManagerEmptyEOFPublishesQuietPeriodWake(t *testing.T) {
 func TestBaseHandlerFlushWaitsForPartialReadBuffer(t *testing.T) {
 	handler := newReadTestHandler()
 	message := ".hidden " + strings.Repeat("x", 64)
-	want := append([]byte(message), protocol.MessageDelimiter)
+	want := encodeTestControl(message)
 	handler.serverMessages <- message
 
 	first := make([]byte, 8)
@@ -239,7 +237,7 @@ func TestBaseHandlerFlushWaitsForPartialReadBuffer(t *testing.T) {
 func TestBaseHandlerFlushWaitsForExactReadDeliveryConfirmation(t *testing.T) {
 	handler := newReadTestHandler()
 	message := ".exact"
-	want := append([]byte(message), protocol.MessageDelimiter)
+	want := encodeTestControl(message)
 	handler.serverMessages <- message
 
 	buf := make([]byte, len(want))
@@ -330,7 +328,7 @@ func TestAttachedOutputReaderShutdownWaitsBeforeFirstRead(t *testing.T) {
 		if result.err != nil {
 			t.Fatalf("close-sync Read() error = %v", result.err)
 		}
-		wantSync := append([]byte(".syn close connection"), protocol.MessageDelimiter)
+		wantSync := encodeTestControl(".syn close connection")
 		if !bytes.Equal(result.data, wantSync) {
 			t.Fatalf("second Read() = %q, want %q", result.data, wantSync)
 		}
@@ -414,7 +412,7 @@ func TestBaseHandlerBlockedReadKeepsFlushErrorBeforeCloseSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("close-sync Read() error = %v", err)
 	}
-	wantSync := append([]byte(".syn close connection"), protocol.MessageDelimiter)
+	wantSync := encodeTestControl(".syn close connection")
 	if !bytes.Equal(buf[:n], wantSync) {
 		t.Fatalf("second Read() = %q, want %q", buf[:n], wantSync)
 	}
@@ -480,7 +478,7 @@ func TestShutdownTimeoutDrainsQueuedAggregateBeforeReaderOwnedClose(t *testing.T
 	if got := string(readNext()); !strings.Contains(got, "queued aggregate") {
 		t.Fatalf("second message = %q, want queued aggregate", got)
 	}
-	wantSync := append([]byte(".syn close connection"), protocol.MessageDelimiter)
+	wantSync := encodeTestControl(".syn close connection")
 	if got := readNext(); !bytes.Equal(got, wantSync) {
 		t.Fatalf("third message = %q, want %q", got, wantSync)
 	}
@@ -539,7 +537,7 @@ func TestFlushRequestReceiptForcesFreshDrainBeforeTerminalClose(t *testing.T) {
 	}
 
 	n, err = handler.Read(buf)
-	wantSync := append([]byte(".syn close connection"), protocol.MessageDelimiter)
+	wantSync := encodeTestControl(".syn close connection")
 	if err != nil || !bytes.Equal(buf[:n], wantSync) {
 		t.Fatalf("third Read() = (%q, %v), want %q", buf[:n], err, wantSync)
 	}

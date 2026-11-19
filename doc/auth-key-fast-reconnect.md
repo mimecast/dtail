@@ -218,8 +218,18 @@ for example because `$HOME` is empty and nothing else was configured — the
 feature is disabled with a warning telling the user to set
 `DTAIL_AUTH_KEY_PATH` explicitly.
 
-`dtailhealth` accepts `--no-auth-key` but has no `--auth-key-path` flag
-(`cmd/dtailhealth/main.go`).
+`dtailhealth` never registers an auth key: the health user authenticates by
+password and dserver refuses keys for it. It still accepts `--no-auth-key`, now
+without effect, so existing check scripts keep working, and has no
+`--auth-key-path` flag (`cmd/dtailhealth/main.go`,
+`clients.NewHealthClient`). Older `dtailhealth` binaries sent `AUTHKEY` before
+their health command whenever the auth key's `.pub` file existed, which the
+health handler of dserver took for an unknown command, ending the session: a
+healthy server was reported CRITICAL unless `--no-auth-key` was given. Both
+sides are fixed, so either is enough: a current `dtailhealth` works against an
+older protocol 5 dserver, and a current dserver ignores `AUTHKEY` in health
+sessions (no reply, no registration, `HealthHandler.ignoreAuthKey`) for older
+`dtailhealth` binaries.
 
 ## Security Considerations
 

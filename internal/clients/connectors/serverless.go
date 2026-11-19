@@ -78,12 +78,6 @@ func (s *Serverless) Handler() handlers.Handler {
 	return s.handler
 }
 
-// SupportsQueryUpdates reports whether the in-process server advertised
-// runtime query update support to the client handler.
-func (s *Serverless) SupportsQueryUpdates(timeout time.Duration) bool {
-	return supportsQueryUpdates(s.handler, timeout)
-}
-
 // ApplySessionSpec starts or updates the in-process interactive session state.
 func (s *Serverless) ApplySessionSpec(spec sessionspec.Spec, timeout time.Duration) error {
 	return applySessionSpec(s.Server(), s.handler, &s.sessionState, spec, timeout, s.logger)
@@ -98,6 +92,18 @@ func (s *Serverless) ApplySessionSpecWithGeneration(spec sessionspec.Spec, gener
 // CommittedSession returns the last server-acknowledged session state.
 func (s *Serverless) CommittedSession() (sessionspec.Spec, uint64, bool) {
 	return s.sessionState.snapshot()
+}
+
+// ReplaceStartSessionSpec makes spec the workload of the initial SESSION
+// START if that has not begun yet (see Connector).
+func (s *Serverless) ReplaceStartSessionSpec(spec sessionspec.Spec) (bool, error) {
+	return s.sessionState.replaceStartSpec(spec)
+}
+
+// RestoreStartSessionSpec rolls the start spec back after a failed reload
+// (see Connector).
+func (s *Serverless) RestoreStartSessionSpec(spec sessionspec.Spec) (bool, error) {
+	return s.sessionState.restoreStartSpec(spec)
 }
 
 // RestoreCommittedSession resets the local session snapshot without advancing

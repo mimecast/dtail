@@ -142,8 +142,17 @@ func (q *Query) parse(tokens []token) error {
 	return nil
 }
 
+// parseTokens parses the clauses of tokens. Every clause starts with a bare
+// clause keyword (token.isKeyword, the rule tokensConsume ends a clause at
+// and AnalyzePartial starts one at), so only the first token can be
+// anything else: it is rejected by firstWordError, also when it is a quoted
+// or backticked keyword ("select" used to start the select clause here
+// while AnalyzePartial marked it unknown).
 func (q *Query) parseTokens(tokens []token) ([]token, error) {
 	for len(tokens) > 0 {
+		if !tokens[0].isKeyword() {
+			return tokens, firstWordError(tokens[0])
+		}
 		var err error
 		switch strings.ToLower(tokens[0].str) {
 		case "select":
@@ -169,6 +178,7 @@ func (q *Query) parseTokens(tokens []token) ([]token, error) {
 		case "logformat":
 			tokens, err = q.parseLogFormatClause(tokens[1:])
 		default:
+			// A keyword of the keywords table without a clause parser.
 			return tokens, errors.New(invalidQuery + "unexpected keyword " + tokens[0].str)
 		}
 		if err != nil {
@@ -179,11 +189,51 @@ func (q *Query) parseTokens(tokens []token) ([]token, error) {
 	return tokens, nil
 }
 
+// firstWordError rejects the word t in front of the first clause, which is
+// no bare clause keyword. A quoted word is named without its quotes, like
+// the other "unexpected word" errors; a backticked one keeps its backticks.
+func firstWordError(t token) error {
+	return fmt.Errorf("%sunexpected word %q, a query starts with a clause keyword "+
+		"such as select or from (quoted or escaped keywords are no clause keywords)",
+		invalidQuery, t.str)
+}
+
 func (q *Query) parseSelectClause(tokens []token) ([]token, error) {
 	remaining, found := tokensConsume(tokens)
+	if err := rejectStrayBy("select", found); err != nil {
+		return remaining, err
+	}
 	var err error
 	q.Select, err = makeSelectConditions(found)
 	return remaining, err
+}
+
+// strayWordError rejects the word extra that follows the value(s) of a
+// clause taking a fixed number of values (from, order, rorder, interval,
+// limit, outfile, logformat; see parseOrderClause for the direction word
+// of order and rorder).
+// Such a word used to be ignored, so a half typed or misspelled clause
+// keyword ("limit 10 gro") was applied as if it was not there.
+// AnalyzePartial marks such a word TokenUnknown.
+func strayWordError(clause string, extra token) error {
+	return fmt.Errorf("%sunexpected word %q after the value of the '%s' clause, "+
+		"which takes no further words (misspelled clause keyword?)", invalidQuery, extra.str, clause)
+}
+
+// rejectStrayBy rejects a bare by in the list of the select or group
+// clause; tokens are the list after tokensConsume. In those lists every
+// word is a field, as fields may be separated by blanks instead of commas,
+// so a misspelled clause keyword such as "gropu by x" would select or group
+// by the fields gropu, by and x. A field named by is written `by`.
+func rejectStrayBy(clause string, tokens []token) error {
+	for _, t := range tokens {
+		if isBareWord(t, "by") {
+			return fmt.Errorf("%sunexpected word %q in the '%s' clause: misspelled "+
+				"'group by', 'order by' or 'rorder by'? A field named by is written `by`",
+				invalidQuery, t.str, clause)
+		}
+	}
+	return nil
 }
 
 func (q *Query) parseFromClause(tokens []token) ([]token, error) {
@@ -198,7 +248,7 @@ func (q *Query) parseFromClause(tokens []token) ([]token, error) {
 		q.Table = strings.ToUpper(found[0].str)
 		return remaining, nil
 	default:
-		return remaining, errors.New(invalidQuery + "expected only one table name after 'from'")
+		return remaining, strayWordError("from", found[1])
 	}
 }
 
@@ -221,17 +271,29 @@ func (q *Query) parseGroupClause(tokens []token) ([]token, error) {
 	if len(tokens) < 1 {
 		return tokens, errors.New(invalidQuery + unexpectedEnd)
 	}
-	remaining, fields := tokensConsumeStr(tokens)
-	for _, field := range fields {
-		if field == "" {
+	remaining, found := tokensConsume(tokens)
+	if err := rejectStrayBy("group", found); err != nil {
+		return remaining, err
+	}
+	fields := make([]string, 0, len(found))
+	for _, field := range found {
+		if field.str == "" {
 			return remaining, errors.New(invalidQuery + "expected field name in 'group' clause")
 		}
+		fields = append(fields, field.str)
 	}
 	q.GroupBy = fields
 	q.GroupKey = strings.Join(fields, ",")
 	return remaining, nil
 }
 
+// parseOrderClause parses "order [by] ORDERFIELD [desc]" and "rorder [by]
+// ORDERFIELD [asc]". order sorts descending and rorder ascending already,
+// so the matching SQL direction word (orderDirection; desc is used by
+// existing queries) is accepted right after the field and changes nothing.
+// Any other further word is rejected (orderWordError), also one after the
+// direction word, which is then named; such words used to be ignored, so
+// "order by x asc" silently sorted descending.
 func (q *Query) parseOrderClause(tokens []token, reverse bool) ([]token, error) {
 	tokens = tokensConsumeOptional(tokens, "by")
 	if len(tokens) < 1 {
@@ -241,6 +303,13 @@ func (q *Query) parseOrderClause(tokens []token, reverse bool) ([]token, error) 
 	if len(found) == 0 || found[0].str == "" {
 		return remaining, errors.New(invalidQuery + unexpectedEnd)
 	}
+	extra := found[1:]
+	if len(extra) > 0 && isBareWord(extra[0], orderDirection(reverse)) {
+		extra = extra[1:]
+	}
+	if len(extra) > 0 {
+		return remaining, orderWordError(reverse, extra[0])
+	}
 	q.OrderBy = found[0].str
 	if reverse {
 		q.ReverseOrder = true
@@ -248,28 +317,77 @@ func (q *Query) parseOrderClause(tokens []token, reverse bool) ([]token, error) 
 	return remaining, nil
 }
 
+// orderDirection returns the SQL direction word that may follow the field
+// of an order (desc) or rorder (asc) clause, the direction it sorts in
+// anyway. The parser and AnalyzePartial share it.
+func orderDirection(reverse bool) string {
+	if reverse {
+		return "asc"
+	}
+	return "desc"
+}
+
+// isBareWord tells whether t is the bare, unescaped word (any case), such
+// as a by in a select or group list (rejectStrayBy) or the direction word
+// after the field of an order clause. The parser and AnalyzePartial share
+// this rule; the escaped `by` or `desc` is a field.
+func isBareWord(t token, word string) bool {
+	return t.isBareword && !t.quotesStripped && strings.EqualFold(t.str, word)
+}
+
+// orderWordError rejects the word extra after the field (and direction
+// word) of an order or rorder clause, explaining the sort directions for
+// asc and desc.
+func orderWordError(reverse bool, extra token) error {
+	clause := "order"
+	if reverse {
+		clause = "rorder"
+	}
+	if isBareWord(extra, "asc") || isBareWord(extra, "desc") {
+		return fmt.Errorf("%sunexpected word %q after the value of the '%s' clause: "+
+			"'order by FIELD [desc]' sorts descending, 'rorder by FIELD [asc]' ascending",
+			invalidQuery, extra.str, clause)
+	}
+	return strayWordError(clause, extra)
+}
+
+// parseIntervalClause parses "interval NUMBER". An interval without its
+// number used to keep the default of 5 seconds silently; it is rejected now,
+// as a missing limit is.
 func (q *Query) parseIntervalClause(tokens []token) ([]token, error) {
 	remaining, found := tokensConsume(tokens)
 	if len(found) == 0 {
-		return remaining, nil
+		return remaining, errors.New(invalidQuery + "expected number after 'interval'")
+	}
+	if len(found) > 1 {
+		return remaining, strayWordError("interval", found[1])
 	}
 	interval, err := strconv.Atoi(found[0].str)
 	if err != nil {
 		return remaining, errors.New(invalidQuery + err.Error())
 	}
-	// A negative interval made dserver and client fall back to different
-	// defaults, and a huge one overflowed time.Duration into a garbage value.
-	if interval < 0 || int64(interval) > int64(math.MaxInt64/time.Second) {
+	if !validInterval(interval) {
 		return remaining, errors.New(invalidQuery + "interval out of range: " + found[0].str)
 	}
 	q.Interval = time.Second * time.Duration(interval)
 	return remaining, nil
 }
 
+// validInterval tells whether an interval in seconds is accepted. A negative
+// interval made dserver and client fall back to different defaults, and a
+// huge one overflowed time.Duration into a garbage value. AnalyzePartial
+// uses the same rule.
+func validInterval(seconds int) bool {
+	return seconds >= 0 && int64(seconds) <= int64(math.MaxInt64/time.Second)
+}
+
 func (q *Query) parseLimitClause(tokens []token) ([]token, error) {
 	remaining, found := tokensConsume(tokens)
 	if len(found) == 0 {
 		return remaining, errors.New(invalidQuery + unexpectedEnd)
+	}
+	if len(found) > 1 {
+		return remaining, strayWordError("limit", found[1])
 	}
 	limit, err := strconv.Atoi(found[0].str)
 	if err != nil {
@@ -284,29 +402,55 @@ func (q *Query) parseLimitClause(tokens []token) ([]token, error) {
 	return remaining, nil
 }
 
+// parseOutfileClause parses "outfile [append] PATH". A lone append is the
+// path "append". A word after the path is rejected with its name, and so is
+// a path starting with "append:" (see rejectAppendColonPath).
 func (q *Query) parseOutfileClause(tokens []token) ([]token, error) {
 	remaining, found := tokensConsume(tokens)
-	switch len(found) {
-	case 1:
-		q.Outfile = &Outfile{FilePath: found[0].str, AppendMode: false}
-	case 2:
-		if found[0].str != "append" {
-			return remaining, errors.New(invalidQuery + invalidQuery)
-		}
-		q.Outfile = &Outfile{FilePath: found[1].str, AppendMode: true}
-	default:
-		return remaining, errors.New(invalidQuery + invalidQuery)
-	}
-	if q.Outfile.FilePath == "" {
+	if len(found) == 0 {
 		return remaining, errors.New(invalidQuery + "expected file path in 'outfile' clause")
 	}
+	appendMode := len(found) > 1 && found[0].str == "append"
+	if appendMode {
+		found = found[1:]
+	}
+	if len(found) > 1 {
+		return remaining, strayWordError("outfile", found[1])
+	}
+	if found[0].str == "" {
+		return remaining, errors.New(invalidQuery + "expected file path in 'outfile' clause")
+	}
+	if err := rejectAppendColonPath(found[0].str); err != nil {
+		return remaining, err
+	}
+	q.Outfile = &Outfile{FilePath: found[0].str, AppendMode: appendMode}
 	return remaining, nil
+}
+
+// appendColonPrefix starts an outfile path that looks like an append mode.
+const appendColonPrefix = "append:"
+
+// rejectAppendColonPath rejects an outfile path starting with "append:".
+// No release had an "append:PATH" syntax, but it reads like one: such a
+// query (an integration test used it for years, a scheduled job may) wrote
+// a new file literally named "append:PATH" on every run and never appended
+// to PATH. A file really named so is still written as "./append:PATH".
+func rejectAppendColonPath(path string) error {
+	if !strings.HasPrefix(path, appendColonPrefix) {
+		return nil
+	}
+	return fmt.Errorf("%soutfile path %q starts with %q: to append to a file write "+
+		"'outfile append PATH', for a file named so write './%s'",
+		invalidQuery, path, appendColonPrefix, path)
 }
 
 func (q *Query) parseLogFormatClause(tokens []token) ([]token, error) {
 	remaining, found := tokensConsume(tokens)
 	if len(found) == 0 || found[0].str == "" {
 		return remaining, errors.New(invalidQuery + unexpectedEnd)
+	}
+	if len(found) > 1 {
+		return remaining, strayWordError("logformat", found[1])
 	}
 	q.LogFormat = found[0].str
 	return remaining, nil

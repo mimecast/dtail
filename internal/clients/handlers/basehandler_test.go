@@ -19,14 +19,8 @@ func TestParseAuthKeyMessage(t *testing.T) {
 		wantInfo string
 	}{
 		{
-			name:     "server formatted success",
-			message:  fmt.Sprintf("SERVER%s%s%sAUTHKEY OK\n", protocol.FieldSeparator(), "host1", protocol.FieldSeparator()),
-			wantAuth: true,
-			wantOK:   true,
-		},
-		{
-			name:     "server formatted error",
-			message:  fmt.Sprintf("SERVER%s%s%sAUTHKEY ERR feature disabled\n", protocol.FieldSeparator(), "host1", protocol.FieldSeparator()),
+			name:     "error with detail",
+			message:  " AUTHKEY ERR feature disabled\n",
 			wantAuth: true,
 			wantOK:   false,
 			wantInfo: "feature disabled",
@@ -38,8 +32,20 @@ func TestParseAuthKeyMessage(t *testing.T) {
 			wantOK:   true,
 		},
 		{
+			name:     "wrapped in a server frame is no reply",
+			message:  fmt.Sprintf("SERVER%s%s%sAUTHKEY OK\n", protocol.FieldSeparator(), "host1", protocol.FieldSeparator()),
+			wantAuth: false,
+			wantOK:   false,
+		},
+		{
 			name:     "not an authkey message",
-			message:  fmt.Sprintf("SERVER%s%s%ssome other message", protocol.FieldSeparator(), "host1", protocol.FieldSeparator()),
+			message:  "AUTHKEYS",
+			wantAuth: false,
+			wantOK:   false,
+		},
+		{
+			name:     "empty",
+			message:  "",
 			wantAuth: false,
 			wantOK:   false,
 		},
@@ -69,10 +75,10 @@ func TestHandleCapabilitiesMessage(t *testing.T) {
 		sessionAcks:    make(chan SessionAck, 1),
 	}
 
-	handler.handleHiddenMessage(".syn capabilities query-update-v1 feature-two")
+	handler.handleHiddenMessage(".syn capabilities journal-v1 feature-two")
 
-	if !handler.HasCapability(protocol.CapabilityQueryUpdateV1) {
-		t.Fatalf("expected handler to track %q", protocol.CapabilityQueryUpdateV1)
+	if !handler.HasCapability(protocol.CapabilityJournalV1) {
+		t.Fatalf("expected handler to track %q", protocol.CapabilityJournalV1)
 	}
 	if !handler.HasCapability("feature-two") {
 		t.Fatalf("expected handler to track feature-two")
@@ -98,7 +104,7 @@ func TestWaitForCapabilitiesPrefersArrivedCapabilities(t *testing.T) {
 		capabilitiesCh: make(chan struct{}),
 		sessionAcks:    make(chan SessionAck, 1),
 	}
-	handler.handleHiddenMessage(".syn capabilities query-update-v1")
+	handler.handleHiddenMessage(".syn capabilities journal-v1")
 	handler.done.Shutdown()
 
 	for i := 0; i < 100; i++ {
@@ -196,7 +202,7 @@ func TestHandleSessionAckMessage(t *testing.T) {
 
 	handler.handleHiddenMessage(".syn session update ok 4")
 
-	ack, ok := handler.WaitForSessionAck(10 * time.Millisecond)
+	ack, ok := handler.WaitForSessionAck(10*time.Millisecond, 0)
 	if !ok {
 		t.Fatalf("expected session ack")
 	}
@@ -221,7 +227,7 @@ func TestWaitForSessionAckPrefersQueuedAck(t *testing.T) {
 	handler.done.Shutdown()
 
 	for i := 0; i < attempts; i++ {
-		ack, ok := handler.WaitForSessionAck(time.Nanosecond)
+		ack, ok := handler.WaitForSessionAck(time.Nanosecond, 0)
 		if !ok {
 			t.Fatalf("attempt %d: expected the queued session ack to win", i)
 		}

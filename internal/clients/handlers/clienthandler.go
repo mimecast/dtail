@@ -3,6 +3,7 @@ package handlers
 import (
 	"github.com/mimecast/dtail/internal"
 	"github.com/mimecast/dtail/internal/clients/clientlog"
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 // ClientHandler is the basic client handler interface.
@@ -22,14 +23,16 @@ func NewClientHandler(server string, logger clientlog.Logger) *ClientHandler {
 			server:         server,
 			shellStarted:   false,
 			commands:       make(chan string),
-			status:         -1,
 			done:           internal.NewDone(),
 			capabilities:   make(map[string]struct{}),
 			capabilitiesCh: make(chan struct{}),
 			sessionAcks:    make(chan SessionAck, 4),
+			probeAnswers:   make(chan protocol.ProbeAnswer, probeAnswerQueueSize),
+			probeSlot:      make(chan struct{}, 1),
 			logger:         logger,
 		},
 	}
-	h.requestFraming()
+	h.status.Store(-1) // No status yet.
+	h.expectCapabilities = true
 	return h
 }

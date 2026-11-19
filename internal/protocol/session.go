@@ -13,9 +13,8 @@ const (
 // the server, for example a read whose file(s) did not exist or could not be
 // opened, so that the session's output is incomplete. It is followed by a
 // short, fixed reason naming no path or server-side error detail (those stay
-// in the server log). Servers advertising CapabilityCommandFailureV1 send it
-// once per failure, before the session's close handshake; clients that do
-// not know it ignore it like any other unknown hidden message. dcat and dgrep
+// in the server log). Every protocol 5 server sends it once per failure,
+// before the session's close handshake. dcat and dgrep
 // exit with status 2 for any reported reason; scheduled dmap jobs tell file
 // read failures (IsFileReadFailure) from the others.
 const HiddenCommandFailedPrefix = ".syn command failed "

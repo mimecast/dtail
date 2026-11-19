@@ -140,6 +140,9 @@ func writeFields(dst *strings.Builder, fields ...string) {
 	}
 }
 
+// writeDiagnosticDetails writes details as protocol fields. Every detail is
+// written through writeEscapedDetail, so client- or server-supplied text in
+// it (paths, globs, probe entries, errors) can not forge log lines.
 func writeDiagnosticDetails(dst *strings.Builder, details []any) {
 	for i, detail := range details {
 		if i > 0 {
@@ -147,11 +150,11 @@ func writeDiagnosticDetails(dst *strings.Builder, details []any) {
 		}
 		switch value := detail.(type) {
 		case string:
-			dst.WriteString(value)
+			writeEscapedDetail(dst, value)
 		case error:
-			dst.WriteString(value.Error())
+			writeEscapedDetail(dst, value.Error())
 		default:
-			fmt.Fprintf(dst, "%v", value)
+			writeEscapedDetail(dst, fmt.Sprintf("%v", value))
 		}
 	}
 }

@@ -94,6 +94,8 @@ func BindCommonClientFlags(fs *flag.FlagSet, args *config.Args) *ClientRunner {
 	fs.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
 	fs.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
 	fs.StringVar(&args.ControlTTYPath, "control-tty", "/dev/tty", "TTY device for interactive query control")
+	fs.StringVar(&args.EditMode, "edit-mode", "",
+		"Interactive line editing keys: emacs or vi (default: Client.EditMode from the config file, else emacs)")
 	fs.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
 	fs.StringVar(&args.HostnameOverride, "hostname-override", "", "Override the hostname used in logs and output")
 	fs.StringVar(&args.LogDir, "logDir", "",

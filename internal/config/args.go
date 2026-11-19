@@ -22,7 +22,9 @@ type LoggingArgs struct {
 	// that it overrides Common.LogLevel also when it names the default level.
 	LogLevelSet bool
 	LogPayload  bool
-	NoColor     bool
+	// EditMode is --edit-mode (empty: Client.EditMode of the config file).
+	EditMode string
+	NoColor  bool
 }
 
 // SSHArgs configures SSH listeners, authentication, and host verification.
@@ -97,6 +99,7 @@ func (a *Args) String() string {
 	fmt.Fprintf(&sb, "LogDir:%v,", a.LogDir)
 	fmt.Fprintf(&sb, "LogLevel:%v,", a.LogLevel)
 	fmt.Fprintf(&sb, "LogPayload:%v,", a.LogPayload)
+	fmt.Fprintf(&sb, "EditMode:%v,", a.EditMode)
 	fmt.Fprintf(&sb, "Logger:%v,", a.Logger)
 	fmt.Fprintf(&sb, "Mode:%v,", a.Mode)
 	fmt.Fprintf(&sb, "NoAuthKey:%v,", a.NoAuthKey)

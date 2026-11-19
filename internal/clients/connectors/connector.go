@@ -16,11 +16,9 @@ type Connector interface {
 	Server() string
 	// Handler for the connection.
 	Handler() handlers.Handler
-	// SupportsQueryUpdates reports whether the connected server advertised
-	// runtime query replacement support within the given timeout.
-	SupportsQueryUpdates(timeout time.Duration) bool
 	// ApplySessionSpec starts or updates the interactive session workload on an
-	// already connected server when query updates are supported.
+	// already connected server (SESSION START/UPDATE, which every protocol 5
+	// server supports).
 	ApplySessionSpec(spec sessionspec.Spec, timeout time.Duration) error
 	// ApplySessionSpecWithGeneration starts or updates the interactive session
 	// workload using the provided committed generation as the base for the
@@ -29,6 +27,20 @@ type Connector interface {
 	// CommittedSession returns the last session spec and generation that the
 	// server acknowledged for this connection.
 	CommittedSession() (sessionspec.Spec, uint64, bool)
+	// ReplaceStartSessionSpec makes spec the workload of the connection's
+	// initial SESSION START if that has not begun yet (the connection is
+	// still connecting) and reports true then; false once it began, after
+	// which only a committed session can be updated. An interactive :reload
+	// calls it for every connection without an active session, so one that
+	// comes up later does not start the replaced workload. A SESSION START
+	// in flight is waited for, but for at most sessionUpdateAckMaxWait; it
+	// returns ErrSessionStartPending then.
+	ReplaceStartSessionSpec(spec sessionspec.Spec) (bool, error)
+	// RestoreStartSessionSpec is ReplaceStartSessionSpec for the rollback
+	// of a failed :reload. A SESSION START in flight that is not
+	// acknowledged within sessionUpdateAckMaxWait updates its session to
+	// spec right after it is: it returns ErrSessionRollbackDeferred then.
+	RestoreStartSessionSpec(spec sessionspec.Spec) (bool, error)
 	// RestoreCommittedSession resets the local committed session snapshot without
 	// advancing the generation.
 	RestoreCommittedSession(spec sessionspec.Spec, generation uint64, committed bool)

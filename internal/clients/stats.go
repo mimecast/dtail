@@ -3,8 +3,11 @@ package clients
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients/clientlog"
@@ -26,7 +29,24 @@ type stats struct {
 	formatter interruptMessageFormatter
 	// Controls how long interrupt output remains visible.
 	interruptPause time.Duration
-	logger         logging.Logger
+	// interruptOut is where the interrupt statistics go, set while an
+	// interactive session's line editor runs (setInterruptOutput); unset,
+	// they go to stdout.
+	interruptOut atomic.Pointer[io.Writer]
+	logger       logging.Logger
+}
+
+// setInterruptOutput makes printStatsDueInterrupt write to w, or to stdout
+// again for nil. The interactive control loop sets its line editor's writer
+// (the control terminal, the one Ctrl-C was pressed on), which takes the
+// line being edited off the screen around the statistics and draws it
+// again below them.
+func (s *stats) setInterruptOutput(w io.Writer) {
+	if w == nil {
+		s.interruptOut.Store(nil)
+		return
+	}
+	s.interruptOut.Store(&w)
 }
 
 func newTailStats(servers int, formatter interruptMessageFormatter, interruptPause time.Duration,
@@ -51,6 +71,15 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{},
 
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
+
+	// The periodic stats are logged by a goroutine of their own, so that this
+	// loop never blocks on a paused client logger (an interactive session
+	// paused with an empty line, see interactivePause). Blocked here, it no
+	// longer received from statsCh, and the interrupt handler then dropped
+	// every Ctrl-C as "stats already printed" instead of exiting on the
+	// second one.
+	logCh := make(chan map[string]any, 1)
+	go s.logStats(ctx, logCh)
 
 	var connectedLast int
 	for {
@@ -80,8 +109,7 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{},
 			messages = append(messages, fmt.Sprintf("Connection stats: %s", stats))
 			s.printStatsDueInterrupt(messages)
 		default:
-			data := s.statsData(connected, newConnections, throttle)
-			clientlog.Mapreduce(s.logger, "STATS", data)
+			queueLatestStats(logCh, s.statsData(connected, newConnections, throttle))
 		}
 
 		connectedLast = connected
@@ -91,14 +119,51 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{},
 	}
 }
 
+// logStats logs the stats queued by Start until ctx is done.
+func (s *stats) logStats(ctx context.Context, logCh <-chan map[string]any) {
+	for {
+		select {
+		case data := <-logCh:
+			clientlog.Mapreduce(s.logger, "STATS", data)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// queueLatestStats queues data for logStats without blocking. Stats still
+// waiting to be logged (the logger is paused) are replaced, as only the
+// latest state is of interest. Start is the only sender, so the loop ends
+// after at most one replacement.
+func queueLatestStats(logCh chan map[string]any, data map[string]any) {
+	for {
+		select {
+		case logCh <- data:
+			return
+		default:
+		}
+		select {
+		case <-logCh:
+		default:
+		}
+	}
+}
+
+// printStatsDueInterrupt prints the statistics asked for with Ctrl-C to
+// stdout, or to the interactive line editor (setInterruptOutput), and keeps
+// the client logger paused for interruptPause so that they stay visible.
 func (s *stats) printStatsDueInterrupt(messages []string) {
+	var out io.Writer = os.Stdout
+	if w := s.interruptOut.Load(); w != nil {
+		out = *w
+	}
 	clientlog.Pause(s.logger)
 	for i, message := range messages {
 		if s.formatter != nil {
-			fmt.Println(s.formatter.FormatInterruptMessage(i, message))
+			_, _ = fmt.Fprintln(out, s.formatter.FormatInterruptMessage(i, message))
 			continue
 		}
-		fmt.Printf(" %s\n", message)
+		_, _ = fmt.Fprintf(out, " %s\n", message)
 	}
 	time.Sleep(s.interruptPause)
 	clientlog.Resume(s.logger)

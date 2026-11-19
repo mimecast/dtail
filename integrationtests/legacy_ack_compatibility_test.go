@@ -25,7 +25,8 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-// This fixture models the protocol-4.1 server's old command accounting:
+// This fixture models a protocol-4.1 server, whose unmarked capabilities
+// frame a protocol 5 client rejects, and its old command accounting:
 // an unknown .ack completes the only active command and closes normally,
 // before a queued read can run. It deliberately uses a nonempty source so
 // exit 0 with empty output cannot be mistaken for a valid empty query.
@@ -80,7 +81,7 @@ func TestLegacyAckServerCannotReportSuccessfulEmptyRead(t *testing.T) {
 					if strings.Contains(string(output), "unsupported DTail server") {
 						t.Fatalf("reached protocol despite wrong host pin: %s", output)
 					}
-				} else if !strings.Contains(string(output), "missing capability escaped-framing-v1; please update DTail server") {
+				} else if !strings.Contains(string(output), "(no capabilities frame first); please update DTail server") {
 					t.Fatalf("missing actionable compatibility error: %s", output)
 				}
 				// Closing the listener also releases Accept if the client failed early.
@@ -159,7 +160,9 @@ func serveLegacyAckFixture(listener net.Listener, host ssh.Signer, authorized ss
 			break
 		}
 	}
-	if _, err := io.WriteString(channel, protocol.HiddenCapabilitiesPrefix+protocol.CapabilityQueryUpdateV1+string(protocol.MessageDelimiter)); err != nil {
+	// A protocol 4.1 server sent an unmarked capabilities frame listing,
+	// among others, query-update-v1 (no longer a capability in protocol 5).
+	if _, err := io.WriteString(channel, protocol.HiddenCapabilitiesPrefix+"query-update-v1"+string(protocol.MessageDelimiter)); err != nil {
 		return err
 	}
 	scanner := bufio.NewScanner(channel)

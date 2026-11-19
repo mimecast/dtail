@@ -29,7 +29,7 @@ const cutShortLines = 400000
 // failure (see the client's baseHandler.handleHiddenMessage and
 // protocol.HiddenCommandFailedPrefix). writeCutShortFile writes them ahead of
 // the payload lines, so a client reads them before the test stops the run.
-// The client asks for marked control frames (protocol.ControlFramesCommand),
+// Every session marks its control frames (protocol.EscapedControlFraming),
 // so they reach it as payload: printed, and neither a close handshake that
 // would hide a cut short read nor a command failure. They do not contain
 // exitStatusLine, so they are not counted as payload lines, and dgrep, which

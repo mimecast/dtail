@@ -268,22 +268,16 @@ func (r Regex) Serialize() (string, error) {
 	if len(r.flags) == 0 {
 		return "", fmt.Errorf("unable to serialize regex without a flag: %v", r)
 	}
-	flags := make([]string, 0, len(r.flags)+1)
+	flags := make([]string, 0, len(r.flags))
 	for _, flag := range r.flags {
 		if !flag.serializable() {
 			return "", fmt.Errorf("unable to serialize regex with flag %q: %v", flag, r)
 		}
 		flags = append(flags, flag.String())
 	}
-	// Include the literal hint in the serialization, but only for patterns
-	// which are their own literal. The receiver derives the literal from the
-	// pattern itself, so the hint is redundant among peers of this version;
-	// older peers however take the hint as permission to search for the
-	// pattern text verbatim, which is only the same search when the pattern
-	// needs no unescaping.
-	if r.isLiteral && r.literalStr == r.regexStr {
-		flags = append(flags, "literal")
-	}
+	// No literal hint is sent: the receiver derives the literal from the
+	// pattern itself (newRegex). Older peers trusted such a hint, but
+	// protocol 5 rejects every peer of another version.
 	return fmt.Sprintf("regex:%s %s", strings.Join(flags, ","), r.regexStr), nil
 }
 
@@ -302,10 +296,10 @@ func (r Regex) Pattern() string {
 // The wire form is "regex:<flags> <pattern>", the flags and the pattern
 // separated by the first space. An empty string means no regex and is a noop
 // regex. A string without a space is read as flags with an empty pattern:
-// Serialize ends an empty pattern's regex in a space ("regex:invert,literal "
-// for an inverted empty pattern), and a receiver which splits a command into
-// words at runs of whitespace and joins them again loses that trailing space.
-// Taking the remaining "regex:invert,literal" for a noop would match every
+// Serialize ends an empty pattern's regex in a space ("regex:invert " for an
+// inverted empty pattern), and a receiver which splits a command into words
+// at runs of whitespace and joins them again loses that trailing space.
+// Taking the remaining "regex:invert" for a noop would match every
 // line, where the inverted empty pattern matches none. Flags which do not
 // parse ("regex:bogus", or "regex:" without a flag) are an error, with or
 // without a pattern.
@@ -337,11 +331,12 @@ func deserializeFlags(flagsStr string) ([]Flag, error) {
 	var flags []Flag
 	for _, flagStr := range strings.Split(list, ",") {
 		if flagStr == "literal" {
-			// An optimization hint of the sending side, not a flag. It is
-			// accepted for compatibility but never trusted: newRegex derives
-			// the literal from the pattern, and a pattern which cannot be
-			// proven to be a literal keeps the compiled regexp, which matches
-			// whatever the sender's regexp matched.
+			// An optimization hint that Serialize no longer sends (older
+			// clients did), not a flag. It is still ignored rather than
+			// rejected, and never trusted: newRegex derives the literal from
+			// the pattern, and a pattern which cannot be proven to be a
+			// literal keeps the compiled regexp, which matches whatever the
+			// sender's regexp matched.
 			continue
 		}
 		flag, err := NewFlag(flagStr)
