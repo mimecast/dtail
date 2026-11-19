@@ -1,7 +1,9 @@
 package sessionuser
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"regexp/syntax"
 	"strings"
@@ -149,7 +151,11 @@ func (r *PathRules) MayReadBeneath(dir string) bool {
 		// beneath such a directory is.
 		return false
 	}
-	if _, err := permissions.ToRead(u.Name, dir, u.log()); err != nil {
+	// A missing directory is not an OS denial: listings only see existing
+	// entries, and the PathRules unit tests use synthetic paths. A real ACL
+	// denial (or an unknown user name) still hides the directory.
+	if _, err := permissions.ToRead(u.Name, dir, u.log()); err != nil &&
+		!errors.Is(err, os.ErrNotExist) {
 		u.log().Debug(u, dir, "No OS file system permissions to read directory", err)
 		return false
 	}

@@ -59,7 +59,7 @@ func (l *levelCountingLogger) take() []string {
 func newProbeLoggingHandler(t *testing.T, permissions []string, logger logging.Logger) *ServerHandler {
 	t.Helper()
 	lookup := func(string) ([]string, error) { return permissions, nil }
-	user, err := userserver.New("probe-user", "127.0.0.1", lookup, logger)
+	user, err := userserver.New(spacedPathTestUsername(t), "127.0.0.1", lookup, logger)
 	if err != nil {
 		t.Fatalf("new user: %v", err)
 	}
@@ -214,7 +214,7 @@ func BenchmarkProbeList500(b *testing.B) {
 func benchmarkProbeList(b *testing.B, dir string, permissions []string) {
 	logger := &levelCountingLogger{}
 	lookup := func(string) ([]string, error) { return permissions, nil }
-	user, err := userserver.New("probe-user", "127.0.0.1", lookup, logger)
+	user, err := userserver.New(spacedPathTestUsername(b), "127.0.0.1", lookup, logger)
 	if err != nil {
 		b.Fatal(err)
 	}

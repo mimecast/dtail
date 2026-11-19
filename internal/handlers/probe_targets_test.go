@@ -45,7 +45,9 @@ func newProbeTestHandlerWithUnits(t *testing.T, permissions []string, serverless
 	units *journal.UnitCache, capabilities ...string) *ServerHandler {
 	t.Helper()
 	lookup := func(string) ([]string, error) { return permissions, nil }
-	user, err := userserver.New("probe-user", "127.0.0.1", lookup, handlerTestLogger)
+	// linuxacl builds call permissions.ToRead with this name; a fake
+	// "probe-user" always fails on Jenkins (see spacedPathTestUsername).
+	user, err := userserver.New(spacedPathTestUsername(t), "127.0.0.1", lookup, handlerTestLogger)
 	if err != nil {
 		t.Fatalf("new user: %v", err)
 	}

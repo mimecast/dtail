@@ -98,7 +98,10 @@ func newSwitchE2EClient(t *testing.T, file, ttyPath string, framed bool) (*MaprC
 	t.Helper()
 	logger := newPausingTestLogger()
 	args := config.Args{
-		What: file, RegexStr: "PLAIN|^AGGREGATE", Serverless: true, Plain: true, SSHArgs: config.SSHArgs{UserName: "switch-user"},
+		What: file, RegexStr: "PLAIN|^AGGREGATE", Serverless: true, Plain: true,
+		// linuxacl builds call permissions.ToRead with this name; a fake
+		// "switch-user" always fails on Jenkins (see clientTestUsername).
+		SSHArgs:          config.SSHArgs{UserName: clientTestUsername(t)},
 		InteractiveQuery: true, ControlTTYPath: ttyPath, ConnectionsPerCPU: 1,
 	}
 	c, err := NewInteractiveTailClient(args, clientTestRuntimeConfig(),

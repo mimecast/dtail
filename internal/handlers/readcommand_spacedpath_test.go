@@ -32,7 +32,7 @@ const spacedPathTestLine = "spaced-path-payload"
 // builds call permissions.ToRead with that name via libacl, so a fake name
 // like "spaced-path-user" always fails on Jenkins even when readfiles allows
 // the path. Non-linuxacl builds ignore the OS check.
-func spacedPathTestUsername(t *testing.T) string {
+func spacedPathTestUsername(t testing.TB) string {
 	t.Helper()
 	current, err := user.Current()
 	if err != nil {

@@ -1,6 +1,7 @@
 package sessionuser
 
 import (
+	"os/user"
 	"testing"
 
 	"github.com/mimecast/dtail/internal/io/fs"
@@ -8,11 +9,17 @@ import (
 )
 
 // newTestUser creates a User with the given permission strings for testing.
-// It bypasses PermissionLookup and OS-level checks so the unit tests
-// focus solely on iteratePaths logic.
+// It bypasses PermissionLookup so the unit tests focus on iteratePaths and
+// PathRules. The Name is the OS username of the test process: linuxacl builds
+// call permissions.ToRead with that name (MayReadBeneath, ResolveReadTarget),
+// and a fake name like "testuser" always fails on Jenkins.
 func newTestUser(perms []string) *User {
+	name := "testuser"
+	if current, err := user.Current(); err == nil && current.Username != "" {
+		name = current.Username
+	}
 	return &User{
-		Name:          "testuser",
+		Name:          name,
 		remoteAddress: "127.0.0.1",
 		permissions:   perms,
 		logger:        logging.NopLogger{},

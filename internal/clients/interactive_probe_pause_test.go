@@ -205,7 +205,9 @@ func newPausedProbeSession(t *testing.T, file string, direct, quietServer bool) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	session.connector = connectors.NewServerless("probe-user", session.handler, commands, spec, true,
+	// linuxacl builds call permissions.ToRead with this name; a fake
+	// "probe-user" always fails on Jenkins (see clientTestUsername).
+	session.connector = connectors.NewServerless(clientTestUsername(t), session.handler, commands, spec, true,
 		factory, logging.NopLogger{})
 	return session
 }

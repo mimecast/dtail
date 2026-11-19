@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os/user"
 	"reflect"
 	"strings"
 	"sync"
@@ -20,6 +21,19 @@ import (
 	maprclient "github.com/mimecast/dtail/internal/mapr/client"
 	"github.com/mimecast/dtail/internal/omode"
 )
+
+// clientTestUsername returns the OS username of the test process. linuxacl
+// builds call permissions.ToRead with that name via libacl, so a fake name
+// like "probe-user" always fails on Jenkins even when readfiles allows the
+// path. Non-linuxacl builds ignore the OS check.
+func clientTestUsername(t testing.TB) string {
+	t.Helper()
+	current, err := user.Current()
+	if err != nil {
+		t.Fatalf("current user: %v", err)
+	}
+	return current.Username
+}
 
 type serverlessStatsFactory struct {
 	handler sessionHandlers.Handler
