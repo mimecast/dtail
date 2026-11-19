@@ -1104,7 +1104,7 @@ Every server-to-client message (frame) ends with `protocol.MessageDelimiter`,
 the single byte 0xAC. That byte is also a UTF-8 continuation byte (`€` is
 E2 82 AC, `Ь` D0 AC, `¬` C2 AC, about 1/64 of all CJK characters), so raw
 framing cut such lines in two and dropped the byte. Since protocol 5
-(`protocol.ProtocolCompat` = `5`) every session uses
+(`protocol.ProtocolCompat` = `5.0`) every session uses
 `protocol.EscapedControlFraming` for every frame, from its first frame (the
 capabilities frame, held as the framer's first pending output,
 `sessionFramer.queueFirstFrame`, so payload queued meanwhile can not overtake

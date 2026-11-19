@@ -32,8 +32,8 @@ Copy the ``dserver`` binary to the remote server machines of your choice (e.g. `
 
 ```console
 ❯ ./dserver --logger Stdout --logLevel debug --bindAddress $(hostname) --port 2222
-DTail 4.3.2-ng Protocol 5 Have a lot of fun!
-INFO|20250923-222429|Starting server|DTail 4.3.2-ng Protocol 5 Have a lot of fun!
+DTail 5.0.0 Protocol 5.0 Have a lot of fun!
+INFO|20250923-222429|Starting server|DTail 5.0.0 Protocol 5.0 Have a lot of fun!
 INFO|20250923-222429|Reading private server RSA host key from file|./cache/ssh_host_key
 INFO|20250923-222429|Starting server
 INFO|20250923-222429|Binding server|X.Y.Z.W:2222

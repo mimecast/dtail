@@ -5,7 +5,7 @@ const (
 	// server send and compare. Protocol 5 frames every session in EscapedControlFraming from its
 	// first frame on, without negotiation; the server rejects the commands
 	// of a client of another version.
-	ProtocolCompat string = "5"
+	ProtocolCompat string = "5.0"
 	// MessageDelimiter terminates each message (frame) of the server-to-
 	// client stream. It is the single byte 0xAC (the rune '¬' truncated to a
 	// byte), which is also a UTF-8 continuation byte; every session escapes
