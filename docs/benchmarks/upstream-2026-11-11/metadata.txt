@@ -1,0 +1,45 @@
+created_utc=2026-11-11T09:14:56Z
+mode=run
+kernel=Linux 7.2.15-200.fc44.x86_64 #1 SMP PREEMPT_DYNAMIC Sun Nov  1 16:10:54 UTC 2026 x86_64 GNU/Linux
+go_binary=/usr/bin/go
+go_version=go version go1.26.10-X:nodwarf5 linux/amd64
+go_env=linux amd64 1 local
+logical_cpus=8
+cpu_governor=performance
+
+[upstream]
+root=/home/user/git/dtail-upstream
+commit=d2425e8261d388f1dd2b80ef29cae9308612dffc
+remote=https://github.com/mimecast/dtail.git
+go_directive=1.24.0
+tracked_dirty=no
+status:
+binary_sha256:
+876dd9bf002a46d14d87814e68dc73a122564c826f9019fa0296812681870499  <workdir>/bin/upstream/dcat
+e945ea4872e1fe61417d87012025b3844b83e7710e77f26aac9d81bf3d00080e  <workdir>/bin/upstream/dgrep
+72da99057a6ed951de2818e224ea7d5c80d7a5a585e1304a1437886a4a63b46d  <workdir>/bin/upstream/dmap
+fb0c8d62f5e98ddc2ef4a2d80e600ce18ca55d3adad5d40d9fa2e4ce0612be24  <workdir>/bin/upstream/dserver
+4ccbaadda6117540df5710232d189de62359338b03d7288e16285bf673ce41e3  <workdir>/bin/upstream/dtail
+
+[local]
+root=/home/user/git/dtail-bench
+commit=3b2ec4ce1b74e6c66a24c221f6d476ccd75f8caf
+remote=git@github.com:snonux/dtail.git
+go_directive=1.26.6
+tracked_dirty=no
+status:
+binary_sha256:
+782d9dda41802d32f48d2cc6c555fa72530663816f887de0a83716c276c1a9ca  <workdir>/bin/local/dcat
+5003986baccb79dd041f5ad7f266357be3b499618e31ca0b106912b28e5e65e5  <workdir>/bin/local/dgrep
+53449789a28873c307b86a5ad5c4f494cd79a6fb1035e892cd7f35e52b7ca6f2  <workdir>/bin/local/dmap
+715bd9f453cbf2cddcf8bebc67f3b29c25dbc0f2693d18957392dcc98bb88b57  <workdir>/bin/local/dserver
+219e001bc695e0854a6343e88f1f1ded97d723c4c5210c745982b1a601f79618  <workdir>/bin/local/dtail
+
+[data_sha256]
+bb615cf54c9d4faa80230d3c778f48e761d46725d7520e1dd5b0cd3e69c4585a  <workdir>/data/smoke/normal.log
+76debc59e6369a64b9afbc7e5f0832c9d3e52cb18e4a2bf0894f7e37fc232eff  <workdir>/data/smoke/stats.log
+ebbac7bf57ff8efb066a9313f6edb7e1042fc12936cc693470a8c9fadcfe64f8  <workdir>/data/smoke/follow.log
+3bcafa015d65bae0e4f7f46463f28b122fc8436d383f8c03faf9ce27f1c27587  <workdir>/data/normal_100mib.log
+deb662eaee0afe0281c887127f30e702b0e423c9b579ecd32bc726dd283f36ec  <workdir>/data/normal_1gib.log
+807bfa4e5759bef3b11f5d134d33fb3409b560ba578d7299ab2832eb3c6014c9  <workdir>/data/stats_100mib.log
+db2d4cf1ff8845d6b9d7db1bc1718542b75c4d90bde4687eabfcf51ca3774ec1  <workdir>/data/follow_10mib.log

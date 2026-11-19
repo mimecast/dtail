@@ -4,12 +4,28 @@ import (
 	"sync"
 )
 
-// ScannerBufferPool provides a pool of 1MB buffers for scanner operations
-// to reduce allocation overhead in the direct-output read path
+// ScannerBufferSize is the longest line, without its newline, that a buffer of
+// ScannerBufferPool holds whole: 1 MiB, the default MaxLineLength. The buffers
+// hold ScannerBufferCapacity bytes, one more, for the newline after such a
+// line.
+const ScannerBufferSize = 1024 * 1024
+
+// ScannerBufferCapacity is the length and capacity of the buffers
+// ScannerBufferPool hands out. bufio.Scanner uses the capacity of the buffer
+// it is given, so a snapshot read with the default MaxLineLength, whose
+// maximum token size is MaxLineLength + 1, never grows out of the pooled
+// buffer, not even for a line longer than 1 MiB.
+const ScannerBufferCapacity = ScannerBufferSize + 1
+
+// ScannerBufferPool provides a pool of ScannerBufferCapacity (1 MiB + 1 byte)
+// buffers for scanner operations to reduce allocation overhead in the
+// direct-output read path. A scanner uses the pooled buffer as its initial
+// buffer; when its maximum token size is larger (a snapshot read with a
+// MaxLineLength above 1 MiB), bufio.Scanner grows into a buffer of its own for
+// a longer line, and the pooled one is returned unchanged.
 var ScannerBufferPool = sync.Pool{
 	New: func() any {
-		// 1MB buffer for scanner operations
-		buf := make([]byte, 1024*1024)
+		buf := make([]byte, ScannerBufferCapacity)
 		return &buf
 	},
 }
@@ -32,7 +48,7 @@ var SmallBufferPool = sync.Pool{
 	},
 }
 
-// GetScannerBuffer gets a 1MB buffer from the pool
+// GetScannerBuffer gets a ScannerBufferCapacity buffer from the pool
 func GetScannerBuffer() *[]byte {
 	return ScannerBufferPool.Get().(*[]byte)
 }

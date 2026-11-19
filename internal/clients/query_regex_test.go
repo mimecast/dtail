@@ -1,9 +1,13 @@
 package clients
 
 import (
+	"bytes"
 	"testing"
 
+	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/mapr"
+	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/regex"
 )
 
@@ -76,5 +80,57 @@ func TestMaprRegexForQueryWithoutTable(t *testing.T) {
 		if got := maprRegexForQuery(query); got != "." {
 			t.Errorf("maprRegexForQuery(%v) = %q, want %q", query, got, ".")
 		}
+	}
+}
+
+// TestApplyQueryRegexIgnoresInvert pins that a mapreduce query derives its
+// line filter from its table and never inverts it: inverted, the filter would
+// feed the other tables' lines (or only the empty lines) into the aggregation.
+func TestApplyQueryRegexIgnoresInvert(t *testing.T) {
+	t.Parallel()
+
+	for _, query := range []*mapr.Query{nil, {Table: ""}, {Table: "."}, {Table: "*"}, {Table: "STATS"}} {
+		args := config.Args{RegexStr: "user regex", RegexInvert: true}
+		applyQueryRegex(&args, query)
+		if want := maprRegexForQuery(query); args.RegexStr != want || args.RegexInvert {
+			t.Errorf("applyQueryRegex(%v) = regex %q invert %v, want regex %q invert false",
+				query, args.RegexStr, args.RegexInvert, want)
+		}
+	}
+}
+
+// TestWarnIgnoredInvert tells the user about a dropped --invert, and only then.
+func TestWarnIgnoredInvert(t *testing.T) {
+	t.Parallel()
+
+	for _, invert := range []bool{false, true} {
+		var out bytes.Buffer
+		warnIgnoredInvert(&out, config.Args{RegexInvert: invert}, logging.NopLogger{})
+		want := ""
+		if invert {
+			want = ignoredInvertWarning + "\n"
+		}
+		if out.String() != want {
+			t.Errorf("warning with invert %v = %q, want %q", invert, out.String(), want)
+		}
+	}
+}
+
+// TestNormalizeInteractiveArgsIgnoresInvert covers the interactive query
+// path, which builds its session spec from normalized args.
+func TestNormalizeInteractiveArgsIgnoresInvert(t *testing.T) {
+	t.Parallel()
+
+	args, err := normalizeInteractiveArgs(config.Args{
+		Mode:        omode.TailClient,
+		QueryStr:    "from STATS select count(*)",
+		RegexInvert: true,
+	}, nil)
+	if err != nil {
+		t.Fatalf("normalizeInteractiveArgs() error = %v", err)
+	}
+	if args.RegexStr != `\|MAPREDUCE:STATS\|` || args.RegexInvert {
+		t.Fatalf("normalized args = regex %q invert %v, want the STATS filter, not inverted",
+			args.RegexStr, args.RegexInvert)
 	}
 }

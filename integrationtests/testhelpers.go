@@ -174,39 +174,62 @@ func startTestServer(ctx context.Context, t *testing.T, cfg *ServerConfig) error
 	return waitForServerReady(ctx, cfg.BindAddress, cfg.Port)
 }
 
+// serverReadyTimeout bounds how long waitForServerReady waits for a dserver
+// to answer dtailhealth, unless the test's own context ends sooner. A started
+// server answers within milliseconds; the bound is generous because it only
+// matters on a loaded machine (several -race suites at once), where a server
+// process may get little CPU. Startup no longer includes generating an RSA
+// host key, the step that used to exceed the former 10 s bound under load:
+// TestMain prepares the suite's key once (prepareSuiteHostKey).
+const serverReadyTimeout = 60 * time.Second
+
+// serverReadyPollInterval is the pause between two dtailhealth probes.
+const serverReadyPollInterval = 50 * time.Millisecond
+
+// waitForServerReady probes the dserver at bindAddress:port with dtailhealth
+// until it reports the server healthy, ctx ends or serverReadyTimeout passed.
 func waitForServerReady(ctx context.Context, bindAddress string, port int) error {
 	address := fmt.Sprintf("%s:%d", bindAddress, port)
-	deadline := time.Now().Add(10 * time.Second)
+	waitCtx, cancel := context.WithTimeout(ctx, serverReadyTimeout)
+	defer cancel()
 	var lastErr error
 	var lastOutput string
 
 	for {
-		cmd := exec.CommandContext(ctx, "../dtailhealth", "--server", address, "--no-auth-key")
+		cmd := exec.CommandContext(waitCtx, "../dtailhealth", "--server", address, "--no-auth-key")
 		out, err := cmd.CombinedOutput()
 		if err == nil {
 			return nil
 		}
-		lastErr = err
-		lastOutput = strings.TrimSpace(string(out))
-
-		if ctx.Err() != nil {
-			return fmt.Errorf("wait for dserver %s: %w", address, ctx.Err())
-		}
-		if time.Now().After(deadline) {
-			if lastOutput != "" {
-				return fmt.Errorf("timed out waiting for dserver %s: %w (%s)", address, lastErr, lastOutput)
-			}
-			return fmt.Errorf("timed out waiting for dserver %s: %w", address, lastErr)
+		// A probe killed because the wait ended says nothing about the
+		// server; keep the result of the last complete one.
+		if waitCtx.Err() == nil || lastErr == nil {
+			lastErr = err
+			lastOutput = strings.TrimSpace(string(out))
 		}
 
-		timer := time.NewTimer(50 * time.Millisecond)
+		timer := time.NewTimer(serverReadyPollInterval)
 		select {
-		case <-ctx.Done():
+		case <-waitCtx.Done():
 			timer.Stop()
-			return fmt.Errorf("wait for dserver %s: %w", address, ctx.Err())
+			return serverReadyError(ctx, address, lastErr, lastOutput)
 		case <-timer.C:
 		}
 	}
+}
+
+// serverReadyError describes why waitForServerReady gave up: the test's
+// context ended, or the server did not get ready within serverReadyTimeout.
+func serverReadyError(ctx context.Context, address string, lastErr error, lastOutput string) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("wait for dserver %s: %w", address, ctx.Err())
+	}
+	if lastOutput != "" {
+		return fmt.Errorf("timed out after %v waiting for dserver %s: %w (%s)",
+			serverReadyTimeout, address, lastErr, lastOutput)
+	}
+	return fmt.Errorf("timed out after %v waiting for dserver %s: %w",
+		serverReadyTimeout, address, lastErr)
 }
 
 // createTestContext creates a context with cancel that will be cleaned up automatically
@@ -383,85 +406,6 @@ func runDualModeTest(t *testing.T, test DualModeTest) {
 	if test.ServerTest != nil {
 		t.Run("ServerMode", test.ServerTest)
 	}
-}
-
-// verifyFileExists checks if a file exists and is not empty
-func verifyFileExists(t *testing.T, filename string) error {
-	t.Helper()
-
-	info, err := os.Stat(filename)
-	if err != nil {
-		return fmt.Errorf("file %s not created: %w", filename, err)
-	}
-	if info.Size() == 0 {
-		return fmt.Errorf("file %s is empty", filename)
-	}
-
-	return nil
-}
-
-// verifyColoredOutput verifies that output contains ANSI color codes and optionally server metadata
-func verifyColoredOutput(t *testing.T, outFile string, expectServerMetadata bool) error {
-	t.Helper()
-
-	if err := verifyFileExists(t, outFile); err != nil {
-		return err
-	}
-
-	content, err := os.ReadFile(outFile)
-	if err != nil {
-		return fmt.Errorf("failed to read output file: %w", err)
-	}
-
-	// Check for ANSI color codes
-	if !strings.Contains(string(content), "\033[") {
-		return fmt.Errorf("output does not contain ANSI color codes")
-	}
-
-	// Check for server metadata if expected
-	if expectServerMetadata {
-		if !strings.Contains(string(content), "REMOTE") && !strings.Contains(string(content), "SERVER") && !strings.Contains(string(content), "CLIENT") {
-			preview := string(content)
-			if len(preview) > 500 {
-				preview = preview[:500]
-			}
-			return fmt.Errorf("server mode output does not contain server metadata. First 500 chars:\n%s", preview)
-		}
-	}
-
-	return nil
-}
-
-// runCommandAndVerify runs a command and verifies the output against an expected file
-func runCommandAndVerify(ctx context.Context, t *testing.T, outFile, expectedFile, cmd string, args ...string) error {
-	t.Helper()
-
-	_, err := runCommand(ctx, t, outFile, cmd, args...)
-	if err != nil {
-		return err
-	}
-
-	if err := compareFilesWithContext(ctx, t, outFile, expectedFile); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// runCommandAndVerifyContents runs a command and verifies the output contents (ignoring order)
-func runCommandAndVerifyContents(ctx context.Context, t *testing.T, outFile, expectedFile, cmd string, args ...string) error {
-	t.Helper()
-
-	_, err := runCommand(ctx, t, outFile, cmd, args...)
-	if err != nil {
-		return err
-	}
-
-	if err := compareFilesContentsWithContext(ctx, t, outFile, expectedFile); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // TestFileSet represents a set of test files

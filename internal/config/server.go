@@ -78,7 +78,10 @@ type ServerConfig struct {
 	// the file with a reader of its own, and the scheduler runs its jobs one
 	// at a time.
 	SharedReadsDisable bool `json:",omitempty"`
-	// The max line length until it's split up into multiple smaller lines.
+	// MaxLineLength is the longest line, in bytes without its "\n" but with
+	// the "\r" of a CRLF ending, that file reads pass on whole; a longer line
+	// is cut into pieces of this length. journal: targets cut their entries
+	// the same way (internal/io/journal, sharing fs.SplitLine).
 	MaxLineLength int
 	// The user permissions.
 	Permissions Permissions `json:",omitempty"`
@@ -116,7 +119,11 @@ type ServerConfig struct {
 	ReadGlobRetryIntervalMs int `json:",omitempty"`
 	// Retry interval for re-reading in tail/cat loops in milliseconds.
 	ReadRetryIntervalMs int `json:",omitempty"`
-	// Maximum payload backing memory retained by the output buffer per SSH session.
+	// Maximum payload backing memory retained by the output buffer per SSH
+	// session. It must be at least MaxLineLength + 131072, otherwise dserver
+	// refuses to start (handlers.ValidateOutputBufferConfig in server.New); a
+	// session using escaped framing raises its own cap to at least
+	// 2*MaxLineLength + 131072.
 	OutputBufferMaxBytes int `json:",omitempty"`
 	// Maximum time to wait for the session reader to drain output, in milliseconds.
 	OutputFlushTimeoutMs int `json:",omitempty"`

@@ -9,6 +9,7 @@ import (
 	"github.com/mimecast/dtail/internal/io/fs/readhub"
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/lcontext"
+	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/regex"
 )
@@ -60,9 +61,7 @@ func (r *readCommand) readShared(ctx context.Context, ltx lcontext.LContext, re 
 		NewProcessor: func() line.Processor {
 			return r.makeProcessor(path, globID, writer)
 		},
-		// Failures the hub handles itself, without ending the session's read,
-		// reach the client like a failed iteration of the private read loop.
-		ReportFailure: func() { r.reportFailure(ctx, readFailureReadingFile) },
+		ReportFailure: r.reportHubFailure(ctx),
 	})
 	if err == nil || ctx.Err() != nil {
 		return
@@ -77,9 +76,26 @@ func (r *readCommand) readShared(ctx context.Context, ltx lcontext.LContext, re 
 		// The private read loop reports a failed read iteration to the client
 		// before it reads the file again (see executeReadLoop); only a
 		// max-count stop ends an iteration there without a failure.
-		r.reportFailure(ctx, readFailureReadingFile)
+		r.reportReadError(ctx, err)
 	}
 	r.restartPrivately(ctx, ltx, re, options, writer)
+}
+
+// reportHubFailure returns the readhub.Session.ReportFailure of the read:
+// failures the hub handles itself, without ending the session's read, reach
+// the client like a failed iteration of the private read loop. err, when the
+// hub has it, is reported as that loop reports it (reportReadError), so that
+// output the session's private reader after an eviction dropped as too large
+// for the output buffer is reported as such, with its warning, and not as a
+// failed read of the file; a failure without an error is a failed read.
+func (r *readCommand) reportHubFailure(ctx context.Context) func(err error) {
+	return func(err error) {
+		if err == nil {
+			r.reportFailure(ctx, readFailureReadingFile)
+			return
+		}
+		r.reportReadError(ctx, err)
+	}
 }
 
 // restartPrivately continues after the session's processor failed. The
@@ -95,7 +111,7 @@ func (r *readCommand) restartPrivately(ctx context.Context, ltx lcontext.LContex
 	r.logger.Info(options.path, options.globID, "Reading file again")
 	reader, err := makeReader(options, omode.TailClient, false)
 	if err != nil {
-		r.sendServerMessage(ctx, r.logger.Warn(r.logContext, "Unable to create file reader", err))
+		r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext, "Unable to create file reader", err))
 		r.reportFailure(ctx, readFailureReader)
 		return
 	}

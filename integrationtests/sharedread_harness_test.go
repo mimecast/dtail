@@ -169,19 +169,6 @@ func startSharedReadServer(t *testing.T, mode sharedReadMode, server map[string]
 	return &sharedReadServer{address: fmt.Sprintf("%s:%d", bindAddress, port), logs: logs}
 }
 
-// count returns how many log lines contain substr.
-func (l *safeLineLog) count(substr string) int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	var n int
-	for _, line := range l.lines {
-		if strings.Contains(line, substr) {
-			n++
-		}
-	}
-	return n
-}
-
 // waitForLog waits until at least n server log lines contain substr.
 func (s *sharedReadServer) waitForLog(t *testing.T, substr string, n int) {
 	t.Helper()

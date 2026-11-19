@@ -263,15 +263,18 @@ func TestStartOffsetInSplitLineDoesNotWarnAgain(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan error, 1)
 			go func() { done <- reader.Start(ctx, lcontext.LContext{}, processor, regex.NewNoop()) }()
-			rest := strings.Repeat("b", 2*maxLineLength)
+			// The rest of the line is cut at the limit again: its first
+			// piece arrives at once, the second, of exactly the limit, once
+			// its newline follows.
+			piece := strings.Repeat("b", maxLineLength)
 			waitUntil(t, "the rest of the long line", func() bool {
 				lines, _, _ := processor.state()
-				return len(lines) > 0 && lines[0] == rest
+				return len(lines) > 0 && lines[0] == piece
 			})
 			appendToFile(t, path, "\nshort\n")
 			waitUntil(t, "the next line", func() bool {
 				lines, _, _ := processor.state()
-				return len(lines) == 2 && lines[1] == "short"
+				return len(lines) == 3 && lines[1] == piece && lines[2] == "short"
 			})
 			cancel()
 			if err := <-done; err != nil {

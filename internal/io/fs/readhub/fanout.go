@@ -46,8 +46,10 @@ type item struct {
 	err   error
 }
 
-// chunk holds whole lines, as the follow reader fed them: without their
-// newline. It is immutable once published and shared by every subscriber.
+// chunk holds lines with their physical endings preserved by the reader;
+// unfinished or length-split fragments have no synthetic newline. Follow
+// subscribers adapt endings to their processors, while snapshots retain them.
+// It is immutable once published and shared by every subscriber.
 type chunk struct {
 	data []byte
 	// ends[i] is the end of line i in data; line i starts at ends[i-1].
@@ -122,10 +124,11 @@ type fanoutProcessor struct {
 }
 
 var (
-	_ line.Processor        = (*fanoutProcessor)(nil)
-	_ line.RawProcessor     = (*fanoutProcessor)(nil)
-	_ line.SourceRestarter  = (*fanoutProcessor)(nil)
-	_ line.PositionObserver = (*fanoutProcessor)(nil)
+	_ line.Processor           = (*fanoutProcessor)(nil)
+	_ line.RawProcessor        = (*fanoutProcessor)(nil)
+	_ line.SourceRestarter     = (*fanoutProcessor)(nil)
+	_ line.PositionObserver    = (*fanoutProcessor)(nil)
+	_ line.TerminatorPreserver = (*fanoutProcessor)(nil)
 )
 
 func newFanoutProcessor(e publisher) *fanoutProcessor {
@@ -138,6 +141,10 @@ func newFanoutProcessor(e publisher) *fanoutProcessor {
 	}
 	return p
 }
+
+// PreserveLineTerminators keeps physical line endings for each subscriber to
+// adapt to its processor, including subscribers that join after this read starts.
+func (p *fanoutProcessor) PreserveLineTerminators() bool { return true }
 
 // ProcessRawLine adds a borrowed line to the pending chunk.
 func (p *fanoutProcessor) ProcessRawLine(raw []byte, _ uint64, _ string) error {

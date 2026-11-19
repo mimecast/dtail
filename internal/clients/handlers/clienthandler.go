@@ -17,7 +17,7 @@ func NewClientHandler(server string, logger clientlog.Logger) *ClientHandler {
 	logger = clientlog.OrNop(logger)
 	logger.Debug(server, "Creating new client handler")
 
-	return &ClientHandler{
+	h := &ClientHandler{
 		baseHandler{
 			server:         server,
 			shellStarted:   false,
@@ -30,4 +30,6 @@ func NewClientHandler(server string, logger clientlog.Logger) *ClientHandler {
 			logger:         logger,
 		},
 	}
+	h.requestFraming()
+	return h
 }

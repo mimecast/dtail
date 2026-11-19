@@ -162,6 +162,9 @@ func TestServerCapabilitiesAdvertisesJournalOnlyOnLinuxWithJournalctl(t *testing
 			want: []string{
 				protocol.CapabilityQueryUpdateV1,
 				protocol.CapabilityCommandFailureV1,
+				protocol.CapabilityEscapedFramingV1,
+				protocol.CapabilityEncodedReadPathV1,
+				protocol.CapabilityControlFramesV1,
 				protocol.CapabilityJournalV1,
 			},
 		},
@@ -169,19 +172,25 @@ func TestServerCapabilitiesAdvertisesJournalOnlyOnLinuxWithJournalctl(t *testing
 			name:                "linux without journalctl",
 			goos:                "linux",
 			journalctlAvailable: false,
-			want:                []string{protocol.CapabilityQueryUpdateV1, protocol.CapabilityCommandFailureV1},
+			want: []string{protocol.CapabilityQueryUpdateV1, protocol.CapabilityCommandFailureV1,
+				protocol.CapabilityEscapedFramingV1, protocol.CapabilityEncodedReadPathV1,
+				protocol.CapabilityControlFramesV1},
 		},
 		{
 			name:                "non linux with journalctl",
 			goos:                "freebsd",
 			journalctlAvailable: true,
-			want:                []string{protocol.CapabilityQueryUpdateV1, protocol.CapabilityCommandFailureV1},
+			want: []string{protocol.CapabilityQueryUpdateV1, protocol.CapabilityCommandFailureV1,
+				protocol.CapabilityEscapedFramingV1, protocol.CapabilityEncodedReadPathV1,
+				protocol.CapabilityControlFramesV1},
 		},
 		{
 			name:                "non linux without journalctl",
 			goos:                "darwin",
 			journalctlAvailable: false,
-			want:                []string{protocol.CapabilityQueryUpdateV1, protocol.CapabilityCommandFailureV1},
+			want: []string{protocol.CapabilityQueryUpdateV1, protocol.CapabilityCommandFailureV1,
+				protocol.CapabilityEscapedFramingV1, protocol.CapabilityEncodedReadPathV1,
+				protocol.CapabilityControlFramesV1},
 		},
 	}
 
@@ -365,7 +374,10 @@ func TestHandleSessionCommandRejectsInvalidQuerySession(t *testing.T) {
 
 	handler.handleSessionCommand(context.Background(), lcontext.LContext{}, 3, []string{"SESSION", "START", payload}, func() {})
 
-	if message := readServerMessage(t, handler.serverMessages); message != sessionAckErrorPrefix+"invalid session spec" {
+	// The acknowledgement says why the query was rejected.
+	message := readServerMessage(t, handler.serverMessages)
+	if !strings.HasPrefix(message, sessionAckErrorPrefix+"invalid session spec: ") ||
+		!strings.Contains(message, "invalid query") {
 		t.Fatalf("unexpected invalid query-session error: %q", message)
 	}
 }
@@ -640,5 +652,30 @@ func waitForContextDone(ctx context.Context, t *testing.T) {
 	case <-ctx.Done():
 	case <-time.After(250 * time.Millisecond):
 		t.Fatal("timed out waiting for context cancellation")
+	}
+}
+
+// TestMessageTextKeepsTheRawFraming checks that text put into a server
+// message, such as a query error in a session error acknowledgement, can not
+// split or end the message of a raw-framing (e.g. older) client: the
+// delimiter byte appears in '¬' and as the last byte of '€'. Under escaped
+// framing, with or without control frames, the text is transported
+// unchanged.
+func TestMessageTextKeepsTheRawFraming(t *testing.T) {
+	text := "invalid query: 'a¬b€c\nd'"
+	handler := newSessionTestHandler("message-text-user")
+	got := handler.messageText(text)
+	if want := "invalid query: 'a b c d'"; got != want {
+		t.Fatalf("raw framing messageText = %q, want %q", got, want)
+	}
+	if strings.IndexByte(got, protocol.MessageDelimiter) >= 0 {
+		t.Fatalf("raw framing messageText = %q contains the message delimiter", got)
+	}
+
+	for _, framing := range []protocol.Framing{protocol.EscapedFraming, protocol.EscapedControlFraming} {
+		handler.framingState.Store(uint32(framing))
+		if got := handler.messageText(text); got != text {
+			t.Fatalf("%v framing messageText = %q, want %q", framing, got, text)
+		}
 	}
 }

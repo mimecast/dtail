@@ -377,7 +377,7 @@
         },
         "MaxLineLength": {
           "type": "integer",
-          "description": "Maximum line length in bytes before a line is split into multiple smaller lines. 0 or less uses the 1 MiB default. The minimum of 1024 is a recommendation of this schema; dserver uses any positive value as is.",
+          "description": "Maximum line length in bytes before a line of a file read, or an entry of a journal: read, is split into multiple smaller lines. The length counts a line's bytes without its \"\\n\", but including the \"\\r\" of a CRLF line ending. Lines of up to this length are read whole, also when the limit is above 1 MiB; a longer line is cut into pieces of exactly this length, in follow reads as in one-shot reads, with a long-line warning to the client. journal: targets cut their entries the same way, with the same warning, in follow reads as in one-shot reads; only an unterminated last entry, which a stopped journalctl can leave, is dropped (its pieces cut off before are kept). Memory per concurrent read: a one-shot file read holds a pooled buffer of 1 MiB + 1 byte. A journal: read, one-shot or follow, holds two for the whole journalctl run, one scanning its stdout (the entries) and one its stderr; a journalctl stderr line longer than 1 MiB is forwarded to the client cut to 1 MiB, with a note, and its rest is dropped. For a line longer than 1 MiB (only with a limit above 1 MiB) the read (a journal read with its stdout scan) grows a buffer of its own by doubling, held alongside the pooled one, of up to about twice the longest line it read, capped at MaxLineLength + 1 bytes; while it grows, the previous and the new buffer exist together for a moment (up to about 1.5 times the final buffer). A follow file read holds the unfinished line, up to MaxLineLength bytes, likewise in a buffer that grows. OutputBufferMaxBytes must be at least MaxLineLength + 131072; dserver refuses to start when it is not, or when MaxLineLength is so large that this sum exceeds the largest integer. 0 or less uses the 1 MiB default. The minimum of 1024 is a recommendation of this schema; dserver uses any positive value as is.",
           "minimum": 1024,
           "default": 1048576
         },
@@ -452,11 +452,11 @@
               },
               "Discovery": {
                 "type": "string",
-                "description": "Server discovery module: COMMA or FILE (case-insensitive; builds may add more), optionally with options as MODULE:options. It selects how Servers is read: Servers, joined with commas, is the module's input, for example the server list file for FILE. When empty, a Servers value naming an existing file is read as a server list file, otherwise as a comma-separated list."
+                "description": "Server discovery module: COMMA or FILE (case-insensitive; builds may add more). It selects how Servers is read: Servers, joined with commas, is the module's input, for example the server list file for FILE; for COMMA and FILE the servers never come from Discovery itself. COMMA and FILE take no options: a MODULE:options suffix such as comma:server1,server2 or file:/path/to/serverlist is rejected for them (in any case) and the job fails; only modules a build adds may read their options. When empty, a Servers value naming an existing file is read as a server list file, otherwise as a comma-separated list."
               },
               "Servers": {
                 "type": "array",
-                "description": "Servers to query, passed to the Discovery module. When empty, the job queries this dserver's own SSHBindAddress.",
+                "description": "Servers to query, passed to the Discovery module, joined with commas. Whitespace around entries is trimmed and empty entries are dropped. When empty, or only blank entries, and Discovery is empty or COMMA, the job queries this dserver itself: its SSHBindAddress at Common.SSHPort, or the loopback address (127.0.0.1, or ::1 for ::) when it listens on every address (empty, 0.0.0.0, ::ffff:0.0.0.0 or ::); AllowFrom must then permit the loopback address. With FILE, an empty Servers makes FILE try to open a file named after this dserver's address (e.g. 127.0.0.1), so the job fails.",
                 "items": {
                   "type": "string"
                 }
@@ -518,11 +518,11 @@
               },
               "Discovery": {
                 "type": "string",
-                "description": "Server discovery module: COMMA or FILE (case-insensitive; builds may add more), optionally with options as MODULE:options. It selects how Servers is read: Servers, joined with commas, is the module's input, for example the server list file for FILE. When empty, a Servers value naming an existing file is read as a server list file, otherwise as a comma-separated list."
+                "description": "Server discovery module: COMMA or FILE (case-insensitive; builds may add more). It selects how Servers is read: Servers, joined with commas, is the module's input, for example the server list file for FILE; for COMMA and FILE the servers never come from Discovery itself. COMMA and FILE take no options: a MODULE:options suffix such as comma:server1,server2 or file:/path/to/serverlist is rejected for them (in any case) and the job fails; only modules a build adds may read their options. When empty, a Servers value naming an existing file is read as a server list file, otherwise as a comma-separated list."
               },
               "Servers": {
                 "type": "array",
-                "description": "Servers to query, passed to the Discovery module. When empty, the job queries this dserver's own SSHBindAddress.",
+                "description": "Servers to query, passed to the Discovery module, joined with commas. Whitespace around entries is trimmed and empty entries are dropped. When empty, or only blank entries, and Discovery is empty or COMMA, the job queries this dserver itself: its SSHBindAddress at Common.SSHPort, or the loopback address (127.0.0.1, or ::1 for ::) when it listens on every address (empty, 0.0.0.0, ::ffff:0.0.0.0 or ::); AllowFrom must then permit the loopback address. With FILE, an empty Servers makes FILE try to open a file named after this dserver's address (e.g. 127.0.0.1), so the job fails.",
                 "items": {
                   "type": "string"
                 }
@@ -589,7 +589,7 @@
         },
         "OutputBufferMaxBytes": {
           "type": "integer",
-          "description": "Maximum payload backing memory retained by the output buffer per SSH session; producers apply backpressure at the cap. Must be at least MaxLineLength + 131072 (two 64 KiB writer batches), otherwise dserver refuses the session. 0 or less uses the 2 MiB default.",
+          "description": "Maximum payload backing memory retained by the output buffer per SSH session; producers apply backpressure at the cap. Must be at least MaxLineLength + 131072 (two 64 KiB writer batches), otherwise dserver refuses to start. A session using escaped wire framing (current clients and servers) raises its own cap to at least 2 * MaxLineLength + 131072, as escaping can almost double a line frame, so the configured value does not need to cover that. 0 or less uses the 2 MiB default.",
           "default": 2097152
         },
         "OutputFlushTimeoutMs": {

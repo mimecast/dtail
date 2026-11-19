@@ -79,6 +79,7 @@ func NewMaprClient(args config.Args, cfg config.RuntimeConfig, maprClientMode Ma
 	// serverless mode, so the warning reaches the user's stderr even though the
 	// actual field resolution happens server-side.
 	warnUnknownQueryVariables(os.Stderr, query, loggers.Client)
+	warnIgnoredInvert(os.Stderr, args, loggers.Client)
 
 	// Don't retry connection if in tail mode and no outfile specified.
 	retry := args.Mode == omode.TailClient && !query.HasOutfile()
@@ -88,7 +89,7 @@ func NewMaprClient(args config.Args, cfg config.RuntimeConfig, maprClientMode Ma
 		mode:    maprClientMode,
 	}
 
-	args.RegexStr = maprRegexForQuery(query)
+	applyQueryRegex(&args, query)
 	base, initErr := newBaseClient(args, cfg, loggers, firstColorizer(colorizers), clientProfile{
 		newHandler: func(server string) handlers.Handler {
 			return handlers.NewMaprHandler(server, c.session, loggers.Client)
@@ -107,6 +108,11 @@ func NewMaprClient(args config.Args, cfg config.RuntimeConfig, maprClientMode Ma
 
 // Start starts the mapreduce client.
 //
+// After connections finish, Start stops and joins the periodic reporter before
+// publishing the final result. Non-cumulative clients publish their remaining
+// interval even on cancellation; an empty interval preserves any non-empty
+// outfile already published in that query generation.
+//
 // In the scheduled modes no interim result is written, and the final result
 // is written only when the query completed (see scheduledQueryOutcome): ctx
 // was not canceled and on every server the session ended with status 0, with
@@ -117,11 +123,23 @@ func NewMaprClient(args config.Args, cfg config.RuntimeConfig, maprClientMode Ma
 // scheduled job leaves no outfile (and no .query file) and the scheduler runs
 // it again later. An outfile from an earlier run is left untouched.
 func (c *MaprClient) Start(ctx context.Context, statsCh <-chan string) (status int) {
+	reportCtx, stopReporting := context.WithCancel(ctx)
+	defer stopReporting()
+	var reporter sync.WaitGroup
 	if !c.mode.scheduled() {
-		go c.periodicReportResults(ctx)
+		reporter.Add(1)
+		go func() {
+			defer reporter.Done()
+			c.periodicReportResults(reportCtx)
+		}()
 	}
 
 	status = c.baseClient.Start(ctx, statsCh)
+	// Connections have drained all received aggregates. Stop and join any
+	// in-flight report before publishing the remaining interval, also when
+	// connections completed without canceling the caller's context.
+	stopReporting()
+	reporter.Wait()
 	return c.finish(ctx.Err(), status)
 }
 
@@ -130,21 +148,33 @@ func (mode MaprClientMode) scheduled() bool {
 	return mode == ScheduledMode || mode == ScheduledPartialMode
 }
 
-// finish writes the final result of a cumulative query after the connections
-// ended with status, ctxErr being the error of the client's context by then.
-// It returns the client's exit status.
+// finish publishes the final result after the connections and reporter ended,
+// consuming the remaining interval for a non-cumulative query. ctxErr is the
+// error of the client's context by then; only the scheduled modes use it
+// (interactive dmap decides per session whether the client ended it, see
+// incompleteResultReasons). As for interim reports, output errors
+// are logged; only scheduled modes change the exit status on publication errors.
+//
+// Outside the scheduled modes neither a failed command a server reported nor
+// a session cut short changes the exit status or keeps the result from being
+// written (dmap opts out of the failed command and cut-short statuses, see
+// clientProfile.failedCommandStatus and cutShortStatus, so that it always
+// writes what it received). Every one of them that may have lost data (see
+// incompleteResultReasons) is logged at WARN first instead, so the user
+// learns that the result may lack data.
 func (c *MaprClient) finish(ctxErr error, status int) int {
-	if snapshot := c.session.Snapshot(); !c.isCumulative(snapshot.Query) {
-		return status
-	}
 	if c.mode.scheduled() {
 		return c.finishScheduled(ctxErr, status)
 	}
 
-	// Always write final result for cumulative mode (includes outfile case)
+	if reasons := c.incompleteResultReasons(); len(reasons) > 0 {
+		c.clientLogger().Warn("The mapreduce result may be incomplete", strings.Join(reasons, "; "))
+	}
+	// Publish already-received data even if the connections were canceled.
 	c.clientLogger().Debug("Writing final mapreduce result")
 	if err := c.reportResults(true); err != nil {
 		c.clientLogger().Error("Unable to write final mapreduce result", err)
+		return status
 	}
 	c.clientLogger().Debug("Final result written")
 	return status
@@ -189,7 +219,10 @@ type scheduledOutcome struct {
 // scheduledQueryOutcome returns how the scheduled query ended: it did not
 // complete unless the connections ended with status 0, ctxErr (the error of
 // the client's context by then) is nil, there was a connection at all, and
-// every session completed (see sessionOutcome).
+// every session completed (see sessionOutcome). A client whose discovery
+// yields no server already fails when it is created (ErrNoServers), which
+// the scheduler treats as a failed run as well; the check for no connection
+// stays as a guard, so that a query that ran nowhere never writes a result.
 func (c *MaprClient) scheduledQueryOutcome(ctxErr error, status int) scheduledOutcome {
 	if reason := incompleteQueryReason(ctxErr, status); reason != "" {
 		return scheduledOutcome{incomplete: reason}
@@ -213,12 +246,6 @@ func (c *MaprClient) scheduledQueryOutcome(ctxErr error, status int) scheduledOu
 	return outcome
 }
 
-// sessionOutcomeReporter is a client handler that knows how its session
-// ended.
-type sessionOutcomeReporter interface {
-	Outcome() handlers.SessionOutcome
-}
-
 // sessionOutcome returns why the session of handler with server did not
 // complete, or "" if it did, and the file read failures (see
 // protocol.IsFileReadFailure) the server reported, each as "<server>:
@@ -234,7 +261,7 @@ func sessionOutcome(server string, handler handlers.Handler) (incomplete string,
 	}
 	outcome := reporter.Outcome()
 	if !outcome.Completed {
-		return fmt.Sprintf("the session with %s ended before the server completed it", server), nil
+		return fmt.Sprintf("the session with %s %s", server, sessionCutShortReason), nil
 	}
 	for _, reason := range outcome.Failures {
 		if !protocol.IsFileReadFailure(reason) {
@@ -243,6 +270,49 @@ func sessionOutcome(server string, handler handlers.Handler) (incomplete string,
 		fileFailures = append(fileFailures, server+": "+reason)
 	}
 	return "", fileFailures
+}
+
+// sessionCutShortReason is why a session that ended without the server's
+// close handshake (handlers.SessionOutcome Completed is false) may lack data.
+const sessionCutShortReason = "ended before the server completed it"
+
+// incompleteResultReasons returns, each as "<server>: <reason>", why the
+// result of an interactive dmap may lack data: every failed command the
+// servers reported that is no file read failure (see
+// protocol.IsFileReadFailure), e.g. "map: incomplete result", and every
+// session cut short, e.g. by the idle timeout, a dserver shut down with
+// SIGTERM or a lost connection, while it sent the final result, unless the
+// client ended that session itself. Whether it did is decided per session at
+// the moment the session ended (see baseClient.runSession): SIGINT/SIGTERM
+// cancel the context of Start, and :quit and the end of the control TTY of
+// an --interactive-query session only the context of the connections, so the
+// context of Start cannot tell; and a session cut short before a later
+// cancel by the client still counts. A session cut short has no "map:
+// incomplete result" report, as the server could not send it any more.
+// Interactive dmap does not fail on these, it only warns (see finish). File
+// read failures are left out: they mean that a file had no data to give (it
+// was missing, not permitted or unreadable), not that a command was rejected
+// or data the server read was lost on the way. A handler that cannot tell
+// how its session ended is left out too.
+func (c *MaprClient) incompleteResultReasons() []string {
+	var reasons []string
+	for _, session := range c.snapshotSessions() {
+		conn := session.conn
+		reporter, ok := conn.Handler().(sessionOutcomeReporter)
+		if !ok {
+			continue
+		}
+		outcome := reporter.Outcome()
+		if !outcome.Completed && !session.endedByClient {
+			reasons = append(reasons, conn.Server()+": the session "+sessionCutShortReason)
+		}
+		for _, reason := range outcome.Failures {
+			if !protocol.IsFileReadFailure(reason) {
+				reasons = append(reasons, conn.Server()+": "+reason)
+			}
+		}
+	}
+	return reasons
 }
 
 // incompleteQueryReason returns why a query whose connections ended with
@@ -265,6 +335,9 @@ func (c *MaprClient) periodicReportResults(ctx context.Context) {
 	)
 
 	for {
+		if ctx.Err() != nil {
+			return
+		}
 		snapshot := c.session.Snapshot()
 		rampUp := !seenGeneration || snapshot.Generation != lastGeneration
 		lastGeneration = snapshot.Generation
@@ -420,19 +493,19 @@ func (c *MaprClient) writeCurrentResultsToOutfile(snapshot maprclient.SessionSna
 	return nil
 }
 
+// commitSessionSpec is the profile commit of an interactive reload: it
+// switches the client-side aggregation to the reloaded query at the new
+// generation. It does not touch c.Args: reconnects read them concurrently
+// under the state lock, and applyInteractiveReload stores the reloaded args
+// (with the query and its normalized line filter, see
+// normalizeInteractiveArgs) under that lock right after this commit.
 func (c *MaprClient) commitSessionSpec(spec SessionSpec, generation uint64) error {
 	if spec.Query == "" {
 		return errors.New("missing mapreduce query")
 	}
 
-	query, err := c.session.CommitQuery(spec.Query, generation)
-	if err != nil {
-		return err
-	}
-
-	c.QueryStr = spec.Query
-	c.setRegexForQuery(query)
-	return nil
+	_, err := c.session.CommitQuery(spec.Query, generation)
+	return err
 }
 
 func (c *MaprClient) isCumulative(query *mapr.Query) bool {
@@ -444,10 +517,6 @@ func (c *MaprClient) isCumulative(query *mapr.Query) bool {
 	default:
 		return c.Mode == omode.MapClient || (query != nil && query.HasOutfile())
 	}
-}
-
-func (c *MaprClient) setRegexForQuery(query *mapr.Query) {
-	c.RegexStr = maprRegexForQuery(query)
 }
 
 // warnUnknownQueryVariables writes a plan-time warning to w for each

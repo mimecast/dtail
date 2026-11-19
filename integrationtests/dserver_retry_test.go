@@ -179,12 +179,22 @@ func TestDServerScheduledRemoteReadFailures(t *testing.T) {
 		}
 	}
 
-	// 1. B is killed while it waits for the file to appear.
+	// 1. B is killed while it reads the file. A sparse file of 8 GiB costs
+	// no disk space and takes B seconds to read, so that the kill, on the
+	// line B logs before it starts reading, arrives in the middle of the
+	// session. (B gives up on a missing file at once, so a missing file
+	// leaves no time to kill it in.)
+	if err := createSparseFile(dataFile, 8<<30); err != nil {
+		t.Fatal(err)
+	}
 	bCtx, killB := context.WithCancel(ctx)
-	b := startServerB(bCtx, t, cfgFileB, portB, "No such file(s) to read", killB)
+	b := startServerB(bCtx, t, cfgFileB, portB, "Creating turbo aggregate for MapReduce", killB)
 	output := runScheduledDServer(ctx, t, cfgFileA, portA, 8)
 	killB()
 	<-b
+	if err := os.Remove(dataFile); err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(output, "ended before the server completed it") ||
 		!strings.Contains(output, "Job "+name+" failed and wrote no outfile") {
 		t.Errorf("run with a killed server did not log the incomplete session, output:\n%s", output)
@@ -225,6 +235,19 @@ func TestDServerScheduledRemoteReadFailures(t *testing.T) {
 	if err := os.Remove(queryFile); err != nil {
 		t.Error(err)
 	}
+}
+
+// createSparseFile creates a file of size bytes without writing any data.
+func createSparseFile(path string, size int64) error {
+	fd, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := fd.Truncate(size); err != nil {
+		_ = fd.Close()
+		return err
+	}
+	return fd.Close()
 }
 
 // startServerB starts the dserver a scheduled job reads from on port. When

@@ -298,6 +298,24 @@ func borrowedLine(buf *bytes.Buffer) string {
 	return borrowedString(bytes.TrimSpace(buf.Bytes()))
 }
 
+// borrowedPhysicalLine has borrowedLine's lifetime, but preserves field
+// whitespace and removes only a physical LF or CRLF record terminator. A bare
+// CR (including one at EOF), or any other embedded newline, remains visible so
+// that the parser can reject it instead of silently changing the field.
+func borrowedPhysicalLine(buf *bytes.Buffer) string {
+	if buf == nil {
+		return buf.String()
+	}
+	data := buf.Bytes()
+	if len(data) > 0 && data[len(data)-1] == '\n' {
+		data = data[:len(data)-1]
+		if len(data) > 0 && data[len(data)-1] == '\r' {
+			data = data[:len(data)-1]
+		}
+	}
+	return borrowedString(data)
+}
+
 // borrowedString reinterprets b as a string without copying it. The caller
 // must guarantee that b is neither modified nor recycled while the returned
 // string is still reachable.

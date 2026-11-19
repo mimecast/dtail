@@ -8,6 +8,12 @@ import (
 
 // GlobalGroupSet is used on the dtail client to merge multiple group sets
 // (one group set per remote server) to one single global group set.
+//
+// The client aggregates into it with Update and UpdateNoblock only (see
+// client.Aggregate): each received message is added straight to the global
+// set's GetSetBytes entry, as merging a set holding only that message with
+// AggregateSet.Merge would; no per-message group set is built and merged as a
+// whole.
 type GlobalGroupSet struct {
 	GroupSet
 	semaphore chan struct{}
@@ -27,35 +33,30 @@ func (g *GlobalGroupSet) String() string {
 	return fmt.Sprintf("GlobalGroupSet(%s)", g.GroupSet.String())
 }
 
-// Merge (blocking) a group set into the global group set.
-func (g *GlobalGroupSet) Merge(query *Query, group *GroupSet) error {
+// Update calls fn with the global group set while it holds the global group
+// set's lock, waiting for the lock if another merge or a result rendering
+// holds it. fn may aggregate into the group set (GetSet, GetSetBytes) but must
+// not call another GlobalGroupSet method, which would wait for the same lock.
+func (g *GlobalGroupSet) Update(fn func(*GroupSet)) {
 	g.semaphore <- struct{}{}
 	defer func() { <-g.semaphore }()
-	return g.merge(query, group)
+	fn(&g.GroupSet)
 }
 
-// MergeNoblock merges (non-blocking) a group set into the global group set.
-// The semaphore is released via defer so it is always returned even if
-// g.merge panics, mirroring the guarantee provided by the blocking Merge.
-func (g *GlobalGroupSet) MergeNoblock(query *Query, group *GroupSet) (bool, error) {
+// UpdateNoblock calls fn like Update, but only when the lock is free right
+// away, and reports whether it did. The client aggregates a server's messages
+// with it, so a connection never waits for another one or for the result
+// rendering; it keeps its messages and tries again later instead. The lock is
+// released via defer so it is returned even if fn panics, as in Update.
+func (g *GlobalGroupSet) UpdateNoblock(fn func(*GroupSet)) bool {
 	select {
 	case g.semaphore <- struct{}{}:
 		defer func() { <-g.semaphore }()
-		return true, g.merge(query, group)
+		fn(&g.GroupSet)
+		return true
 	default:
-		return false, nil
+		return false
 	}
-}
-
-// Merge a group set into the global group set.
-func (g *GlobalGroupSet) merge(query *Query, group *GroupSet) error {
-	for groupKey, set := range group.sets {
-		s := g.GetSet(groupKey)
-		if err := s.Merge(query, set); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // IsEmpty determines whether the global group set has any data in it.

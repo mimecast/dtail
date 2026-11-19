@@ -108,7 +108,17 @@ func runCatWithServerlessOption(t *testing.T, handler *ServerHandler, path strin
 	if err != nil {
 		t.Fatalf("build commands: %v", err)
 	}
+	return runLegacyCommandsOn(t, handler, commands)
+}
 
+// runLegacyCommandsOn writes commands to the given handler as base64 command
+// frames, as a client's legacy command stream does, waits for the session of
+// one-shot reads to shut down and returns everything the handler sent to its
+// transport. Unlike runLegacyCommands (mapqueryfailure_test.go), which builds
+// its own map test handler and wraps the commands in an input batch, it takes
+// a caller-configured handler and sends the frames without batch markers.
+func runLegacyCommandsOn(t *testing.T, handler *ServerHandler, commands []string) string {
+	t.Helper()
 	commandWg := wrapHandlerCommandsForJoin(handler)
 	output := &testOutput{}
 	var writeMu sync.Mutex

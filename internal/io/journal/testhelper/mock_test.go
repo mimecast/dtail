@@ -199,7 +199,10 @@ func TestInstallMockLongDelayHonorsSIGTERMPromptly(t *testing.T) {
 		_ = cmd.Process.Kill()
 		if waitStarted {
 			select {
-			case <-waitDone:
+			case err := <-waitDone:
+				// The process was just killed, so Wait reports
+				// that; the cleanup only reaps it.
+				t.Logf("journalctl mock after kill: %v", err)
 			case <-time.After(time.Second):
 			}
 			return

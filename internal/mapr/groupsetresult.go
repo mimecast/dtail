@@ -1,6 +1,7 @@
 package mapr
 
 import (
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
@@ -11,7 +12,7 @@ import (
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
-// Result returns a nicely formated result of the query from the group set.
+// Result returns a nicely formatted result of the query from the group set.
 func (g *GroupSet) Result(query *Query, rowsLimit int, renderer ResultRenderer) (string, int, error) {
 	rows, columnWidths, err := g.result(query, true)
 	if err != nil {
@@ -183,37 +184,67 @@ func (g *GroupSet) getOutfileFD(query *Query) (*os.File, error) {
 	return os.OpenFile(query.Outfile.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 }
 
-func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd io.StringWriter, writeHeader bool) error {
-	lastColumn := len(query.Select) - 1
-
+func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd io.Writer, writeHeader bool) error {
+	if query.Limit >= 0 && query.Limit < len(rows) {
+		rows = rows[:query.Limit]
+	}
+	header := make([]string, len(query.Select))
+	for i, sc := range query.Select {
+		header[i] = sc.FieldStorage
+	}
+	// The input pipeline reads physical lines, not multiline CSV records. Check
+	// the entire result before writing, so append mode cannot leave a partial
+	// result behind when a later row contains an unsupported newline.
 	if writeHeader {
-		if err := g.resultWriteUnformattedHeader(query, fd, lastColumn); err != nil {
+		if err := validateCSVRecord(header); err != nil {
+			return fmt.Errorf("CSV header: %w", err)
+		}
+	}
+	for i, row := range rows {
+		if err := validateCSVRecord(row.values); err != nil {
+			return fmt.Errorf("CSV row %d: %w", i+1, err)
+		}
+	}
+	w := csv.NewWriter(fd)
+	w.Comma = rune(protocol.CSVDelimiter[0])
+	if writeHeader {
+		if err := writeCSVRecord(w, fd, header); err != nil {
 			return err
 		}
 	}
-
-	// And now write the data
-	for i, r := range rows {
-		if i == query.Limit {
-			break
-		}
-		for j, value := range r.values {
-			if _, err := fd.WriteString(value); err != nil {
-				return err
-			}
-			if j == lastColumn {
-				continue
-			}
-			if _, err := fd.WriteString(protocol.CSVDelimiter); err != nil {
-				return err
-			}
-		}
-		if _, err := fd.WriteString("\n"); err != nil {
+	for _, row := range rows {
+		if err := writeCSVRecord(w, fd, row.values); err != nil {
 			return err
 		}
 	}
+	w.Flush()
+	return w.Error()
+}
 
+func validateCSVRecord(fields []string) error {
+	for i, field := range fields {
+		if strings.ContainsAny(field, "\r\n") {
+			return fmt.Errorf("column %d contains a newline; multiline CSV fields are unsupported", i+1)
+		}
+	}
 	return nil
+}
+
+func writeCSVRecord(w *csv.Writer, fd io.Writer, fields []string) error {
+	// encoding/csv writes a single empty field as a blank line, which CSV
+	// readers skip. Quote it explicitly to preserve that record on reread.
+	if len(fields) == 1 && fields[0] == "" {
+		w.Flush()
+		if err := w.Error(); err != nil {
+			return err
+		}
+		n, err := io.WriteString(fd, "\"\"\n")
+		if err == nil && n != 3 {
+			return io.ErrShortWrite
+		}
+		return err
+	}
+	return w.Write(fields)
 }
 
 func closeWrittenFile(fd io.Closer, writeErr error, path string) error {
@@ -248,20 +279,4 @@ func removeTemporaryFile(path string, remove func(string) error) error {
 		return fmt.Errorf("remove temporary file %q: %w", path, err)
 	}
 	return nil
-}
-
-func (g *GroupSet) resultWriteUnformattedHeader(query *Query, fd io.StringWriter, lastColumn int) (err error) {
-	for i, sc := range query.Select {
-		if _, err = fd.WriteString(sc.FieldStorage); err != nil {
-			return
-		}
-		if i == lastColumn {
-			continue
-		}
-		if _, err = fd.WriteString(protocol.CSVDelimiter); err != nil {
-			return
-		}
-	}
-	_, err = fd.WriteString("\n")
-	return
 }

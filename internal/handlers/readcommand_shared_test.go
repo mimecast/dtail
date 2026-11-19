@@ -99,6 +99,25 @@ func (s *sharedReadTestServer) failureMessages() []string {
 	return failures
 }
 
+// drainMessages returns once every server message sent so far was recorded:
+// the message channel is FIFO, so a marker sent after them is recorded after
+// them. The marker is removed again, as it is no message of the session.
+func (s *sharedReadTestServer) drainMessages(t *testing.T) {
+	t.Helper()
+	const marker = "\x00drained messages\x00"
+	s.serverMessage <- marker
+	waitForShared(t, "the server messages to drain", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		i := slices.Index(s.messages, marker)
+		if i < 0 {
+			return false
+		}
+		s.messages = slices.Delete(s.messages, i, i+1)
+		return true
+	})
+}
+
 func (s *sharedReadTestServer) PrepareReadTarget(path string) (fs.ValidatedReadTarget, error) {
 	if s.denied[path] {
 		return fs.ValidatedReadTarget{}, user.ErrReadPermissionDenied
@@ -123,7 +142,7 @@ func (s *sharedReadTestServer) readCommandDependencies() readCommandDependencies
 			maxGlobTargets:            1000,
 		},
 		newLineWriter: func(ctx context.Context, generation uint64) LineWriter {
-			return NewNetworkWriter(ctx, s.outputLines, s.serverMessage, "testhost", true, false,
+			return NewNetworkWriter(ctx, protocol.RawFraming, s.outputLines, s.serverMessage, "testhost", true, false,
 				generation, func() uint64 { return 0 }, logging.NopLogger{})
 		},
 		readHub: s.readHub,

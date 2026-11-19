@@ -2,6 +2,7 @@ package mapr
 
 import (
 	"context"
+	"maps"
 	"sync"
 
 	"github.com/mimecast/dtail/internal/logging"
@@ -54,6 +55,8 @@ func (s *SafeAggregateSet) Clone() *AggregateSet {
 	for k, v := range s.set.SValues {
 		clone.SValues[k] = v
 	}
+	// maps.Clone keeps a nil ValueCounts (no avg() value yet) nil.
+	clone.ValueCounts = maps.Clone(s.set.ValueCounts)
 
 	return clone
 }

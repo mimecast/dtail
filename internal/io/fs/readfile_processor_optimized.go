@@ -17,8 +17,6 @@ import (
 	"github.com/mimecast/dtail/internal/regex"
 )
 
-const maxReadScannerTokenSize = 1024 * 1024
-
 // After a follow read found its file rotated away from the path, it reads the
 // old file to its end, then polls it rotationDrainPollInterval later for lines
 // that a writer which has not reopened the path yet still appends, again after
@@ -30,11 +28,15 @@ const (
 )
 
 type followLineProcessor struct {
-	file        *ReadFile
-	filter      *filteringProcessor
-	processor   line.Processor
-	reader      *bufio.Reader
-	buf         []byte
+	file      *ReadFile
+	filter    *filteringProcessor
+	processor line.Processor
+	reader    *bufio.Reader
+	buf       []byte
+	// partialLine holds the pending line, the part of the current line
+	// read so far: at most lineLimit() bytes (plus, while it is fed, the
+	// newline a terminator-preserving processor gets), as processChunk cuts
+	// a longer line at exactly the limit.
 	partialLine *bytes.Buffer
 	// positions tells a line.PositionObserver where each line ends; nil for
 	// every other processor.
@@ -53,10 +55,14 @@ func (f *ReadFile) readWithProcessorOptimized(ctx context.Context, fd *os.File, 
 
 	defer filterProcessor.resetGeneration()
 
+	// The scanner starts in the pooled buffer (1 MiB + 1 byte) and only grows
+	// (into a buffer of its own, which the pool never sees) for a line longer
+	// than that, up to scannerTokenLimit, so with the default MaxLineLength it
+	// never grows. The pooled buffer is put back unchanged.
 	scanner := bufio.NewScanner(reader)
 	bufPtr := pool.GetScannerBuffer()
 	defer pool.PutScannerBuffer(bufPtr)
-	scanner.Buffer(*bufPtr, maxReadScannerTokenSize)
+	scanner.Buffer(*bufPtr, f.scannerTokenLimit())
 
 	scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		return f.scanLinesWithMaxLength(ctx, data, atEOF)
@@ -101,12 +107,20 @@ func (f *ReadFile) newFilteringProcessor(ltx lcontext.LContext,
 
 // checkSnapshotTruncation handles the periodic signal outside the per-line
 // processing concern. The empty-channel path remains one non-blocking receive.
+//
+// Only a file truncated in place (or a failed check of the descriptor itself)
+// ends the read. A path that was rotated away or removed meanwhile (logrotate
+// during a dcat/dgrep/dmap that runs longer than the check interval) does
+// not: the open descriptor still holds the complete file the read started
+// with, so the snapshot is read to its end instead of dropping the rest.
 func (f *ReadFile) checkSnapshotTruncation(fd *os.File, truncate <-chan struct{}) error {
 	select {
 	case <-truncate:
-		if truncated, err := f.truncated(fd); truncated {
-			return err
+		truncated, err := f.truncated(fd)
+		if !truncated || errors.Is(err, errFileRotated) || errors.Is(err, os.ErrNotExist) {
+			return nil
 		}
+		return err
 	default:
 	}
 	return nil
@@ -130,55 +144,32 @@ func isEarlyStop(err error) bool {
 	return err == io.EOF //nolint:errorlint // Wrapped EOF is a downstream write failure, not the private early-stop sentinel.
 }
 
-// scanLinesWithMaxLength is a custom split function for bufio.Scanner that respects MaxLineLength.
-// It is kept context-aware so long-line warnings can still be dropped when the reader is canceled.
+// scannerTokenLimit returns the maximum token size of the snapshot read
+// scanner for the configured line limit (see ScannerTokenLimit).
+func (f *ReadFile) scannerTokenLimit() int {
+	return ScannerTokenLimit(f.lineLimit())
+}
+
+// scanLinesWithMaxLength is a custom split function for bufio.Scanner that
+// respects MaxLineLength (see SplitLine): a line of up to lineLimit() bytes
+// before its newline (or the end of the input) is one token, a longer one is
+// cut into chunks of lineLimit() bytes, after warning the client about the
+// long line (once per sequence of cut chunks). It is kept context-aware so
+// long-line warnings can still be dropped when the reader is canceled: it
+// returns the context's error then.
 func (f *ReadFile) scanLinesWithMaxLength(ctx context.Context, data []byte, atEOF bool) (advance int, token []byte, err error) {
-	if atEOF && len(data) == 0 {
-		return 0, nil, nil
-	}
-
-	maxLineLen := f.lineLimit()
-
-	// Look for a newline
-	if i := bytes.IndexByte(data, '\n'); i >= 0 {
-		// Check if the line before the newline exceeds max length
-		if i > maxLineLen {
-			// Line is too long, split it at maxLineLen
-			if !f.warnAboutLongLine(ctx) {
-				return 0, nil, ctx.Err()
-			}
-			return maxLineLen, data[0:maxLineLen], nil
-		}
-		// We have a full line within the limit
-		f.warnedAboutLongLine = false // Reset warning for next long line sequence
-		return i + 1, data[0 : i+1], nil
-	}
-
-	// If we're at EOF, we have a final, non-terminated line
-	if atEOF {
-		if len(data) > maxLineLen {
-			// Even at EOF, respect max line length
-			if !f.warnAboutLongLine(ctx) {
-				return 0, nil, ctx.Err()
-			}
-			return maxLineLen, data[0:maxLineLen], nil
-		}
-		return len(data), data, nil
-	}
-
-	// If the line is too long, split it
-	if len(data) >= maxLineLen {
-		// Warn about long line (only once)
+	advance, token, end := SplitLine(data, atEOF, f.lineLimit())
+	switch end {
+	case LineEndCut:
 		if !f.warnAboutLongLine(ctx) {
 			return 0, nil, ctx.Err()
 		}
-
-		// Return a chunk up to MaxLineLength
-		return maxLineLen, data[0:maxLineLen], nil
+	case LineEndNewline:
+		// A full line within the limit ends a sequence of split chunks, so
+		// the next long line warns again.
+		f.warnedAboutLongLine = false
 	}
-
-	// Request more data
-	return 0, nil, nil
+	return advance, token, nil
 }
 
 // Start reads a log file using buffered line reading and a line processor.
@@ -314,42 +305,79 @@ func (p *followLineProcessor) read(ctx context.Context) (n int, readErr error, s
 }
 
 // processChunk feeds the lines that data, the bytes of one read, completes.
+// Like a snapshot read (scanLinesWithMaxLength), it cuts a line longer than
+// the maximum line length into pieces of exactly that length, whatever the
+// reads it arrives in, so that the pieces of a line do not depend on how a
+// writer wrote it: the pending line never holds more than the limit, and a
+// pending line of exactly the limit stays whole if a newline follows next.
+// Every line fed ends at a newline or at such a cut, which is where the
+// positions it reports point (see positionReporter), as readhub relies on.
 func (p *followLineProcessor) processChunk(ctx context.Context, data []byte) (bool, error) {
+	limit := p.file.lineLimit()
 	consumed := 0 // bytes of data before the rest still to process
 	for consumed < len(data) {
 		rest := data[consumed:]
-		newline := bytes.IndexByte(rest, '\n')
-		if newline < 0 {
-			p.atLineStart = false
-			return p.processFragment(ctx, rest, len(data))
+		room := limit - p.partialLine.Len() // never negative, see above
+		// Only a newline within room+1 bytes ends the line within the limit.
+		window := rest
+		if room < len(window) {
+			window = window[:room+1]
 		}
-
-		consumed += newline + 1
-		p.atLineStart = true
-		p.partialLine.Write(rest[:newline])
-		if p.partialLine.Len() > 0 {
-			if stop, err := stopForProcessingError(p.processPartialLine(consumed)); stop || err != nil {
+		if newline := bytes.IndexByte(window, '\n'); newline >= 0 {
+			consumed += newline + 1
+			if stop, err := p.completeLine(rest[:newline], consumed); stop || err != nil {
 				return stop, err
 			}
+			continue
 		}
-		p.partialLine.Reset()
-		p.file.warnedAboutLongLine = false
+		p.atLineStart = false
+		if len(rest) <= room {
+			// The pending line, at most the limit, may still end in time.
+			p.partialLine.Write(rest)
+			return false, nil
+		}
+		// More than room bytes before the next newline: cut the line at
+		// exactly the limit and go on with the rest of it.
+		consumed += room
+		p.partialLine.Write(rest[:room])
+		if stop, err := p.cutLongLine(ctx, consumed); stop || err != nil {
+			return stop, err
+		}
 	}
 	return false, nil
 }
 
-// processFragment keeps fragment, the unfinished end of a read of readLen
-// bytes, unless the pending line grew as long as the maximum line length.
-func (p *followLineProcessor) processFragment(ctx context.Context, fragment []byte, readLen int) (bool, error) {
-	p.partialLine.Write(fragment)
-	if p.partialLine.Len() < p.file.lineLimit() {
-		return false, nil
+// completeLine feeds the pending line, finished by tail and the newline that
+// ends after the first readEnd bytes of the current read. An empty line is not
+// fed, as a follow read always skipped empty lines.
+func (p *followLineProcessor) completeLine(tail []byte, readEnd int) (bool, error) {
+	p.atLineStart = true
+	p.partialLine.Write(tail)
+	if p.partialLine.Len() > 0 {
+		if p.filter.preserveTerminators {
+			_ = p.partialLine.WriteByte('\n')
+		}
+		if stop, err := stopForProcessingError(p.processPartialLine(readEnd)); stop || err != nil {
+			return stop, err
+		}
 	}
+	p.partialLine.Reset()
+	// A full line within the limit ends a sequence of cut pieces, so the next
+	// long line warns again, as in a snapshot read.
+	p.file.warnedAboutLongLine = false
+	return false, nil
+}
+
+// cutLongLine feeds the pending line, the first maxLineLength bytes of a
+// longer line that end after the first readEnd bytes of the current read, as
+// a piece of its own without a line terminator, after warning the client
+// about the long line (once per sequence of pieces). It reports a stop when
+// the reader is canceled during the warning.
+func (p *followLineProcessor) cutLongLine(ctx context.Context, readEnd int) (bool, error) {
 	if !p.file.warnAboutLongLine(ctx) {
 		return true, nil
 	}
-
-	stop, err := stopForProcessingError(p.processPartialLine(readLen))
+	stop, err := stopForProcessingError(p.processPartialLine(readEnd))
 	if !stop && err == nil {
 		p.partialLine.Reset()
 	}
@@ -359,7 +387,7 @@ func (p *followLineProcessor) processFragment(ctx context.Context, fragment []by
 // processPartialLine feeds the pending line, which ends after the first
 // readEnd bytes of the current read.
 func (p *followLineProcessor) processPartialLine(readEnd int) error {
-	err := p.filter.processLine(p.partialLine.Bytes())
+	err := p.filter.processFollowLine(p.partialLine.Bytes())
 	p.positions.lineEndsAt(readEnd)
 	return err
 }

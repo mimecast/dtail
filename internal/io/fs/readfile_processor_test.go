@@ -781,11 +781,12 @@ func TestTailWithProcessorOptimizedMaxCountEarlyStop(t *testing.T) {
 	t.Run("long line split site", func(t *testing.T) {
 		rf := newReadFile(4)
 		// "aa\n" reaches count 1 via the newline branch; the un-terminated 6-byte
-		// "aaaaaa" exceeds the 4-byte line limit and is flushed by the long-line
-		// branch, reaching count 2 (max) at that site.
+		// "aaaaaa" exceeds the 4-byte line limit, so the long-line branch cuts
+		// its first 4 bytes off, reaching count 2 (max) at that site, and the
+		// max-count stop drops the pending rest.
 		p := runTail(t, context.Background(), &rf, "aa\naaaaaa",
 			lcontext.LContext{MaxCount: 2}, mustRegex("a"))
-		want := []string{"aa", "aaaaaa"}
+		want := []string{"aa", "aaaa"}
 		if !reflect.DeepEqual(p.lines, want) {
 			t.Fatalf("lines: got=%v want=%v", p.lines, want)
 		}
@@ -886,8 +887,10 @@ func TestReadWithProcessorOptimizedTransfersCurrentBufferBeforeContextPanic(t *t
 			pattern:       "MATCH",
 		},
 		{
-			name:          "forced long line",
-			input:         "x\nMATC",
+			name: "forced long line",
+			// One byte above the limit, so the reader splits it into
+			// "MATC" and "H" instead of reading it as a whole final line.
+			input:         "x\nMATCH",
 			maxLineLength: 4,
 			pattern:       "MATC",
 		},

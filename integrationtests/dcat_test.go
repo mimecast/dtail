@@ -405,15 +405,47 @@ func testDCat3WithServer(t *testing.T, logger *TestLogger) {
 		"--noColor"}
 
 	// Notice, with DTAIL_INTEGRATION_TEST_RUN_MODE the DTail max line length is set
-	// to 1024!
+	// to 1024! The server tells the client of the split line even at
+	// --logLevel error, and in plain mode that warning is a line of the
+	// output; the serverless client logs it at its own level (error) only.
 	err = runCommandUntilValid(ctx, t, 5, 200*time.Millisecond, outFile, "../dcat", func() error {
-		return compareFilesContentsWithContext(ctx, t, outFile, expectedFile)
+		payloadFile, err := withoutLongLineWarning(outFile, inFile)
+		if err != nil {
+			return err
+		}
+		return compareFilesContentsWithContext(ctx, t, payloadFile, expectedFile)
 	}, args...)
 	cancel()
 	if err != nil {
 		t.Error(err)
 		return
 	}
+}
+
+// withoutLongLineWarning checks that the plain dcat output in outFile holds
+// the server's long-line warning for inFile exactly once and returns a file
+// with the other lines of outFile.
+func withoutLongLineWarning(outFile, inFile string) (string, error) {
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		return "", err
+	}
+	suffix := "|" + inFile + "|Long log line, splitting into multiple lines"
+	var payload strings.Builder
+	warnings := 0
+	for _, line := range strings.SplitAfter(string(data), "\n") {
+		if trimmed := strings.TrimSuffix(line, "\n"); strings.HasPrefix(trimmed, "WARN|") &&
+			strings.HasSuffix(trimmed, suffix) {
+			warnings++
+			continue
+		}
+		payload.WriteString(line)
+	}
+	if warnings != 1 {
+		return "", fmt.Errorf("%s has %d long-line warnings for %s, want 1", outFile, warnings, inFile)
+	}
+	payloadFile := strings.TrimSuffix(outFile, ".tmp") + "_payload.tmp"
+	return payloadFile, os.WriteFile(payloadFile, []byte(payload.String()), 0o600)
 }
 
 func TestDCatColors(t *testing.T) {

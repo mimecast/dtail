@@ -38,10 +38,10 @@ func compareFilesContents(t *testing.T, fileA, fileB string) error {
 		for line, countA := range a {
 			countB, ok := b[line]
 			if !ok {
-				return fmt.Errorf("Files differ, line '%s' is missing in one of them", line)
+				return fmt.Errorf("files differ, line '%s' is missing in one of them", line)
 			}
 			if countA != countB {
-				return fmt.Errorf("Files differ, count of line '%s' is %d in one but %d in another",
+				return fmt.Errorf("files differ, count of line '%s' is %d in one but %d in another",
 					line, countA, countB)
 			}
 		}
@@ -102,7 +102,7 @@ func fileContainsStr(t *testing.T, file, str string) error {
 		}
 	}
 
-	return fmt.Errorf("File %s does not contain string %s", file, str)
+	return fmt.Errorf("file %s does not contain string %s", file, str)
 }
 
 func shaOfFile(t *testing.T, file string) string {

@@ -16,12 +16,13 @@ type filteringProcessor struct {
 	// rawProcessor is processor's optional line.RawProcessor fast path,
 	// resolved once at construction (see newFilteringProcessor). Nil means
 	// ProcessFilteredRaw falls back to copying matches into a pooled buffer.
-	rawProcessor line.RawProcessor
-	re           regex.Regex
-	ltx          lcontext.LContext
-	stats        *stats
-	globID       string
-	recycle      func(*bytes.Buffer)
+	rawProcessor        line.RawProcessor
+	preserveTerminators bool
+	re                  regex.Regex
+	ltx                 lcontext.LContext
+	stats               *stats
+	globID              string
+	recycle             func(*bytes.Buffer)
 	// The query's context is immutable. Select its input path once instead
 	// of testing before/after/max settings on every line. Method expressions
 	// need no per-filter closure allocation.
@@ -51,6 +52,9 @@ func newFilteringProcessor(ltx lcontext.LContext, processor line.Processor,
 	// buffers, including when emitting the queued lines on a later match.
 	if rawProcessor, ok := processor.(line.RawProcessor); ok && ltx.BeforeContext <= 0 {
 		filterProcessor.rawProcessor = rawProcessor
+	}
+	if preserver, ok := processor.(line.TerminatorPreserver); ok {
+		filterProcessor.preserveTerminators = preserver.PreserveLineTerminators()
 	}
 	switch {
 	case ltx.BeforeContext > 0:
@@ -112,6 +116,26 @@ func (fp *filteringProcessor) processLine(data []byte) error {
 	return fp.filterRaw(fp, data)
 }
 
+// processFollowLine hands the line on without its LF unless a
+// whitespace-sensitive processor needs the physical terminator for parsing.
+// The regex never sees the terminator either way (see matches).
+func (fp *filteringProcessor) processFollowLine(data []byte) error {
+	if !fp.preserveTerminators {
+		return fp.processLine(bytes.TrimSuffix(data, []byte{'\n'}))
+	}
+	return fp.processLine(data)
+}
+
+// matches runs the regex on the line without its terminator, whichever
+// reader the line comes from. Snapshot reads (dcat, dgrep, dmap) pass lines
+// including their LF, and Go's "$" only matches at the very end of the text:
+// matched with the LF, "foo$" only hit a last line without a newline, "^$"
+// never hit an empty line and "foo[^x]" hit a line ending in "foo", all
+// unlike a follow read of the same file.
+func (fp *filteringProcessor) matches(data []byte) bool {
+	return fp.re.Match(bytes.TrimSuffix(data, []byte{'\n'}))
+}
+
 func (fp *filteringProcessor) processOwnedContext(data []byte) error {
 	lineBuf := pool.BytesBuffer.Get().(*bytes.Buffer)
 	lineBuf.Write(data)
@@ -136,7 +160,7 @@ func (fp *filteringProcessor) processOwnedContext(data []byte) error {
 // buffer is needed. Otherwise the match is copied into a pooled buffer, which
 // is a stable copy that never aliases the scanner's transient slice.
 func (fp *filteringProcessor) ProcessFilteredRaw(raw []byte) error {
-	if !fp.re.Match(raw) {
+	if !fp.matches(raw) {
 		fp.stats.updateFilteredLine(false)
 		// No buffer was acquired, so there is nothing to recycle.
 		return nil
@@ -159,7 +183,7 @@ func (fp *filteringProcessor) ProcessFilteredRaw(raw []byte) error {
 // processRawContext filters max/after-only reads without copying rejected
 // input. Neither mode retains lines, so emitted input can also be borrowed.
 func (fp *filteringProcessor) processRawContext(raw []byte) error {
-	if !fp.re.Match(raw) {
+	if !fp.matches(raw) {
 		fp.stats.updateLineNotMatched()
 		if fp.ltx.AfterContext > 0 && fp.afterCount > 0 {
 			fp.afterCount--
@@ -238,7 +262,7 @@ func (fp *filteringProcessor) processWithContext(rawLine *bytes.Buffer, lineNum 
 		}
 	}()
 
-	matched := fp.re.Match(rawLine.Bytes())
+	matched := fp.matches(rawLine.Bytes())
 
 	if !matched {
 		fp.stats.updateLineNotMatched()

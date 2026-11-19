@@ -2,8 +2,10 @@
 
 This directory contains comprehensive benchmarks for the DTail toolset (dcat, dgrep, dmap).
 
-Current measured results: [upstream versus local, 2026-09-23](../docs/upstream-benchmark-2026-09-23.md),
-including both serverless and SSH server workloads.
+Current measured results: [upstream versus local, 2026-11-11](../docs/upstream-benchmark-2026-11-11.md),
+including both serverless and SSH server workloads. The earlier
+[2026-09-23 run](../docs/upstream-benchmark-2026-09-23.md) used a different
+host and revisions, so the two are not directly comparable.
 
 ## Overview
 

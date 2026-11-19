@@ -47,6 +47,9 @@ type readCommand struct {
 	// failureReported is set once the client was told that this command
 	// failed (see reportFailure).
 	failureReported atomic.Bool
+	// mapQueryFailed is set at dispatch when the map command of this read's
+	// command stream failed, so the read is rejected (see mapQueryFailures).
+	mapQueryFailed bool
 }
 
 // Reasons a read command reports with reportFailure. They name no path and no
@@ -59,6 +62,7 @@ const (
 	readFailurePermission  = protocol.CommandFailurePermission
 	readFailureReader      = protocol.CommandFailureReader
 	readFailureReadingFile = protocol.CommandFailureReadingFile
+	readFailureOutput      = protocol.CommandFailureOutputTooLarge
 )
 
 type pendingInputReservationKeyType struct{}
@@ -188,46 +192,98 @@ func newReadCommandWithDependencies(dependencies readCommandDependencies, mode o
 
 func (r *readCommand) Start(ctx context.Context, ltx lcontext.LContext,
 	argc int, args []string, retries int) {
-	// If parsing, glob expansion, retry cancellation, or another early-return
-	// path prevents this command from resolving concrete inputs, release its
-	// dispatch-time reservation here. Once an input is resolved, readPipe or
-	// readFiles transfers the reservation and this becomes a no-op.
+	// If a failed map command of the session, parsing, glob expansion, retry
+	// cancellation, or another early-return path prevents this command from
+	// resolving concrete inputs, release its dispatch-time reservation here.
+	// Once an input is resolved, readPipe or readFiles transfers the
+	// reservation and this becomes a no-op.
 	defer func() { r.releasePendingInputReservation(ctx) }()
 	r.generation = sessionGenerationFromContext(ctx)
+	if r.mapQueryFailed {
+		r.rejectAfterMapQueryFailure(ctx, args)
+		return
+	}
 
-	re := regex.NewNoop()
-	if argc >= 4 {
-		deserializedRegex, err := regex.Deserialize(strings.Join(args[2:], " "))
-		if err != nil {
-			r.sendServerMessage(ctx, r.logger.Error(r.logContext,
-				"Unable to parse command", err))
-			r.reportFailure(ctx, readFailureCommand)
-			return
-		}
-		re = deserializedRegex
+	re, ok := r.parseRegex(ctx, argc, args)
+	if !ok {
+		return
 	}
 	if argc < 3 {
-		r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+		r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext,
 			"Unable to parse command", args, argc))
 		r.reportFailure(ctx, readFailureCommand)
+		return
+	}
+	path, ok := r.parsePath(ctx, args[1])
+	if !ok {
 		return
 	}
 
 	// In serverless mode, can also read data from pipe
 	// e.g.: grep foo bar.log | dmap 'from STATS select ...'
 	// Only read from pipe if no file argument is provided
-	isPipe := r.isInputFromPipe() && (argc < 2 || args[1] == "" || args[1] == "-")
+	isPipe := r.isInputFromPipe() && (path == "" || path == "-")
 	switch {
 	case isPipe:
 		r.logger.Debug("Reading data from stdin pipe")
 		r.readPipe(ctx, ltx, re)
-	case fs.IsJournalSpec(args[1]):
+	case fs.IsJournalSpec(path):
 		r.logger.Debug("Reading data from journal")
-		r.readJournal(ctx, ltx, args[1], re)
+		r.readJournal(ctx, ltx, path, re)
 	default:
 		r.logger.Debug("Reading data from file(s)")
-		r.readGlob(ctx, ltx, args[1], re, retries)
+		r.readGlob(ctx, ltx, path, re, retries)
 	}
+}
+
+// parsePath returns the path (a file, glob, journal target or "-") of a read
+// command from its second word, which clients encode with
+// protocol.EncodeReadPath when the path contains a space (the command is
+// split on spaces) or starts with protocol.EncodedReadPathPrefix. Everything
+// downstream (glob expansion, the readfiles permission check, the journal
+// target, the shared read hub) sees the decoded path only. It reports false,
+// after telling the client, when the word carries the prefix but does not
+// decode; such a command reads nothing.
+func (r *readCommand) parsePath(ctx context.Context, word string) (string, bool) {
+	path, err := protocol.DecodeReadPath(word)
+	if err != nil {
+		r.sendServerMessage(ctx, logging.ErrorMessage(r.logger, r.logContext,
+			"Unable to parse command", err))
+		r.reportFailure(ctx, readFailureCommand)
+		return "", false
+	}
+	return path, true
+}
+
+// parseRegex returns the regex of a read command, which starts at args[2] and
+// is normally the flags word followed by the pattern ("regex:invert foo"; a
+// pattern with blanks spans several words, which are rejoined), and is a noop
+// regex without them. It reports false, after telling the client,
+// when the regex does not deserialize.
+//
+// The lone third word branch is a defensive tolerance, whichever way the
+// dispatcher splits commands: a serialized empty pattern ends the command in a
+// space ("regex:invert,literal "), and a split at runs of whitespace would drop
+// that empty last word, turning an inverted empty pattern (no line) into a noop
+// (every line). So a lone third word starting with "regex:" is read by
+// regex.Deserialize as flags with an empty pattern; flags it cannot parse
+// ("regex:bogus", or "regex:" without a flag) fail the command with "Unable to
+// parse command", as they do with a pattern. Any other lone third word (e.g.
+// "." or "regexfoo") is no regex and is ignored, as it always was: the command
+// matches every line.
+func (r *readCommand) parseRegex(ctx context.Context, argc int, args []string) (regex.Regex, bool) {
+	hasRegex := argc >= 4 || (argc == 3 && strings.HasPrefix(args[2], "regex:"))
+	if !hasRegex {
+		return regex.NewNoop(), true
+	}
+	re, err := regex.Deserialize(strings.Join(args[2:], " "))
+	if err != nil {
+		r.sendServerMessage(ctx, logging.ErrorMessage(r.logger, r.logContext,
+			"Unable to parse command", err))
+		r.reportFailure(ctx, readFailureCommand)
+		return regex.Regex{}, false
+	}
+	return re, true
 }
 
 func (r *readCommand) adoptPendingInputReservation(reservation *pendingInputReservation) {
@@ -286,11 +342,22 @@ func (r *readCommand) readGlob(ctx context.Context, ltx lcontext.LContext,
 	retryInterval := r.timings.globRetryInterval
 	glob = filepath.Clean(glob)
 
+	// waitForRetry sleeps the retry interval before the next attempt. After
+	// the last attempt there is nothing to wait for: sleeping there made a
+	// dcat or dgrep (one attempt) of a missing file take the whole interval
+	// (5 s by default) before it gave up.
+	waitForRetry := func(retryCount int) bool {
+		if retryCount == retries-1 {
+			return ctx.Err() == nil
+		}
+		return ctxutil.Sleep(ctx, retryInterval)
+	}
+
 	for retryCount := 0; retryCount < retries; retryCount++ {
 		paths, err := filepath.Glob(glob)
 		if err != nil {
 			r.logger.Warn(r.logContext, glob, err)
-			if !ctxutil.Sleep(ctx, retryInterval) {
+			if !waitForRetry(retryCount) {
 				return
 			}
 			continue
@@ -298,14 +365,14 @@ func (r *readCommand) readGlob(ctx context.Context, ltx lcontext.LContext,
 
 		if numPaths := len(paths); numPaths == 0 {
 			r.logger.Error(r.logContext, "No such file(s) to read", glob)
-			r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+			r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext,
 				"Unable to read file(s), check server logs"))
 			select {
 			case <-ctx.Done():
 				return
 			default:
 			}
-			if !ctxutil.Sleep(ctx, retryInterval) {
+			if !waitForRetry(retryCount) {
 				return
 			}
 			continue
@@ -318,7 +385,7 @@ func (r *readCommand) readGlob(ctx context.Context, ltx lcontext.LContext,
 		if maxTargets := r.timings.maxGlobTargets; len(paths) > maxTargets {
 			r.logger.Warn(r.logContext, "Glob expansion exceeded cap, truncating",
 				"glob", glob, "matched", len(paths), "cap", maxTargets)
-			r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+			r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext,
 				"Glob expansion exceeded server limit, only first targets served",
 				"limit", maxTargets, "matched", len(paths)))
 			r.reportFailure(ctx, readFailureGlobCapped)
@@ -329,7 +396,7 @@ func (r *readCommand) readGlob(ctx context.Context, ltx lcontext.LContext,
 		return
 	}
 
-	r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+	r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext,
 		"Giving up to read file(s)"))
 	r.reportFailure(ctx, readFailureNoFile)
 }
@@ -373,7 +440,7 @@ func (r *readCommand) readFiles(ctx context.Context, ltx lcontext.LContext,
 	// directories) read nothing, like a glob that matched no path.
 	if int(skipped.Load()) == len(paths) {
 		r.logger.Error(r.logContext, "No regular file(s) to read", glob)
-		r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+		r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext,
 			"Unable to read file(s), check server logs"))
 		r.reportFailure(ctx, readFailureNoFile)
 	}
@@ -436,17 +503,17 @@ func (r *readCommand) readFileIfPermissions(ctx context.Context, ltx lcontext.LC
 		return true
 	case errors.Is(err, os.ErrNotExist):
 		r.logger.Error(r.logContext, "File to read does not exist (anymore)", path, globID, err)
-		r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+		r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext,
 			"Unable to read file(s), check server logs"))
 		r.reportFailure(ctx, readFailureNoFile)
 	case errors.Is(err, user.ErrReadPermissionDenied):
 		r.logger.Error(r.logContext, "No permission to read file", path, globID)
-		r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+		r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext,
 			"Unable to read file(s), check server logs"))
 		r.reportFailure(ctx, readFailurePermission)
 	default:
 		r.logger.Error(r.logContext, "Unable to read file", path, globID, err)
-		r.sendServerMessage(ctx, r.logger.Warn(r.logContext,
+		r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext,
 			"Unable to read file(s), check server logs"))
 		r.reportFailure(ctx, readFailureReadingFile)
 	}
@@ -499,7 +566,7 @@ func (r *readCommand) read(ctx context.Context, ltx lcontext.LContext,
 		if target != nil && target.Kind == fs.JournalKind {
 			message = "Unable to read journal"
 		}
-		r.sendServerMessage(ctx, r.logger.Warn(r.logContext, message, err))
+		r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext, message, err))
 		r.reportFailure(ctx, readFailureReader)
 		return
 	}
@@ -539,7 +606,7 @@ func (r *readCommand) executeReadLoop(ctx context.Context, ltx lcontext.LContext
 			if errors.Is(err, fs.ErrReaderWorkerPanic) {
 				panic(err)
 			}
-			r.reportFailure(ctx, readFailureReadingFile)
+			r.reportReadError(ctx, err)
 		}
 
 		select {
@@ -563,33 +630,45 @@ func (r *readCommand) readViaProcessor(path, globID string, writer LineWriter) r
 		r.logger.Trace(r.logContext, path, globID, "readWithProcessor -> starting read loop iteration")
 
 		processor := r.makeProcessor(path, globID, writer)
+		startErr, flushErr := r.runProcessor(ctx, ltx, reader, re, processor, path, globID)
 
-		startErr := func() error {
-			// Register cleanup before entering reader code. A panic in either the
-			// reader or Flush must still close an Processor and release
-			// its processorsWg reservation. LIFO order preserves Flush-before-Close.
-			defer func() {
-				closeErr := processor.Close()
-				if closeErr != nil {
-					r.logger.Error(r.logContext, path, globID, "close error", closeErr)
-				}
-				r.logger.Trace(r.logContext, path, globID, "readWithProcessor -> processor closed")
-			}()
-			defer func() {
-				r.logger.Trace(r.logContext, path, globID, "readWithProcessor -> flushing processor")
-				if flushErr := processor.Flush(); flushErr != nil {
-					r.logger.Error(r.logContext, path, globID, "flush error", flushErr)
-				}
-			}()
-
-			r.logger.Trace(r.logContext, path, globID, "readWithProcessor -> reader.Start -> about to start")
-			err := reader.Start(ctx, ltx, processor, re)
-			r.logger.Trace(r.logContext, path, globID, "readWithProcessor -> reader.Start -> completed")
-			return err
-		}()
-
+		// A final flush that dropped the lines still batched in the writer
+		// because they did not fit the session's output buffer fails the
+		// iteration like a failed read does. Other flush errors (e.g. the
+		// session ending) stay logged only, as before.
+		if errors.Is(flushErr, errOutputPayloadTooLarge) {
+			return errors.Join(startErr, flushErr)
+		}
 		return startErr
 	}
+}
+
+// runProcessor runs reader with processor and flushes and closes processor
+// afterwards. It returns the reader's error and the flush error.
+func (r *readCommand) runProcessor(ctx context.Context, ltx lcontext.LContext, reader fs.FileReader,
+	re regex.Regex, processor line.Processor, path, globID string) (startErr, flushErr error) {
+
+	// Register cleanup before entering reader code. A panic in either the
+	// reader or Flush must still close an Processor and release
+	// its processorsWg reservation. LIFO order preserves Flush-before-Close.
+	defer func() {
+		closeErr := processor.Close()
+		if closeErr != nil {
+			r.logger.Error(r.logContext, path, globID, "close error", closeErr)
+		}
+		r.logger.Trace(r.logContext, path, globID, "readWithProcessor -> processor closed")
+	}()
+	defer func() {
+		r.logger.Trace(r.logContext, path, globID, "readWithProcessor -> flushing processor")
+		if flushErr = processor.Flush(); flushErr != nil {
+			r.logger.Error(r.logContext, path, globID, "flush error", flushErr)
+		}
+	}()
+
+	r.logger.Trace(r.logContext, path, globID, "readWithProcessor -> reader.Start -> about to start")
+	startErr = reader.Start(ctx, ltx, processor, re)
+	r.logger.Trace(r.logContext, path, globID, "readWithProcessor -> reader.Start -> completed")
+	return startErr, nil
 }
 
 func (r *readCommand) makeProcessor(path, globID string, writer LineWriter) line.Processor {
@@ -630,7 +709,7 @@ func (r *readCommand) makeGlobID(ctx context.Context, path, glob string) string 
 		return pathParts[len(pathParts)-1]
 	}
 
-	r.sendServerMessage(ctx, r.logger.Warn("Empty file path given?", path, glob))
+	r.sendServerMessage(ctx, logging.WarnMessage(r.logger, "Empty file path given?", path, glob))
 	return ""
 }
 
@@ -645,6 +724,21 @@ func (r *readCommand) reportFailure(ctx context.Context, reason string) {
 		return
 	}
 	r.server.SendReadMessage(ctx, r.generation, protocol.HiddenCommandFailedPrefix+reason)
+}
+
+// reportReadError reports a failed read iteration, err being what the reader
+// or its processor returned. Output too large for the session's output
+// buffer (errOutputPayloadTooLarge, the line writer's batch was dropped) is
+// also reported to the user with a visible warning, as those lines are lost
+// although the file was read; any other error is a failure to read the file.
+func (r *readCommand) reportReadError(ctx context.Context, err error) {
+	if !errors.Is(err, errOutputPayloadTooLarge) {
+		r.reportFailure(ctx, readFailureReadingFile)
+		return
+	}
+	r.sendServerMessage(ctx, logging.WarnMessage(r.logger, r.logContext,
+		"Dropped output too large for the session output buffer, check server logs", err))
+	r.reportFailure(ctx, readFailureOutput)
 }
 
 // sendServerMessage forwards a user-visible message to the session's shared

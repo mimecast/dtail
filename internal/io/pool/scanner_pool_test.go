@@ -43,3 +43,19 @@ func TestPrepareSmallBufferRejectsNilPointer(t *testing.T) {
 		t.Fatal("prepareSmallBuffer accepted a nil pointer")
 	}
 }
+
+// TestScannerBufferHoldsALineOfScannerBufferSizeWithItsNewline checks that a
+// new pooled scanner buffer has room for a line of ScannerBufferSize bytes and
+// its newline, both as length and as capacity (which bufio.Scanner uses), also
+// after a scanner shortened it and it went back to the pool.
+func TestScannerBufferHoldsALineOfScannerBufferSizeWithItsNewline(t *testing.T) {
+	buf := ScannerBufferPool.New().(*[]byte)
+	for range 2 {
+		if len(*buf) != ScannerBufferSize+1 || cap(*buf) != ScannerBufferSize+1 {
+			t.Fatalf("scanner buffer length %d, capacity %d, want both %d",
+				len(*buf), cap(*buf), ScannerBufferSize+1)
+		}
+		*buf = (*buf)[:10]
+		PutScannerBuffer(buf)
+	}
+}

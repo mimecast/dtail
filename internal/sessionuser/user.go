@@ -180,6 +180,26 @@ func (u *User) hasFilePermission(cleanPath, permissionType string) (bool, error)
 	return hasPermission, nil
 }
 
+// splitPermissionType splits a rule "<type>:<regex>" into its type and its
+// regex. The type prefix is optional (default "readfiles"), so a colon alone
+// does not make one: only a prefix of lowercase letters is a type. A bare
+// regex containing a colon, such as "!^/var/log/(?:secret|audit)/",
+// "!^journal:sshd\.service$" or "^/var/log/[[:alpha:]]+$", used to be cut at
+// its first colon into an unknown type and was then skipped silently, so a
+// bare deny rule failed open and a bare allow rule matched nothing.
+func splitPermissionType(permission string) (typeStr, rule string) {
+	prefix, rest, ok := strings.Cut(permission, ":")
+	if !ok || prefix == "" {
+		return "readfiles", permission
+	}
+	for i := 0; i < len(prefix); i++ {
+		if prefix[i] < 'a' || prefix[i] > 'z' {
+			return "readfiles", permission
+		}
+	}
+	return prefix, rest
+}
+
 // iteratePaths evaluates the user's permission list against cleanPath for the
 // given permissionType and returns whether access is granted.
 //
@@ -197,12 +217,7 @@ func (u *User) iteratePaths(cleanPath, permissionType string) (bool, error) {
 
 	for _, permission := range u.permissions {
 		// Determine the permission type prefix; default is "readfiles".
-		typeStr := "readfiles"
-		splitted := strings.Split(permission, ":")
-		if len(splitted) > 1 {
-			typeStr = splitted[0]
-			permission = strings.Join(splitted[1:], ":")
-		}
+		typeStr, permission := splitPermissionType(permission)
 
 		u.log().Debug(u, cleanPath, typeStr, permission)
 		if typeStr != permissionType {

@@ -1,0 +1,4 @@
+label,count($line),last(value)
+price 5€,2,4
+soft Ь,1,2
+not ¬,1,3

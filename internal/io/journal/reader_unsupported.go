@@ -10,17 +10,29 @@ import (
 
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/lcontext"
+	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/regex"
 )
 
 // ErrUnsupported reports that journal reading is only available on Linux.
 var ErrUnsupported = errors.New("journal reader is only supported on linux")
 
+// ReaderOptions mirrors the Linux reader options so that callers build on
+// every system; see reader.go for their meaning.
+type ReaderOptions struct {
+	Args           []string
+	SourceID       string
+	Follow         bool
+	ServerMessages chan<- string
+	MaxLineLength  int
+	Logger         logging.Logger
+}
+
 // Reader is an unsupported journal reader stub on non-Linux systems.
 type Reader struct{}
 
 // NewReader returns an unsupported error on non-Linux systems.
-func NewReader(_ []string, _ string, _ bool, _ chan<- string) (*Reader, error) {
+func NewReader(ReaderOptions) (*Reader, error) {
 	return nil, errors.Join(ErrUnsupported, errors.New(runtime.GOOS))
 }
 

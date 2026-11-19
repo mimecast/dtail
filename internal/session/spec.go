@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mimecast/dtail/internal/omode"
+	"github.com/mimecast/dtail/internal/protocol"
 	"github.com/mimecast/dtail/internal/regex"
 )
 
@@ -73,6 +74,19 @@ func (s Spec) HasJournalFiles() bool {
 	return false
 }
 
+// HasEncodedFiles reports whether a read command of this session carries an
+// encoded path (protocol.ReadPathNeedsEncoding), which only servers
+// advertising protocol.CapabilityEncodedReadPathV1 can read: a path that
+// contains a space, or one that starts with protocol.EncodedReadPathPrefix.
+func (s Spec) HasEncodedFiles() bool {
+	for _, file := range s.Files {
+		if protocol.ReadPathNeedsEncoding(file) {
+			return true
+		}
+	}
+	return false
+}
+
 // StartCommand returns the SESSION START command for this specification.
 func (s Spec) StartCommand() (string, error) {
 	payload, err := s.encodedPayload()
@@ -97,12 +111,21 @@ func (s Spec) UpdateCommand(generation uint64) (string, error) {
 	return fmt.Sprintf("SESSION UPDATE %d %s", generation, payload), nil
 }
 
+// queryCommands returns the map command and one read command per file of a
+// query session. The read commands select the lines of the query's table with
+// s.Regex, which the client derives from the query, and never invert it, so
+// RegexInvert is ignored here: inverted, the filter would feed the other
+// tables' lines (or, for every-line tables, only the empty lines) into the
+// aggregation. Ignoring it in this one place covers both sides, as the client
+// builds its legacy command stream and dserver its SESSION START/UPDATE
+// commands with it, so a dserver also reads the right lines for an older
+// client that sends regex_invert with a query.
 func (s Spec) queryCommands() ([]string, error) {
 	if s.Mode != omode.MapClient && s.Mode != omode.TailClient {
 		return nil, fmt.Errorf("session spec query mode requires map or tail mode, got %s", s.Mode)
 	}
 
-	regexValue, err := s.serializedRegex()
+	regexValue, err := serializedRegex(s.Regex, false)
 	if err != nil {
 		return nil, err
 	}
@@ -114,16 +137,23 @@ func (s Spec) queryCommands() ([]string, error) {
 	}
 
 	for _, file := range s.Files {
+		path := protocol.EncodeReadPath(file)
 		if s.Timeout > 0 {
-			commands = append(commands, fmt.Sprintf("timeout %d %s %s %s", s.Timeout, readMode, file, regexValue))
+			commands = append(commands, fmt.Sprintf("timeout %d %s %s %s", s.Timeout, readMode, path, regexValue))
 			continue
 		}
-		commands = append(commands, fmt.Sprintf("%s:%s %s %s", readMode, s.Options, file, regexValue))
+		commands = append(commands, fmt.Sprintf("%s:%s %s %s", readMode, s.Options, path, regexValue))
 	}
 
 	return commands, nil
 }
 
+// readCommands returns one "<mode>:<options> <path> <regex>" command per
+// file. Servers split commands on single spaces and take the second word as
+// the path, so each path goes through protocol.EncodeReadPath (verbatim
+// unless it contains a space or starts with the encoded prefix);
+// queryCommands does the same for its read commands, including the
+// "timeout N <mode> <path> <regex>" form.
 func (s Spec) readCommands(mode string) ([]string, error) {
 	switch s.Mode {
 	case omode.TailClient, omode.CatClient, omode.GrepClient:
@@ -131,26 +161,28 @@ func (s Spec) readCommands(mode string) ([]string, error) {
 		return nil, fmt.Errorf("unsupported session mode %s", s.Mode)
 	}
 
-	regexValue, err := s.serializedRegex()
+	regexValue, err := serializedRegex(s.Regex, s.RegexInvert)
 	if err != nil {
 		return nil, err
 	}
 
 	var commands []string
 	for _, file := range s.Files {
-		commands = append(commands, fmt.Sprintf("%s:%s %s %s", mode, s.Options, file, regexValue))
+		commands = append(commands, fmt.Sprintf("%s:%s %s %s", mode, s.Options,
+			protocol.EncodeReadPath(file), regexValue))
 	}
 
 	return commands, nil
 }
 
-func (s Spec) serializedRegex() (string, error) {
+// serializedRegex returns the wire form of the read commands' regex.
+func serializedRegex(pattern string, invert bool) (string, error) {
 	flag := regex.Default
-	if s.RegexInvert {
+	if invert {
 		flag = regex.Invert
 	}
 
-	re, err := regex.New(s.Regex, flag)
+	re, err := regex.New(pattern, flag)
 	if err != nil {
 		return "", err
 	}
@@ -158,6 +190,11 @@ func (s Spec) serializedRegex() (string, error) {
 	return re.Serialize()
 }
 
+// splitFiles splits a --files value (or a job's Files) at its commas, trims
+// whitespace around every entry and drops empty entries. A comma therefore
+// always separates two files, so paths containing a comma cannot be read,
+// and neither can paths with leading or trailing whitespace. Inner spaces
+// are kept (see protocol.EncodeReadPath).
 func splitFiles(what string) []string {
 	if strings.TrimSpace(what) == "" {
 		return nil

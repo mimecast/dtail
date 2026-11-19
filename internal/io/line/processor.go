@@ -39,6 +39,18 @@ type RawProcessor interface {
 	ProcessRawLine(raw []byte, lineNum uint64, sourceID string) error
 }
 
+// TerminatorPreserver opts into receiving a completed follow line with its
+// terminal LF intact, allowing a parser to distinguish CRLF from a bare CR in
+// an unfinished fragment. Snapshot reads already preserve terminators. Follow
+// reads keep their historical empty-line skipping and give unterminated or
+// length-split fragments no synthetic LF. Buffer ownership and borrowing match
+// Processor and RawProcessor; intermediaries must preserve the terminator until
+// delivery to the final processor, removing only LF for processors that do not
+// opt in. The result must remain constant for the processor's lifetime.
+type TerminatorPreserver interface {
+	PreserveLineTerminators() bool
+}
+
 // SourceRestarter is an optional extension of Processor for processors that
 // keep state for the source they are fed from. A follow-mode reader that
 // detects an in-place truncation (copytruncate) rewinds the same descriptor

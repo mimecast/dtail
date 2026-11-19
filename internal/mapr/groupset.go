@@ -82,6 +82,19 @@ func (g *GroupSet) GetSet(groupKey string) *AggregateSet {
 	return set
 }
 
+// GetSetBytes gets a specific aggregate set from the group set like GetSet,
+// for a group key the caller holds as bytes, e.g. in a receive buffer. The
+// lookup does not allocate; only a group key the group set does not have yet
+// is copied, to be stored. groupKey is not retained.
+func (g *GroupSet) GetSetBytes(groupKey []byte) *AggregateSet {
+	if set, ok := g.sets[string(groupKey)]; ok {
+		return set
+	}
+	set := NewAggregateSet()
+	g.sets[string(groupKey)] = set
+	return set
+}
+
 // Serialize the group set (e.g. to send it over the wire). If the context is
 // cancelled mid-iteration, the remaining unsent aggregate sets are returned
 // so callers can retry them (for example, by re-merging them into the live
@@ -212,14 +225,10 @@ func (*GroupSet) resultSelect(query *Query, sc *selectCondition, set *AggregateS
 		valueStr = set.SValues[sc.FieldStorage]
 		value, _ = strconv.ParseFloat(valueStr, 64)
 	case Avg:
-		// Guard against division by zero when an empty aggregate set (Samples==0)
-		// is received from the server. Without this guard, 0/0 yields NaN, which
-		// propagates as the string "NaN" into CSV/terminal output.
-		if set.Samples == 0 {
-			value = 0
-		} else {
-			value = set.FValues[sc.FieldStorage] / float64(set.Samples)
-		}
+		// Divides by the number of values of the field, not by the lines of
+		// the group (see AggregateSet.avg), and gives 0 rather than NaN when
+		// there are none.
+		value = set.avg(sc.FieldStorage)
 		valueStr = fmt.Sprintf("%f", value)
 	case Percentage:
 		value = set.FValues[sc.FieldStorage]
@@ -231,7 +240,7 @@ func (*GroupSet) resultSelect(query *Query, sc *selectCondition, set *AggregateS
 		}
 		valueStr = fmt.Sprintf("%f", value)
 	case Percentile:
-		value = percentileRank(set.FValues[sc.FieldStorage], stats.percentileValues[sc.FieldStorage])
+		value = percentileOf(set, sc.FieldStorage, stats)
 		valueStr = fmt.Sprintf("%f", value)
 	default:
 		return 0, fmt.Errorf("unknown aggregation method '%v'", sc.Operation)
@@ -265,12 +274,18 @@ func (g *GroupSet) makeResultStats(query *Query) resultStats {
 
 	for _, set := range g.sets {
 		for _, sc := range query.Select {
-			value := set.FValues[sc.FieldStorage]
+			value, ok := set.FValues[sc.FieldStorage]
 			switch sc.Operation {
 			case Percentage:
+				// A missing value adds nothing to the total either way.
 				stats.percentageTotals[sc.FieldStorage] += value
 			case Percentile:
-				stats.percentileValues[sc.FieldStorage] = append(stats.percentileValues[sc.FieldStorage], value)
+				// Only groups that have the field are ranked (see percentileOf):
+				// ranking a group without it as 0 would shift the ranks of all
+				// other groups.
+				if ok {
+					stats.percentileValues[sc.FieldStorage] = append(stats.percentileValues[sc.FieldStorage], value)
+				}
 			}
 		}
 	}
@@ -280,6 +295,18 @@ func (g *GroupSet) makeResultStats(query *Query) resultStats {
 	}
 
 	return stats
+}
+
+// percentileOf returns the percentile rank of set's value of storage among the
+// values of all groups that have one. A group without the field (no line of it
+// had the field) has no value to rank: it takes no part in the ranking and
+// shows 0, like the other aggregations of a field no line of the group had.
+func percentileOf(set *AggregateSet, storage string, stats *resultStats) float64 {
+	value, ok := set.FValues[storage]
+	if !ok {
+		return 0
+	}
+	return percentileRank(value, stats.percentileValues[storage])
 }
 
 func percentileRank(value float64, sortedValues []float64) float64 {

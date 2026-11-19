@@ -12,17 +12,22 @@ import (
 )
 
 // legacyResultRows preserves the pre-0a allocation, statistics and stable-sort
-// path as a differential oracle. Selection/formatting itself is unchanged.
+// path as a differential oracle. Selection/formatting is shared with the code
+// under test (resultSelect), except percentile(), which legacyResultSelect
+// computes on its own.
 func legacyResultRows(g *GroupSet, q *Query, widths bool) ([]result, []int, error) {
 	stats := resultStats{percentageTotals: make(map[string]float64), percentileValues: make(map[string][]float64)}
 	for _, set := range g.sets {
 		for _, sc := range q.Select {
-			value := set.FValues[sc.FieldStorage]
+			value, ok := set.FValues[sc.FieldStorage]
 			switch sc.Operation {
 			case Percentage:
 				stats.percentageTotals[sc.FieldStorage] += value
 			case Percentile:
-				stats.percentileValues[sc.FieldStorage] = append(stats.percentileValues[sc.FieldStorage], value)
+				// Mirrors makeResultStats: groups lacking the field are not ranked.
+				if ok {
+					stats.percentileValues[sc.FieldStorage] = append(stats.percentileValues[sc.FieldStorage], value)
+				}
 			}
 		}
 	}
@@ -39,7 +44,7 @@ func legacyResultRows(g *GroupSet, q *Query, widths bool) ([]result, []int, erro
 	for _, key := range keys {
 		row := result{groupKey: key}
 		for i, sc := range q.Select {
-			n, err := g.resultSelect(q, &sc, g.sets[key], &row, &stats)
+			n, err := legacyResultSelect(g, q, &sc, g.sets[key], &row, &stats)
 			if err != nil {
 				return rows, columnWidths, err
 			}
@@ -60,9 +65,43 @@ func legacyResultRows(g *GroupSet, q *Query, widths bool) ([]result, []int, erro
 	return rows, columnWidths, nil
 }
 
+// legacyResultSelect renders one selected value like resultSelect, but
+// computes percentile() on its own, so the oracle does not share percentileOf
+// and percentileRank with the code under test: a group lacking the field shows
+// 0, and any other group's rank is the share of ranked values not above its
+// own, counted linearly instead of by binary search.
+func legacyResultSelect(g *GroupSet, q *Query, sc *selectCondition, set *AggregateSet,
+	row *result, stats *resultStats) (int, error) {
+
+	if sc.Operation != Percentile {
+		return g.resultSelect(q, sc, set, row, stats)
+	}
+	var value float64
+	if own, ok := set.FValues[sc.FieldStorage]; ok {
+		ranked := stats.percentileValues[sc.FieldStorage]
+		notAbove := 0
+		for _, other := range ranked {
+			if other <= own {
+				notAbove++
+			}
+		}
+		if len(ranked) > 0 {
+			value = float64(notAbove) / float64(len(ranked)) * 100
+		}
+	}
+	valueStr := fmt.Sprintf("%f", value)
+	if sc.FieldStorage == q.OrderBy {
+		row.orderBy = value
+	}
+	row.values = append(row.values, valueStr)
+	return len(valueStr), nil
+}
+
 func TestResultRowsMatchLegacy(t *testing.T) {
 	fields := []string{"count(v)", "sum(v)", "min(v)", "max(v)", "v", "avg(v)", "len(v)", "percentage(v)", "percentile(v)"}
-	selections := append(append([]string{}, fields...), strings.Join(fields, ","), "percentage(v),percentage(v),percentile(v),percentile(v)")
+	// A selection repeating a field, such as percentage(v),percentage(v), is
+	// no longer a valid query (TestParseQueryRejectsDuplicateSelect).
+	selections := append(append([]string{}, fields...), strings.Join(fields, ","))
 	for _, selection := range selections {
 		t.Run(selection, func(t *testing.T) {
 			q, err := NewQuery("select "+selection+" from stats group by host", nil)
@@ -94,6 +133,12 @@ func resultParityData(q *Query, size int) *GroupSet {
 		set := g.GetSet(fmt.Sprintf("host-%03d", i))
 		set.Samples = i % 4 // Include empty aggregates and ties.
 		for _, sc := range q.Select {
+			// Every 5th group lacks its percentage and percentile fields, as a
+			// group does when none of its lines had the field: it adds nothing
+			// to the percentage total and takes no part in the percentile ranking.
+			if i%5 == 0 && (sc.Operation == Percentage || sc.Operation == Percentile) {
+				continue
+			}
 			set.FValues[sc.FieldStorage] = float64((i*37)%19 - 9)
 			set.SValues[sc.FieldStorage] = []string{"NaN", "+Inf", "-Inf", "2", "2", "-1", "invalid", "-0"}[i%8]
 		}

@@ -46,7 +46,7 @@ var ErrReaderFailed = errors.New("shared reader failed")
 type Options struct {
 	// Logger receives the hub's diagnostics.
 	Logger logging.Logger
-	// MaxLineLength is the line length at which the reader splits a line.
+	// MaxLineLength is the line length above which the reader splits a line.
 	MaxLineLength int
 	// RetryInterval is the pause before the reader opens the file again after
 	// a read ended, e.g. because the file was rotated, as the read command's
@@ -99,8 +99,12 @@ type Session struct {
 	// goroutine, for every failure it handles itself instead of returning it
 	// (see sessionRead.reportFailure); the caller reports the failures Follow
 	// returns. It may be called more than once for one session, so a caller
-	// that reports only once keeps that to itself.
-	ReportFailure func()
+	// that reports only once keeps that to itself. err is what failed: the
+	// shared reader's error, or the error the session's own reader (and so
+	// possibly its processor, e.g. its output) returned after an eviction,
+	// so that the caller can tell a failed read of the file from output it
+	// had to drop; it may be nil.
+	ReportFailure func(err error)
 }
 
 // Hub shares follow reads of the same file between sessions. It is safe for
@@ -266,6 +270,12 @@ func (h *Hub) join(sub *subscriber) *entry {
 			// leave the entire hub locked when the caller recovers that panic.
 			defer h.mu.Unlock()
 			sub.joinedAt = measure()
+			// A join of an entry that turned out closed (entry.join below,
+			// in an earlier iteration) left its join skip behind. The new
+			// entry's reader starts at joinedAt, so nothing is to be
+			// skipped: with the stale skip the session dropped new lines
+			// up to the dead reader's offset.
+			sub.skip = joinSkip{}
 			e = newEntry(key, sub.session, sub.joinedAt, nil, h.options, h.logger, h.seams, h.forget)
 			h.entries[key] = e
 			// A new entry is open.

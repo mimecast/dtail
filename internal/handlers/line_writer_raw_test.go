@@ -10,6 +10,7 @@ import (
 
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/io/pool"
+	"github.com/mimecast/dtail/internal/protocol"
 )
 
 // rawPathTestLines covers the shapes the readers hand over: scanner tokens with
@@ -47,7 +48,7 @@ func rawPathWriterCases() []rawPathWriterCase {
 	network := func(plain bool) func(t *testing.T) (LineWriter, func() []byte) {
 		return func(t *testing.T) (LineWriter, func() []byte) {
 			outputLines := make(chan []byte, 64)
-			w := NewNetworkWriter(context.Background(), outputLines, nil, "testhost", plain, false,
+			w := NewNetworkWriter(context.Background(), protocol.RawFraming, outputLines, nil, "testhost", plain, false,
 				0, nil, handlerTestLogger)
 			return w, func() []byte {
 				if err := w.Flush(); err != nil {

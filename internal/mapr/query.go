@@ -3,6 +3,7 @@ package mapr
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -99,7 +100,7 @@ func NewQuery(queryStr string, logger logging.Logger) (*Query, error) {
 	return &q, nil
 }
 
-// HasOutfile returns true if query result will be written to a CVS output file.
+// HasOutfile returns true if query result will be written to a CSV output file.
 func (q *Query) HasOutfile() bool {
 	return q.Outfile != nil
 }
@@ -191,6 +192,9 @@ func (q *Query) parseFromClause(tokens []token) ([]token, error) {
 	case 0:
 		return remaining, errors.New(invalidQuery + "expected table name after 'from'")
 	case 1:
+		if found[0].str == "" {
+			return remaining, errors.New(invalidQuery + "expected table name after 'from'")
+		}
 		q.Table = strings.ToUpper(found[0].str)
 		return remaining, nil
 	default:
@@ -218,6 +222,11 @@ func (q *Query) parseGroupClause(tokens []token) ([]token, error) {
 		return tokens, errors.New(invalidQuery + unexpectedEnd)
 	}
 	remaining, fields := tokensConsumeStr(tokens)
+	for _, field := range fields {
+		if field == "" {
+			return remaining, errors.New(invalidQuery + "expected field name in 'group' clause")
+		}
+	}
 	q.GroupBy = fields
 	q.GroupKey = strings.Join(fields, ",")
 	return remaining, nil
@@ -229,7 +238,7 @@ func (q *Query) parseOrderClause(tokens []token, reverse bool) ([]token, error) 
 		return tokens, errors.New(invalidQuery + unexpectedEnd)
 	}
 	remaining, found := tokensConsume(tokens)
-	if len(found) == 0 {
+	if len(found) == 0 || found[0].str == "" {
 		return remaining, errors.New(invalidQuery + unexpectedEnd)
 	}
 	q.OrderBy = found[0].str
@@ -248,6 +257,11 @@ func (q *Query) parseIntervalClause(tokens []token) ([]token, error) {
 	if err != nil {
 		return remaining, errors.New(invalidQuery + err.Error())
 	}
+	// A negative interval made dserver and client fall back to different
+	// defaults, and a huge one overflowed time.Duration into a garbage value.
+	if interval < 0 || int64(interval) > int64(math.MaxInt64/time.Second) {
+		return remaining, errors.New(invalidQuery + "interval out of range: " + found[0].str)
+	}
 	q.Interval = time.Second * time.Duration(interval)
 	return remaining, nil
 }
@@ -260,6 +274,11 @@ func (q *Query) parseLimitClause(tokens []token) ([]token, error) {
 	limit, err := strconv.Atoi(found[0].str)
 	if err != nil {
 		return remaining, errors.New(invalidQuery + err.Error())
+	}
+	// -1 is the internal "no limit clause" value: a negative limit would
+	// otherwise silently lift the default row cap of the terminal output.
+	if limit < 0 {
+		return remaining, errors.New(invalidQuery + "limit must not be negative: " + found[0].str)
 	}
 	q.Limit = limit
 	return remaining, nil
@@ -278,12 +297,15 @@ func (q *Query) parseOutfileClause(tokens []token) ([]token, error) {
 	default:
 		return remaining, errors.New(invalidQuery + invalidQuery)
 	}
+	if q.Outfile.FilePath == "" {
+		return remaining, errors.New(invalidQuery + "expected file path in 'outfile' clause")
+	}
 	return remaining, nil
 }
 
 func (q *Query) parseLogFormatClause(tokens []token) ([]token, error) {
 	remaining, found := tokensConsume(tokens)
-	if len(found) == 0 {
+	if len(found) == 0 || found[0].str == "" {
 		return remaining, errors.New(invalidQuery + unexpectedEnd)
 	}
 	q.LogFormat = found[0].str

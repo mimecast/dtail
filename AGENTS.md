@@ -205,6 +205,16 @@ make profile-help
 ### Interactive Query Reload
 Interactive query control is opt-in on the client with `--interactive-query`.
 The controlling TTY accepts `:reload <flags>`, `:show`, `:help`, and `:quit`.
+`:reload` flags are tokenized POSIX-shell-like without expansion
+(`internal/clients/interactive_args.go`): single quotes are literal, double
+quotes keep backslashes except `\\`, `\"`, `\$` and ``\` ``, and `''`/`""` is
+an empty value (`--regex ''` clears the regex, so every line matches unless
+`--invert` is in effect, which carries over between reloads and then matches
+no line; `--invert=false` resets it, `:show` prints `invert=`). `--grep`
+follows the CLI: a non-empty `--grep` wins over `--regex`; `--grep ''`
+(ignored by the CLI) is rejected with a hint to use `--regex ''`. Blank `--files`, blank `--query`
+values and lines that are not valid UTF-8 are rejected. Full rules:
+`doc/interactive-query.md`.
 
 **Compatibility and session semantics:**
 - Initial interactive bootstrap prefers `SESSION START` when the server
@@ -215,7 +225,17 @@ The controlling TTY accepts `:reload <flags>`, `:show`, `:help`, and `:quit`.
   `query-update-v1`; unsupported servers cause the reload to be rejected while
   the current workload keeps running
 - Successful reloads reuse the existing SSH session and advance a generation
-  boundary so stale output from older workloads is dropped
+  boundary so stale output from older workloads is dropped. dserver numbers
+  the workloads of a connection itself (`sessionCommandState.generation`,
+  never reused) and only acknowledges the client's generation number, so an
+  update numbered like the running or an earlier workload still makes the
+  replaced workload's queued output stale. A reload updates every connection
+  on top of the highest committed generation of all of them
+  (`applyReloadSpec`), so one that reconnected (and started over at 1) does
+  not make later reloads fail with mismatched generations.
+- A connection takes one session channel and a channel one shell request;
+  further ones are refused (`internal/server/server.go`), so `MaxConnections`
+  bounds the sessions.
 
 ### Auth-Key Fast Reconnect
 Auth-key fast reconnect is enabled by default. The client can register a public key with `dserver` over an already-authenticated session, and subsequent connections can use this in-memory key before falling back to normal SSH auth.
@@ -236,6 +256,59 @@ Auth-key fast reconnect is enabled by default. The client can register a public 
 - Server config: `AuthKeyTTLSeconds` (default `86400`)
 - Server config: `AuthKeyMaxPerUser` (default `5`)
 
+### Host Key Verification
+The client checks server host keys against `known_hosts`
+(`internal/ssh/client/knownhostscallback.go`). An unknown host is asked about
+on the terminal, or trusted and added without asking with `--trustAllHosts`.
+A host whose key differs from the one in `known_hosts` is not unknown: it is
+refused with a `HOST KEY CHANGED` error in every mode, unless the client was
+started with `--trustChangedHostKeys` (`Args.TrustChangedHostKeys`, all
+clients and `dtailhealth`, which otherwise trusts all hosts). With that flag
+the prompt names the hosts whose key changed, and trust-all mode replaces
+their entries with a WARN. A key marked `@revoked` is never trusted. The
+parsed file is cached until it changes (file identity, size, modification
+time). Scheduled and continuous jobs authenticate with their own auth methods
+and do not use `known_hosts`.
+
+### File Paths With Spaces
+dserver splits every command on single spaces and a read command is
+`<mode>:<options> <path> <regex>`, so a path is one word. `session.Spec.Commands`
+(the one builder of read commands, for the legacy stream and for the commands
+dserver builds from `SESSION START`/`UPDATE` Files, including the
+`timeout N <mode> <path> <regex>` form) passes every path through
+`protocol.EncodeReadPath` (`internal/protocol/readpath.go`): a path containing a
+space, or starting with the prefix `base64%`, is sent as `base64%` + standard
+base64 of the path (the prefix config option values already use); every other
+path is sent verbatim, byte-identical to older clients. `readCommand.parsePath`
+decodes the word before anything else sees it, so globbing, the `readfiles`
+permission check (which must match the decoded path), `journal:` targets and
+shared reads all use the real path; a prefixed word that does not decode fails
+the command with `read: unable to parse command` and reads nothing.
+
+**Compatibility:** dserver (and the serverless runtime) advertise capability
+`encoded-read-path-v1`. Clients check it before sending any read command of a
+spec with such a path (`requireSpecCapabilities` in
+`internal/clients/connectors/sessiontransport.go`, legacy commands and
+`SESSION START`) and otherwise fail with `file paths containing spaces or
+starting with base64% require server capability encoded-read-path-v1` (exit
+status 1), instead of letting an older dserver split the path. A `:reload`
+checks every connection up front (`checkReloadCapabilities` in
+`internal/clients/interactive_control.go`, also for `journal-v1`) before it
+updates any, so with one server lacking the capability the reload is rejected
+on the TTY as a whole, no server switches, and the workload and exit status
+stay as they were. Space-free paths need no capability. Older clients send
+raw paths: in their legacy command stream a spaced path still fails as
+before, and a path starting with `base64%` is decoded by a new dserver; via
+`--interactive-query` (`SESSION START`/`UPDATE`, Files as JSON) a new dserver
+builds and encodes the commands itself, so a spaced path is read and a
+`base64%`-prefixed path is read literally.
+
+**Commas:** `--files`, positional arguments (joined with commas) and job `Files`
+are split at commas with blanks around each entry trimmed (`splitFiles` in
+`internal/session/spec.go`), so paths containing a comma, or with leading or
+trailing blanks, cannot be read. The scheduler's job grouping parses the same
+comma lists, so this is not changed.
+
 ### Journal Source Reads
 Journal targets use `journal:unit.service` syntax. Permission rules should match the full target, for example `Server.Permissions.Users[user]: ["readfiles:^journal:.*\\.service$"]`.
 
@@ -244,6 +317,69 @@ Journal targets use `journal:unit.service` syntax. Permission rules should match
 - The capability is advertised only on Linux when `journalctl` is available on `PATH`.
 - Journal reads use `journalctl` via `os/exec` only; there is no cgo or `libsystemd` path, and the feature is Linux-only at runtime.
 - Non-follow reads the current journal snapshot once. Follow mode adds `-f -n 0` and keeps restarting `journalctl` until canceled.
+- Entries are cut at `Server.MaxLineLength` exactly like file lines (shared `fs.SplitLine`/`fs.ScannerTokenLimit`, same long-line warning, passed via `journal.ReaderOptions.MaxLineLength`), so an entry over 1 MiB no longer fails with `bufio.Scanner: token too long`. An unterminated last entry of a `journalctl` run is still dropped (pieces cut off before it are kept).
+
+### Wire Framing (server-to-client stream)
+Every server-to-client message (frame) ends with `protocol.MessageDelimiter`,
+the single byte 0xAC. That byte is also a UTF-8 continuation byte (`€` is
+E2 82 AC, `Ь` D0 AC, `¬` C2 AC, about 1/64 of all CJK characters), so raw
+framing cuts such lines in two and drops the byte. Sessions therefore
+negotiate escaped framing (`internal/protocol/framing.go`; design in
+`docs/dev/wire_framing.md`):
+- dserver (and the in-process serverless server) advertises capability
+  `escaped-framing-v1` in its capabilities frame, always the first frame and
+  always raw.
+- `NewClientHandler` and `NewMaprHandler` send `.ack framing escaped-v1` as the
+  very first command frame, before `AUTHKEY` and `.ack input begin`, without
+  waiting for the capabilities. The health handler does not (the server's health
+  handler ends the session after the first command).
+- The server switches the session to escaped framing on that request (only if it
+  advertised it, only when the request is the session's first command frame, a
+  later or repeated one is ignored and logged, and only after its capabilities
+  frame was encoded); every later frame body has 0xAC replaced by `FF 01` and
+  0xFF by `FF 02`, in time linear in the body however many bytes are escaped
+  and with the escaped body sized exactly (counted first), so a dense 1 MiB
+  body costs one allocation of its escaped size.
+  The client decides from the session's first frame only: if it is the
+  capabilities frame listing the capability, every later frame is decoded as
+  escaped; a later frame that reads like a capabilities frame never switches
+  it. Valid UTF-8 never contains 0xFF, so frames without 0xAC are
+  byte-identical in both framings.
+- Escaping can grow a frame to almost twice its raw size, so a session that
+  switches to escaped framing raises its output buffer cap to at least
+  `2*MaxLineLength + 128 KiB` (see the output limits below). Output that still
+  does not fit is reported, never dropped silently: a visible warning plus the
+  failed-command reason `output: too large for the session output buffer`.
+- Current clients require `escaped-framing-v1` in the first server frame:
+  without it they report an unsupported-server error with upgrade guidance
+  and set status 1, even after a normal close handshake. Older protocol-4.1
+  servers can finish a session on unknown `.ack` commands before reading files
+  (framing requests and input-batch markers both trigger it), so they must
+  never look like successful empty queries. Servers with escaped framing only
+  remain supported. Older clients keep raw framing against current servers.
+  `ProtocolCompat` stays `4.1`.
+- Control frames (`internal/protocol/control_frames.go`): with `--plain`, log
+  lines and control messages (hidden `.syn ...` messages, `AUTHKEY` replies)
+  are both untagged frames, so a client told them apart by content only and
+  dropped log lines starting with `.` or reading `AUTHKEY OK`, and acted upon
+  `.syn close connection` / `.syn command failed x` lines. dserver therefore
+  also advertises `control-frames-v1`; clients send `.ack framing control-v1`
+  as the second command frame, in the same write as the escaped framing
+  request. The server honours it only if advertised, the session is escaped
+  and it is the second command, and then switches to
+  `protocol.EscapedControlFraming`: every control frame body starts with
+  `FF 03`, which escaping makes unforgeable, and every other frame is
+  byte-identical to escaped framing. The client uses it when the first frame
+  lists both capabilities; then every unmarked frame is payload. dserver
+  encodes no frame after the capabilities frame until the session framing
+  settled (`sessionFramer.awaitFramingSettled`: before a command that can no
+  longer change it, i.e. a first command other than the escaped framing
+  request or a second one other than the control frames request, after the
+  framing requests, or at session end), so e.g. the
+  close handshake of a dserver shutting down before the requests arrived is
+  still marked. A framing request with a `timeout N` prefix is ignored. Any other
+  client/server combination (older ones, or with escaped framing only) keeps
+  the content-based routing and its loss of such `--plain` lines.
 
 ### Client Log Contents: Diagnostics vs Payload
 The default client logger is `fout` (stdout + a daily file at
@@ -304,6 +440,95 @@ the full payload size. Payload always still goes to STDOUT/terminal, unchanged.
   calls, and rejects later admissions with a diagnostic. A blocked sink still
   applies backpressure. The default payload-disabled fout path is unchanged.
 
+### Client Exit Statuses (dcat, dgrep)
+`dcat` and `dgrep` exit `0` on success (`dgrep` also when no line matched, unlike
+`grep`), `1` when a server could not be connected to (refused or unreachable),
+the SSH handshake failed or no SSH session could be opened, the server rejected
+or did not acknowledge an `--interactive-query` `SESSION START` or the commands
+could not be sent, a server lacks `journal-v1` for a requested journal target
+or `encoded-read-path-v1` for a path containing a space or starting with
+`base64%`, a serverless session failed, a session was cut short (below), or the
+client could not start, and `2`
+(`clients.ExitStatusFailedCommand`, also the status of an invalid flag) when any
+server reported a failed command of the session with `.syn command failed
+<reason>` (capability `command-failure-v1`, `handlers.SessionOutcome.Failures`).
+This covers the file read failures (`protocol.IsFileReadFailure`: missing, not
+permitted, unreadable, reader not created, glob capped) and deliberately also the
+other reasons (`command: ...`, `map: invalid query`, `read: unable to parse
+command`, `output: too large for the session output buffer`), as each means
+output that was asked for is missing. Serverless mode behaves the same, as its
+in-process server reports failures the same way. The client exits with the highest
+status of its connections (`baseClient.runConnections`), so a read failure on
+one server outweighs a connection failure on another. The raise is opt-in per
+client (`clientProfile.failedCommandStatus`, set by `readClientProfile`):
+`dtail` follow mode, `dmap` (its scheduled modes handle failures, see "Failed
+scheduled jobs" below) and `dtailhealth` keep their statuses; interactive
+`dmap` thus exits `0` and writes its outfile also after a reported `map:
+incomplete result`, which dserver only sends when a final result was cut off
+(see "Server-Side MapReduce" below), and also after a session cut short
+(below; `dmap` does not set `cutShortStatus` either), e.g. by the idle
+timeout, a dserver SIGTERM or a lost connection while it sent the final
+result, which then has no report. This is by design, so that it always
+writes what it received; instead it logs every reported failure that is no
+file read failure, and every session cut short that the client did not end
+itself, at WARN first (`The mapreduce result may be incomplete|<server>:
+<reason>; ...`, the reason for a session cut short being `the session ended
+before the server completed it`, `MaprClient.incompleteResultReasons` called
+by `MaprClient.finish`). Whether the client ended a session is decided per
+session at the moment it ended (`baseClient.runSession` records it next to the
+connection, reset by `replaceConnection`): it did if the context of
+`runConnections` was done by then, which SIGINT/SIGTERM and an
+`--interactive-query` `:quit` or control TTY end cancel. So `:quit` warns
+about nothing, while a server that went away mid-run is still warned about
+when the user presses Ctrl-C only later. Servers
+without `command-failure-v1` report nothing, so with them a missing file still
+exits `0`.
+A session cut short (it ended without `.syn close connection`,
+`handlers.SessionOutcome.Completed` false: e.g. a dserver SIGKILLed, crashed or
+stopped mid-read, or a lost connection) exits `1` (`clients.exitStatusCutShort`
+via `clientProfile.cutShortStatus`, which only `readClientProfile` sets), and the
+client logs `Session ended without the server's close handshake, the output may
+be incomplete` for that server, unless the connection already reported an
+error (handler status above 0; client handlers start at `-1`). A session the
+client ended itself keeps its status: `baseClient.runSession` checks, when the
+session ended, the context of all connections (not the per-connection
+`connCtx`, which the connector cancels itself when its session ends), which
+SIGINT/SIGTERM (cancel of `Client.Start`'s context) and an `--interactive-query`
+`:quit` or control TTY end (cancel of `runConnections`' context) cancel, and
+passes the result to `baseClient.sessionStatus`. A
+reported failed command (`2`) outweighs it. Servers of every protocol version
+(since v1.0.0, also the in-process server of serverless mode) send the close
+handshake after a completed session's output, so no capability gates this;
+`--max` stops on the server, which then closes normally. A session whose
+frames are of another protocol version is no completed one: dserver sends the
+mismatch error once (`handlers.commandDispatcher.rejectProtocolVersion`).
+For a legacy client (protocol major version <= 3, an unparsable version, or no
+`protocol` prefix at all, as v1.x clients send `%s;` frames) it then keeps the
+session open, as before, until the client exits or `IdleSessionTimeoutS`: such
+clients do not check the close handshake, and those that retry (v1.x-v3
+`dtail`, v3 `dmap` in tail mode without outfile) reconnect 2 s after a session
+ended, so ending it would make them reconnect in a loop with full SSH
+handshakes and server log lines. For any other version (e.g. a future 4.x+ client) it ends the session
+without the close handshake (`handlers.baseHandler.closeWithoutHandshake`),
+as such a client may not recognize or acknowledge it, so it sees the error and
+the session ends at once instead of after the 5 s acknowledgement timeout.
+Clients that check for the close handshake (this fork since ef3) treat that
+session as cut short (`dcat`/`dgrep` exit `1`, a scheduled job counts a
+transport failure).
+Known gap: in `--plain` server mode a payload line starting with `.syn
+command failed` or a payload line `.syn close connection` is payload (printed,
+exit unchanged) when client and server negotiated control frames
+(`control-frames-v1`, see "Wire Framing" above); only with an older client or
+dserver is the first still taken as a failure report (exit `2`) and the second
+as the close handshake (the client stops reading that server and exits `0`
+with truncated output). With
+`--interactive-query` the client keeps the failures of every workload of the
+session that reached it, also of workloads a `:reload` replaced; dserver drops
+queued messages of a stale generation (`outputCoordinator.shouldDropGeneration`),
+failure reports included, and a cancelled workload reports none
+(`readCommand.reportFailure`), so those do not count.
+User docs: `doc/examples.md` ("Exit statuses of `dcat` and `dgrep`").
+
 ### Output Path and MapReduce Operations
 DTail uses a single, channel-less read/output path for both direct output
 operations (cat, grep, tail) and MapReduce operations in server mode. This was
@@ -328,18 +553,87 @@ validation flags them as stale, while the runtime still ignores them.
 - For MapReduce in server mode: lines are processed directly without channels.
 - For MapReduce in serverless/client mode: the server-side direct processing does
   not apply — client-side aggregation runs on the client.
+- Client receive of aggregate messages (`internal/clients/handlers/maprhandler.go`,
+  `internal/mapr/client/aggregate.go`): frames are cut with `bytes.IndexByte`,
+  each message is validated and copied into a reused queue (`Aggregate.Add`),
+  and at the end of every `Write` call the queue is aggregated, in arrival
+  order and each message on its own, straight into the global group set under
+  one non-blocking lock attempt (`GlobalGroupSet.UpdateNoblock`); a missed
+  attempt keeps the queue for the next call (waiting for the lock only once
+  4 MiB are queued) and `Flush` on shutdown waits. The result therefore does
+  not depend on how messages were batched or on lock contention.
 
 **Server-Side MapReduce (dserver):**
 - Lines are processed directly without channel overhead
 - Batch processing reduces lock contention
 - Memory pooling reduces garbage collection pressure
 - Same output format and accuracy regardless of workload
+- Results are sent as one aggregate frame per group, but a session output read
+  frames every already queued group, up to the read buffer (32 KiB from the
+  SSH copy), into one SSH channel write (`sessionFramer.readMaprMessage`,
+  `outputCoordinator.tryReadQueuedMapr`; the per-session queue holds
+  `maprMessageQueueSize` = 256 groups). It takes a group only where the next
+  read would have taken it anyway (no payload, flush error or server message
+  pending), filters each by its generation, and changes no byte of the stream.
+  A 200k-group result went from about 149k write(2) calls to about 2.2-2.7k.
+  The rest of a batch that does not fit into one read goes out with the
+  groups queued behind it, not alone in a tiny write of its own.
+  The queue is bounded by count only and lies outside `OutputBufferMaxBytes`:
+  a group's key and values (e.g. `last()`) can each be up to `MaxLineLength`
+  bytes, so a session can hold up to (256 + 16 + 1) x (1 + select fields) x
+  `MaxLineLength` bytes of queued groups (the session queue, the map command's
+  16-entry forwarding channel and the forwarder's message in hand). Typical
+  groups are a few dozen bytes; the aggregate itself holds all groups anyway.
+- The final serialization of a map command (`Aggregate.finalize` in
+  `internal/mapr/aggregate/aggregate.go`) has no deadline of its own: a slow
+  or paused client only slows it down through output backpressure, and only
+  the session's context (session teardown, dserver shutdown, a replaced
+  generation) or the connection's `IdleSessionTimeoutS` ends it early. It
+  used to stop after a fixed 10 s, dropping the unsent groups while the
+  session still closed normally (an incomplete outfile with exit status 0).
+  The finalization records a three-way outcome: none (it never ran, e.g.
+  an abort won because the command was canceled or the session generation
+  was replaced, which has no final result), complete, or interrupted (the
+  finalization context ended while it waited for the processors or part way
+  through the sends). An interrupted final serialization drops the unsent
+  groups instead of re-merging them, as nothing would send them any more,
+  and logs one WARN (`Aggregate final serialization interrupted; final
+  result incomplete`, with the number of unsent groups). As a defensive
+  guard, the session's graceful shutdown then reports `.syn command failed
+  map: incomplete result` (`protocol.CommandFailureMapIncomplete`,
+  `Aggregate.FinalResultInterrupted`, `reportIncompleteMapResult` in
+  `internal/handlers/basehandler.go`) before the close handshake, so a
+  scheduled job writes no outfile. With the deadline gone, the context ends
+  listed above tear the session down rather than close it gracefully, so a
+  client normally sees a session cut short instead (a scheduled job then
+  writes no outfile either); the report covers any path that still ends a
+  final result early and then closes normally. Interactive `dmap` keeps its
+  exit status (`0`) and writes its outfile in both cases, but warns about
+  the reported failure as well as about the session cut short (see "Client
+  Exit Statuses" below). Each final serialization logs `Aggregate final
+  serialization started` with its group count at INFO; the count (like the
+  unsent count of the WARN) excludes the groups a periodic serialization
+  still in flight took for its own snapshot, which that pass sends or
+  re-merges. `integrationtests/dmap_slow_client_test.go` (query with
+  `interval 3600`, so no periodic pass runs) stops a client for 15 s once
+  that line shows all 100,000 groups still to be sent, and requires every
+  group in the outfile and no interrupted serialization in the server log.
 
 **Output limits and deadlines (server config):**
 The output path exposes four optional settings: `OutputBufferMaxBytes`,
 `OutputFlushTimeoutMs`, `OutputReadRetryIntervalMs`, and
 `OutputEOFAckTimeoutMs`. The buffer setting bounds retained payload memory; the
-two timeout settings bound flush and EOF-ack waits. `OutputReadRetryIntervalMs`
+two timeout settings bound flush and EOF-ack waits. The flush timeout of the
+payload buffer (`outputManager.flush`) is a stall timeout: it starts over
+whenever the reader took something since it was last checked, so a client on a
+slow link is waited for. It, the session flush (`flushContext`) and the 5 s
+wait for the close acknowledgement also do not run out while the session
+reader is still writing bytes it already took to the client
+(`outputCoordinator.clientSlow`): a paused client (a pager, a stopped
+pipeline) only applies backpressure, as during the read, and the connection's
+idle timeout bounds one that never comes back. Only a reader that takes
+nothing for a whole timeout without a pending delivery fails the flush.
+`OutputReadRetryIntervalMs`
 is a compatibility fallback for stale-generation writers that do not provide a
 cancellation signal, and values below the implementation safety minimum are
 clamped. Removed `Turbo*`, output-delay, EOF-wait-sizing, flush-poll, and
@@ -358,7 +652,16 @@ this). The interval never drops below one second, so a timeout below four second
 closes two to three seconds past it instead of proportionally.
 Per-session payload backing memory waiting on a slow client is capped by
 `OutputBufferMaxBytes` (default 2 MiB); producers apply backpressure when the cap is reached. The
-configured cap must leave room for one maximum-length formatted line.
+configured cap must leave room for one maximum-length formatted line: it must be
+at least `MaxLineLength + 128 KiB`. A session that negotiated escaped framing
+(see Wire Framing) raises its own cap to at least `2*MaxLineLength + 128 KiB`
+(`escapedOutputBufferMaxBytes` in `internal/handlers/serverhandler.go`), since
+escaping 0xAC/0xFF bytes can almost double a line frame; validation is
+unchanged, so every configuration valid before keeps working, and memory stays
+bounded at about one more maximum-length line per session. A batch of line
+frames that still exceeds the cap is reported, not dropped silently: the client
+gets a visible `Dropped output too large for the session output buffer` warning
+and the failed-command reason `output: too large for the session output buffer`.
 
 **Shared follow reads (dserver):**
 Sessions that tail the same uncompressed file share one reader of it in
@@ -409,6 +712,13 @@ the middle of a line being written gets that whole line, where a private read
 gets the rest of it from the join; and a trailing line the writer has not
 finished yet is not passed on when a session leaves.
 
+Long line warnings match too: a session sends one `Long log line, splitting
+into multiple lines` warning per line cut at `MaxLineLength`, as a private
+read does, also when it is evicted between a line's warning and its first
+piece (it holds the warning until that piece arrives and leaves it to its
+private reader otherwise, `sessionRead.longLineWarning`) or in the middle of
+the line (its private reader does not warn again, `StartOffsetInSplitLine`).
+
 A failed read reaches the client the same way, too. A private read reports
 every failed iteration of its retry loop to the client with the hidden
 message `.syn command failed read: unable to read file` (once per command,
@@ -419,7 +729,12 @@ shared reader failing (it reads the file again, as a private reader does, and
 every session of it is told), the shared reader failing for good without a
 panic (each session goes on privately) and a failed read of a session's own
 reader after an eviction. The hub reports the last three through
-`readhub.Session.ReportFailure`. A max-count stop is no failure in either
+`readhub.Session.ReportFailure`, with the error that failed, which the read
+command reports as its own read loop does (`readCommand.reportReadError`):
+output a session's own reader after an eviction dropped as too large for the
+session output buffer gets the `Dropped output too large ...` warning and the
+reason `output: too large for the session output buffer`, not `read: unable to
+read file`. A max-count stop is no failure in either
 path, and a reader worker panic ends the session as a panic in both, without
 a report.
 
@@ -480,7 +795,9 @@ scheduler run looks the servers up as soon as a due run is evaluated with
 other runs still pending, even when those all turn out not to be due; a run
 that is not due leaves the group formation before the lookup, so a scheduler
 run whose only due run comes after the others needs no lookup at all.
-Each job sends the option `share=<group>:<members>`; dserver honours it only
+Each job sends the option `share=<group>:<members>`, where members counts
+the sessions of the group (its jobs times the servers each connects to, see
+`scheduler.runGroup`); dserver honours it only
 for the scheduler's user `DTAIL-SCHEDULE` and ignores it elsewhere (older
 dservers ignore it too). Each member passes its own permission check and joins
 with its own validated target. The hub (`internal/io/fs/readhub/oneshot.go`)
@@ -510,10 +827,29 @@ failure are told apart:
   shutdown); a session that ended without the server's close handshake
   (`.syn close connection`, sent only after all of the session's output),
   e.g. a remote dserver killed with SIGKILL, stopped with SIGTERM/SIGINT,
-  crashed, or a lost connection; and a failed command that is no file read
+  crashed, or a lost connection; the client refusing to send a job's read
+  commands to a server lacking a capability its `Files` need
+  (`encoded-read-path-v1` for paths containing spaces or starting with
+  `base64%`, `journal-v1` for `journal:` targets), which sets exit status 1;
+  and a failed command that is no file read
   failure (`command: unable to decode command`, `command: rejected`,
-  `command: unknown command`, `map: invalid query`, `read: unable to parse
-  command`, or a reason the client does not know).
+  `command: unknown command`, `map: invalid query`, `map: incomplete result`,
+  `read: unable to parse command`, `output: too large for the session output
+  buffer`, or a reason the client does not know). `map: incomplete result`
+  means the map command's final result did not reach the client in full (see
+  "Server-Side MapReduce" above). The output reason means a read dropped line
+  frames that did not fit the session's output buffer (see the output limits
+  above); it is no file read failure, as the file was read. A scheduled job's
+  server-side MapReduce sends aggregates, not line frames, so it cannot get it.
+  dserver does not run the read commands that follow a failed map command of
+  the same command stream (legacy stream or session generation,
+  `internal/handlers/mapqueryfailure.go`): each reports `map: invalid query`
+  too, so no line is streamed as plain payload in place of MapReduce results.
+  This includes a map command rejected before it runs (e.g. options that do
+  not parse), which itself reports `command: rejected`. A SESSION START or
+  UPDATE builds its map command before it changes the session, so one that
+  can not be built rejects the request and a running generation keeps
+  running.
 - **File read failures**, reported by dservers advertising capability
   `command-failure-v1` with the hidden message `.syn command failed <reason>`
   (fixed reasons from `internal/protocol/session.go`, no paths or error
@@ -583,7 +919,14 @@ an older dserver (no `command-failure-v1`) only has the close handshake:
 killed or shut down servers and lost connections are still detected, failed
 reads on such a server are not (they still give a header-only or partial
 outfile, as before). Continuous jobs and interactive `dmap` with an outfile
-keep writing interim and final results whatever the exit status.
+keep writing interim and final results whatever the exit status. A job whose
+server discovery yields no server at all (e.g. a server list file of only
+blank and comment lines; empty `Servers` mean this dserver, see `jobServersStr`
+in `internal/jobs/runner.go`) fails when its client is created
+(`clients.ErrNoServers`, `no server to connect to`, logged at WARN as `Unable
+to create job <name>`): a scheduled job counts that as a failed run as above,
+and a continuous job writes no outfile and runs again at its next retry,
+every minute, without a backoff.
 
 **Best Practices for High-Concurrency MapReduce:**
 1. Increase MaxConcurrentCats in the server configuration to match workload

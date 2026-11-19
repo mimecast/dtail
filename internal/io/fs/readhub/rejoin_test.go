@@ -98,10 +98,22 @@ func startPausableFollower(t *testing.T, hub *Hub, file *testFile, ltx lcontext.
 	re regex.Regex, pauser *pauser) *follower {
 
 	t.Helper()
+	return startPausableFollowerWithMessages(t, hub, file, ltx, re, pauser, nil)
+}
+
+// startPausableFollowerWithMessages is startPausableFollower with the
+// session's server messages, such as long line warnings, sent to messages,
+// unless it is nil. The session waits for room in messages, so it needs room
+// for every message of the test.
+func startPausableFollowerWithMessages(t *testing.T, hub *Hub, file *testFile, ltx lcontext.LContext,
+	re regex.Regex, pauser *pauser, messages chan string) *follower {
+
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	f := &follower{recorder: &recorder{}, cancel: cancel, done: make(chan error, 1)}
+	f := &follower{recorder: &recorder{}, cancel: cancel, done: make(chan error, 1), messages: messages}
 	session := Session{
 		Target: file.target(), FilePath: file.path, GlobID: "slow", LContext: ltx, Regex: re,
+		ServerMessages: messages,
 		NewProcessor: func() line.Processor {
 			return pausedProcessor{Processor: f.recorder.newProcessor(), pauser: pauser}
 		},
@@ -110,7 +122,7 @@ func startPausableFollower(t *testing.T, hub *Hub, file *testFile, ltx lcontext.
 	t.Cleanup(func() {
 		pauser.resume()
 		cancel()
-		<-f.done
+		checkSessionEnd(t, "Follow()", f.done)
 	})
 	return f
 }
@@ -356,7 +368,7 @@ func (g *readStartGate) awaitHeld(t *testing.T, what string) {
 	t.Helper()
 	select {
 	case <-g.reached:
-	case <-time.After(3 * waitTimeout):
+	case <-time.After(waitBound(t, 3*waitTimeout)):
 		t.Fatalf("timed out waiting for %s to start a read", what)
 	}
 }
@@ -559,7 +571,7 @@ func TestNoRejoinBehindWhatTheReaderReadBeforeATruncation(t *testing.T) {
 	pauser.resume()
 	select {
 	case <-held:
-	case <-time.After(3 * waitTimeout):
+	case <-time.After(waitBound(t, 3*waitTimeout)):
 		t.Fatal("timed out waiting for the private reader to near the end of the file")
 	}
 	const unfinished = 100000
@@ -662,7 +674,7 @@ func TestNoRejoinWhileTheReaderIsInARead(t *testing.T) {
 	pauser.resume()
 	select {
 	case <-held:
-	case <-time.After(3 * waitTimeout):
+	case <-time.After(waitBound(t, 3*waitTimeout)):
 		t.Fatal("timed out waiting for the private reader to near the end of the file")
 	}
 	const unfinished = 100000
@@ -670,7 +682,7 @@ func TestNoRejoinWhileTheReaderIsInARead(t *testing.T) {
 	file.appendRaw(strings.Repeat("p", unfinished))
 	select {
 	case <-reached:
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("timed out waiting for the shared reader to read the unfinished line")
 	}
 	// Rewritten to a size between the end of the complete lines and the end

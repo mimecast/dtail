@@ -215,6 +215,34 @@ func (c *outputCoordinator) tryReadQueued() (outputReadResult, bool) {
 	}
 }
 
+// tryReadQueuedMapr takes the next queued MapReduce message without
+// blocking, for sessionFramer.readMaprMessage to frame it into the same Read
+// as the mapr message before it. It takes one only where next would take it
+// as well: while no payload, flush error, deferred or queued server message
+// is pending, all of which next delivers before a mapr message. Flush
+// requests and the close handshake come after the queued mapr messages
+// anyway (tryReadQueued), so they need no check. A message racing in after
+// a check is delivered by the next Read, as it would be without coalescing.
+//
+// The hasDeferredServer check is defensive and unreachable today: only
+// prioritizeFlushError defers a server message, on the output goroutine,
+// and the deferred message is taken by the tryReadQueued pass of the next
+// Read before any mapr message, so no mapr batch (readMaprMessage) or rest
+// of one (drainPending) is framed while a server message is deferred. It
+// keeps that ordering should a later change defer messages elsewhere.
+func (c *outputCoordinator) tryReadQueuedMapr() (string, bool) {
+	if len(c.flushErrors) > 0 || c.hasDeferredServer || len(c.serverMessages) > 0 ||
+		c.output.bufferedLen() > 0 {
+		return "", false
+	}
+	select {
+	case message := <-c.maprMessages:
+		return message, true
+	default:
+		return "", false
+	}
+}
+
 func (c *outputCoordinator) prioritizeFlushError(message string) outputReadResult {
 	select {
 	case flushError := <-c.flushErrors:
@@ -237,14 +265,29 @@ func (c *outputCoordinator) waitForCloseAcknowledgement(ctx context.Context) {
 		panic("handlers: nil close acknowledgement context")
 	}
 	h := c.handler
-	timer := time.NewTimer(5 * time.Second)
+	// The timeout is for a client that got the close frame and does not
+	// acknowledge it (older clients do not). While the reader is still
+	// writing to a slow or paused client (clientSlow), the close frame may
+	// not even have reached it: closing then would cut the session short.
+	const timeout = 5 * time.Second
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	select {
-	case <-c.ackCloseReceived:
-	case <-ctx.Done():
-	case <-timer.C:
-		h.Logger().Debug(h.user, "Shutdown timeout reached, enforcing shutdown")
-	case <-h.done.Done():
+	for {
+		select {
+		case <-c.ackCloseReceived:
+			return
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			if c.clientSlow() {
+				timer.Reset(timeout)
+				continue
+			}
+			h.Logger().Debug(h.user, "Shutdown timeout reached, enforcing shutdown")
+			return
+		case <-h.done.Done():
+			return
+		}
 	}
 }
 
@@ -307,38 +350,54 @@ func (c *outputCoordinator) flushContext(ctx context.Context) error {
 		return nil
 	}
 
+	// The timeout does not run out while the reader is still delivering to a
+	// slow or paused client (see clientSlow and outputManager.flush): the
+	// flush then waits for the client, the session's context or its end.
 	flushAck := make(chan struct{})
 	timer := time.NewTimer(maxWait)
 	defer timer.Stop()
-	select {
-	case c.flushRequests <- flushAck:
-	case <-ctx.Done():
-		return fmt.Errorf("flush session output: %w", ctx.Err())
-	case <-h.done.Done():
-		return fmt.Errorf("flush session output: handler stopped")
-	case <-timer.C:
-		return fmt.Errorf("%w after %s: %d queued units remain",
-			errHandlerFlushTimeout, maxWait, queuedUnits())
-	}
-
-	select {
-	case <-flushAck:
-		h.Logger().Debug(h.user, "ALL lines sent", fmt.Sprintf("%p", h))
-		return nil
-	case <-ctx.Done():
-		return fmt.Errorf("flush session output: %w", ctx.Err())
-	case <-h.done.Done():
-		return fmt.Errorf("flush session output: handler stopped")
-	case <-timer.C:
+	requests := c.flushRequests
+	for {
 		select {
+		case requests <- flushAck:
+			// Requested; from now on only wait for the acknowledgement.
+			requests = nil
 		case <-flushAck:
 			h.Logger().Debug(h.user, "ALL lines sent", fmt.Sprintf("%p", h))
 			return nil
-		default:
+		case <-ctx.Done():
+			return fmt.Errorf("flush session output: %w", ctx.Err())
+		case <-h.done.Done():
+			return fmt.Errorf("flush session output: handler stopped")
+		case <-timer.C:
+			select {
+			case <-flushAck:
+				h.Logger().Debug(h.user, "ALL lines sent", fmt.Sprintf("%p", h))
+				return nil
+			default:
+			}
+			if c.clientSlow() {
+				timer.Reset(maxWait)
+				continue
+			}
+			return fmt.Errorf("%w after %s: %d queued units remain",
+				errHandlerFlushTimeout, maxWait, queuedUnits())
 		}
-		return fmt.Errorf("%w after %s: %d queued units remain",
-			errHandlerFlushTimeout, maxWait, queuedUnits())
 	}
+}
+
+// clientSlow reports whether the session reader is still delivering bytes it
+// already took to the client: its last Read returned bytes and the transport
+// has not come back for more. The reader is then blocked writing to a client
+// that reads slowly or not at all right now, which is no reason to give up on
+// the output still queued. It is false once the session ended.
+func (c *outputCoordinator) clientSlow() bool {
+	select {
+	case <-c.handler.done.Done():
+		return false
+	default:
+	}
+	return c.deliveryPending.Load()
 }
 
 func (c *outputCoordinator) flushOutput(ctx context.Context) error {

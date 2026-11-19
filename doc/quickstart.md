@@ -95,6 +95,10 @@ CLIENT|workstation01|INFO|STATS:STATS|connected=2|servers=2|connected%=100|new=2
 .
 ```
 
+The client collects unknown hosts whose handshakes arrive close together and asks about them in one question, about 2 seconds after the last of them (or once 50 are pending). With ``--trustAllHosts`` (or after answering ``a=all``) nothing is asked and there is no 2 second wait: unknown hosts are collected for only about 20 milliseconds and then trusted and written to ``known_hosts``, so a fresh ``known_hosts`` file does not slow down scripts and CI runs. Writing ``known_hosts`` can still wait up to 5 seconds while another dtail client holds its lock to update it.
+
+A host whose key differs from the one in ``known_hosts`` is not an unknown host: its key changed, which is a reinstalled server or someone in the middle. Such a host is refused with a ``HOST KEY CHANGED`` error, also with ``--trustAllHosts``; remove its entry from ``known_hosts`` to connect again. With the additional flag ``--trustChangedHostKeys`` (all clients and ``dtailhealth``) the client accepts it instead: the question then says that the key changed, and with ``--trustAllHosts`` the client logs a ``HOST KEY CHANGED`` warning when it replaces the entry. A key marked ``@revoked`` in ``known_hosts`` is never trusted. The directory of the ``known_hosts`` file is created when it does not exist yet. With ``--interactive-query`` on a terminal, the lines typed while the question is asked answer it instead of being taken as control commands.
+
 Without the ``--cfg`` flag, all client commands look for a JSON config file at ``~/.config/dtail/dtail.conf`` first and, if that does not exist, at ``~/.dtail.conf``. The first file that exists wins (they are not merged).
 
 # What else can it do?

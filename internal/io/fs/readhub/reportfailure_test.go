@@ -89,13 +89,22 @@ func TestFollowReportsASharedReaderThatFailedWithoutAPanic(t *testing.T) {
 
 // TestPrivateReadAfterAnEvictionReportsItsFailedReads checks the report of
 // an evicted session's own reader, which is the read command's retry loop
-// for that session and reports what that loop reports.
+// for that session and reports what that loop reports, with the error that
+// failed: a processor error (e.g. output too large for the session) must
+// reach the read command, which reports it apart from a failed file read.
 func TestPrivateReadAfterAnEvictionReportsItsFailedReads(t *testing.T) {
 	file := newTestFile(t)
 	rec := &recorder{failAt: "boom"}
 	session, _ := messageSession(t, file.path, rec)
 	var failures atomic.Int64
-	session.ReportFailure = func() { failures.Add(1) }
+	reported := make(chan error, 16)
+	session.ReportFailure = func(err error) {
+		failures.Add(1)
+		select {
+		case reported <- err:
+		default:
+		}
+	}
 	reading := newSessionRead(session, logging.NopLogger{},
 		Options{RetryInterval: 10 * time.Millisecond}, unknownPosition(), joinSkip{})
 
@@ -106,7 +115,8 @@ func TestPrivateReadAfterAnEvictionReportsItsFailedReads(t *testing.T) {
 	// when the test failed meanwhile.
 	t.Cleanup(func() {
 		cancel()
-		<-done
+		// The processor's failures are reported and retried, not returned.
+		checkSessionEnd(t, "readPrivately()", done)
 		reading.close()
 	})
 	waitFor(t, "the failure report of the private read", func() bool {
@@ -116,5 +126,8 @@ func TestPrivateReadAfterAnEvictionReportsItsFailedReads(t *testing.T) {
 	})
 	if !rec.hasLine("boom") {
 		t.Error("the private read reported a failure without processing the failing line")
+	}
+	if err := <-reported; !errors.Is(err, errProcessor) {
+		t.Errorf("reported error = %v, want the processor's error %v", err, errProcessor)
 	}
 }

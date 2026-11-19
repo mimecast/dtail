@@ -90,9 +90,18 @@ func backoffDelay(failures int) time.Duration {
 	return min(delay, failedJobMaxBackoff)
 }
 
-// timeRangeEnd returns when the TimeRange of job that now is in ends.
+// timeRangeEnd returns when the TimeRange of job that now is in ends: the
+// first instant of the day whose hour is the range's end hour. On the day
+// daylight saving time ends, an hour of the clock comes twice and time.Date
+// may return its second occurrence, while the scheduler takes a job out of
+// its range by the hour of the clock, i.e. at the first one: the first final
+// run then came an hour late.
 func timeRangeEnd(job *config.Scheduled, now time.Time) time.Time {
-	return time.Date(now.Year(), now.Month(), now.Day(), job.TimeRange[1], 0, 0, 0, now.Location())
+	end := time.Date(now.Year(), now.Month(), now.Day(), job.TimeRange[1], 0, 0, 0, now.Location())
+	if earlier := end.Add(-time.Hour); earlier.Hour() == end.Hour() && earlier.Day() == end.Day() {
+		return earlier
+	}
+	return end
 }
 
 // wait returns why job, due within its TimeRange at now with outfile, must

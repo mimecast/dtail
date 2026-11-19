@@ -217,13 +217,6 @@ func profileDMap(csvFile string) {
 	}
 }
 
-func truncateQuery(query string) string {
-	if len(query) > 50 {
-		return query[:47] + "..."
-	}
-	return query
-}
-
 func analyzeProfiles() {
 	// Find latest CPU profiles
 	cpuProfiles, err := filepath.Glob("profiles/*_cpu_*.prof")

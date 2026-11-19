@@ -105,7 +105,10 @@ func TestFollowReaderReportsWhereEachLineEnds(t *testing.T) {
 	go func() { done <- reader.Start(ctx, lcontext.LContext{}, processor, regex.NewNoop()) }()
 	defer func() {
 		cancel()
-		<-done
+		// A follow read that is canceled ends without an error.
+		if err := <-done; err != nil {
+			t.Errorf("Start() = %v after cancel, want nil", err)
+		}
 	}()
 
 	// The reader seeks to the end first; append until it reads what follows.
@@ -116,16 +119,19 @@ func TestFollowReaderReportsWhereEachLineEnds(t *testing.T) {
 		return len(lines) > 0
 	})
 	// Empty lines are skipped but still take their byte, an unfinished line
-	// is not fed, and a line split at the maximum length ends at the split.
+	// is not fed, and the pieces of a line cut at the maximum length end at
+	// the cuts.
 	appendToFile(t, path, "a\n\n\nbb\ncomplete\nunfinish")
 	waitUntil(t, "the complete line", func() bool {
 		lines, _, _ := processor.state()
 		return len(lines) > 0 && lines[len(lines)-1] == "complete"
 	})
 	appendToFile(t, path, "ed and too long for one line")
-	waitUntil(t, "the split line", func() bool {
+	// "unfinished and too long for one line" is cut into two pieces of
+	// maxLineLength bytes, and "line" waits for its newline.
+	waitUntil(t, "the pieces of the cut line", func() bool {
 		lines, _, _ := processor.state()
-		return len(lines) > 0 && strings.HasPrefix(lines[len(lines)-1], "unfinish")
+		return len(lines) > 0 && lines[len(lines)-1] == "oo long for one "
 	})
 	appendToFile(t, path, "\nlast\n")
 	waitUntil(t, "the last line", func() bool {
@@ -142,19 +148,19 @@ func TestFollowReaderReportsWhereEachLineEnds(t *testing.T) {
 	if len(offsets) != len(lines) {
 		t.Fatalf("got %d offsets for %d lines", len(offsets), len(lines))
 	}
-	splitEnd := int64(strings.Index(content, "long for one line") + len("long for one line"))
+	cutStart := int64(strings.Index(content, "unfinished"))
 	want := map[string]int64{
-		"a":        int64(strings.Index(content, "a\n") + 2),
-		"bb":       int64(strings.Index(content, "bb\n") + 3),
-		"complete": int64(strings.Index(content, "complete\n") + 9),
-		"last":     int64(len(content)),
+		"a":                int64(strings.Index(content, "a\n") + 2),
+		"bb":               int64(strings.Index(content, "bb\n") + 3),
+		"complete":         int64(strings.Index(content, "complete\n") + 9),
+		"unfinished and t": cutStart + maxLineLength,
+		"oo long for one ": cutStart + 2*maxLineLength,
+		"line":             cutStart + 2*maxLineLength + int64(len("line\n")),
+		"last":             int64(len(content)),
 	}
 	checked := 0
 	for i, text := range lines {
 		wantOffset, ok := want[text]
-		if strings.HasPrefix(text, "unfinish") {
-			wantOffset, ok = splitEnd, true
-		}
 		if !ok {
 			continue
 		}
@@ -163,8 +169,8 @@ func TestFollowReaderReportsWhereEachLineEnds(t *testing.T) {
 			t.Errorf("line %q ends at %d, want %d", text, offsets[i], wantOffset)
 		}
 	}
-	if checked != len(want)+1 {
-		t.Errorf("checked %d lines, want %d: %q", checked, len(want)+1, lines)
+	if checked != len(want) {
+		t.Errorf("checked %d lines, want %d: %q", checked, len(want), lines)
 	}
 	info, err := os.Stat(path)
 	if err != nil {

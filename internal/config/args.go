@@ -15,30 +15,40 @@ import (
 
 // LoggingArgs configures process diagnostics and client payload output.
 type LoggingArgs struct {
-	LogDir     string
-	Logger     string
-	LogLevel   string
-	LogPayload bool
-	NoColor    bool
+	LogDir   string
+	Logger   string
+	LogLevel string
+	// LogLevelSet reports that --logLevel was given on the command line, so
+	// that it overrides Common.LogLevel also when it names the default level.
+	LogLevelSet bool
+	LogPayload  bool
+	NoColor     bool
 }
 
 // SSHArgs configures SSH listeners, authentication, and host verification.
 type SSHArgs struct {
-	AuthorizedKeysPath    string
-	HostKeyPath           string
-	KnownHostsPath        string
-	NoAuthKey             bool
-	SSHAgentKeyIndex      int
-	SSHAuthMethods        []gossh.AuthMethod
-	SSHBindAddress        string
-	SSHHostKeyCallback    gossh.HostKeyCallback
-	SSHPort               int
+	AuthorizedKeysPath string
+	HostKeyPath        string
+	KnownHostsPath     string
+	NoAuthKey          bool
+	SSHAgentKeyIndex   int
+	SSHAuthMethods     []gossh.AuthMethod
+	SSHBindAddress     string
+	SSHHostKeyCallback gossh.HostKeyCallback
+	SSHPort            int
+	// SSHPortSet reports that --port was given on the command line, so that
+	// it overrides Common.SSHPort also when it names the default port.
+	SSHPortSet            bool
 	SSHPrivateKeyFilePath string
 	// SSHPrivateKeyFallbackPaths contains additional bootstrap keys selected
 	// during configuration initialization. It is not exposed as a CLI flag.
 	SSHPrivateKeyFallbackPaths []string
 	TrustAllHosts              bool
-	UserName                   string
+	// TrustChangedHostKeys (--trustChangedHostKeys) lets the client also
+	// trust a host whose key differs from the one in known_hosts, replacing
+	// the entry. Without it such a host is refused.
+	TrustChangedHostKeys bool
+	UserName             string
 }
 
 // Args combines command-line concerns shared by the DTail processes.
@@ -107,6 +117,7 @@ func (a *Args) String() string {
 	fmt.Fprintf(&sb, "Plain:%v,", a.Plain)
 	fmt.Fprintf(&sb, "Timeout:%v,", a.Timeout)
 	fmt.Fprintf(&sb, "TrustAllHosts:%v,", a.TrustAllHosts)
+	fmt.Fprintf(&sb, "TrustChangedHostKeys:%v,", a.TrustChangedHostKeys)
 	fmt.Fprintf(&sb, "UserName:%v,", a.UserName)
 	fmt.Fprintf(&sb, "What:%v", a.What)
 	sb.WriteString(")")

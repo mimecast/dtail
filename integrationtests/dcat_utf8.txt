@@ -1,0 +1,6 @@
+price 5€ ok
+soft Ь sign
+not ¬ sign
+all of them: €¬Ь and 丬 at once
+€€€
+plain ascii line

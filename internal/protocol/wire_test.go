@@ -23,7 +23,7 @@ func TestLineCodecRoundTrip(t *testing.T) {
 	}
 
 	var encoded bytes.Buffer
-	EncodeLine(&encoded, line)
+	RawFraming.EncodeLine(&encoded, line)
 
 	got, err := DecodeLine(encodedPayload(t, &encoded))
 	if err != nil {
@@ -99,7 +99,7 @@ func TestMessageCodec(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var encoded bytes.Buffer
-			EncodeMessage(&encoded, test.want)
+			RawFraming.EncodeMessage(&encoded, test.want)
 
 			got, err := DecodeMessage(encodedPayload(t, &encoded))
 			if err != nil {
@@ -129,6 +129,43 @@ func TestDecodeMessageRetainsKindForIncompleteTaggedFrame(t *testing.T) {
 	}
 	if got.Kind != MessageAggregate || got.Hostname != "host" {
 		t.Fatalf("decoded message = %#v, want aggregate kind and parsed hostname", got)
+	}
+}
+
+// TestCutAggregateContentMatchesDecodeMessage checks that the client's
+// byte-level aggregate classification agrees with DecodeMessage.
+func TestCutAggregateContentMatchesDecodeMessage(t *testing.T) {
+	for _, payload := range []string{
+		"AGGREGATE|host|a∥1∥k≔v∥", "AGGREGATE|host|", "AGGREGATE|host|x|y", "AGGREGATE|host",
+		"AGGREGATE|", "AGGREGATE", "AGGREGATEX|host|c", "SERVER|host|AGGREGATE|h|c", "", "AUTHKEY OK",
+	} {
+		t.Run(payload, func(t *testing.T) {
+			checkCutAggregateContent(t, payload)
+		})
+	}
+}
+
+func FuzzCutAggregateContent(f *testing.F) {
+	for _, seed := range []string{"AGGREGATE|h|c", "AGGREGATE|h", "AGGREGATE", "SERVER|h|c", "x"} {
+		f.Add(seed)
+	}
+	f.Fuzz(checkCutAggregateContent)
+}
+
+func checkCutAggregateContent(t *testing.T, payload string) {
+	decoded, decodeErr := DecodeMessage(payload)
+	content, isAggregate, err := CutAggregateContent([]byte(payload))
+	if isAggregate != (decoded.Kind == MessageAggregate) {
+		t.Fatalf("CutAggregateContent(%q) isAggregate = %v, DecodeMessage kind %q", payload, isAggregate, decoded.Kind)
+	}
+	if !isAggregate {
+		return
+	}
+	if (err == nil) != (decodeErr == nil) || (err != nil && err.Error() != decodeErr.Error()) {
+		t.Fatalf("CutAggregateContent(%q) error = %v, DecodeMessage error %v", payload, err, decodeErr)
+	}
+	if err == nil && string(content) != decoded.Content {
+		t.Fatalf("CutAggregateContent(%q) content = %q, want %q", payload, content, decoded.Content)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -132,10 +133,8 @@ func startCommandWithEnv(ctx context.Context, t *testing.T, inPipeFile,
 	// Always inherit environment variables
 	cmd.Env = os.Environ()
 	// Add any additional environment variables if provided
-	if env != nil {
-		for k, v := range env {
-			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-		}
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
 	var stdinPipe io.WriteCloser
@@ -173,7 +172,14 @@ func startCommandWithEnv(ctx context.Context, t *testing.T, inPipeFile,
 		}()
 	}
 
+	// Wait must not be called before all reads from the pipes completed
+	// (see exec.Cmd.StdoutPipe): it closes them, and output the command
+	// wrote just before it exited was then lost now and then, e.g. all three
+	// lines of a short dgrep under load. So the readers finish first.
+	var readers sync.WaitGroup
+	readers.Add(2)
 	go func() {
+		defer readers.Done()
 		scanner := bufio.NewScanner(cmdStdout)
 		scanner.Split(bufio.ScanLines)
 		for scanner.Scan() {
@@ -181,6 +187,7 @@ func startCommandWithEnv(ctx context.Context, t *testing.T, inPipeFile,
 		}
 	}()
 	go func() {
+		defer readers.Done()
 		scanner := bufio.NewScanner(cmdStderr)
 		scanner.Split(bufio.ScanLines)
 		for scanner.Scan() {
@@ -191,6 +198,7 @@ func startCommandWithEnv(ctx context.Context, t *testing.T, inPipeFile,
 
 	cmdErrCh := make(chan error)
 	go func() {
+		readers.Wait()
 		cmdErrCh <- cmd.Wait()
 	}()
 
@@ -226,5 +234,5 @@ func exitCodeFromError(err error) int {
 		ws := exitError.Sys().(syscall.WaitStatus)
 		return ws.ExitStatus()
 	}
-	panic(fmt.Errorf("Unable to get process exit code from error: %w", err))
+	panic(fmt.Errorf("unable to get process exit code from error: %w", err))
 }

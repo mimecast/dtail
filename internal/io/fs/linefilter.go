@@ -20,7 +20,9 @@ import (
 // the caller's choice, and must match the private reader of the same mode for
 // the output to match: the snapshot reader feeds every line including its
 // trailing newline (empty lines too), the follow reader feeds lines without
-// the newline and skips empty ones.
+// the newline and skips empty ones, unless the processor opts into
+// line.TerminatorPreserver. A shared follow source preserving terminators uses
+// ProcessFollowLine to adapt them to the session's processor.
 //
 // A LineFilter is not safe for concurrent use; one goroutine feeds it.
 type LineFilter struct {
@@ -47,6 +49,14 @@ func NewLineFilter(ltx lcontext.LContext, processor line.Processor,
 // reading. err is a processor error, which also ends the read.
 func (lf *LineFilter) ProcessLine(raw []byte) (stop bool, err error) {
 	return stopForProcessingError(lf.filter.processLine(raw))
+}
+
+// ProcessFollowLine accepts a shared follow line whose physical LF was kept.
+// It restores the historical LF-free form for processors that do not opt into
+// line.TerminatorPreserver. Unterminated fragments remain unchanged. The input
+// has the same borrowing contract as ProcessLine.
+func (lf *LineFilter) ProcessFollowLine(raw []byte) (stop bool, err error) {
+	return stopForProcessingError(lf.filter.processFollowLine(raw))
 }
 
 // Flush flushes the processor. A private follow reader does so after every

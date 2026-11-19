@@ -48,9 +48,6 @@ func tokensConsume(tokens []token) ([]token, []token) {
 		}
 		// strip escapes, such as ` from `foo`, this allows to use keywords as field names
 		length := len(current.str)
-		if length == 0 {
-			continue
-		}
 		if length >= 2 && current.str[0] == '`' && current.str[length-1] == '`' {
 			stripped := current.str[1 : length-1]
 			normalized := token{

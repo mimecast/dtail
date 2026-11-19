@@ -31,7 +31,10 @@ func NewHealthHandler(server string, logger clientlog.Logger) *HealthHandler {
 	}
 }
 
-// Read data from the dtail server via Writer interface.
+// Write receives data from the dtail server via the io.Writer interface. The
+// health handler never requests escaped framing (the server's health handler
+// ends the session after the first command and sends no capabilities), so
+// its frames are always raw and "OK" needs no decoding.
 func (h *HealthHandler) Write(p []byte) (n int, err error) {
 	for _, b := range p {
 		switch b {

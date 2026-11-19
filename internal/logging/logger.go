@@ -34,6 +34,24 @@ func (NopLogger) Trace(...any) string { return "" }
 // TraceEnabled reports that trace logging is disabled.
 func (NopLogger) TraceEnabled() bool { return false }
 
+// DebugEnabled reports that debug logging is disabled.
+func (NopLogger) DebugEnabled() bool { return false }
+
+// debugEnabler is implemented by loggers that can tell whether they write
+// debug messages (see DebugEnabled).
+type debugEnabler interface {
+	DebugEnabled() bool
+}
+
+// DebugEnabled reports whether logger writes debug messages, so that a
+// per-message caller can skip building the arguments of a Debug call that
+// would be dropped. It is an optional capability rather than part of Logger:
+// a logger that cannot tell is assumed to write them.
+func DebugEnabled(logger Logger) bool {
+	enabler, ok := logger.(debugEnabler)
+	return !ok || enabler.DebugEnabled()
+}
+
 // OrNop replaces a nil logger with a no-op implementation.
 func OrNop(logger Logger) Logger {
 	if logger == nil || isNil(logger) {

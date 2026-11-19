@@ -36,8 +36,9 @@ type Line struct {
 }
 
 // DecodedLine is a remote log-line payload after stream framing has removed
-// MessageDelimiter. Number retains its original spelling so presentation
-// code does not rewrite compatible frames such as a zero-padded line number.
+// MessageDelimiter (and, under EscapedFraming, its escape sequences). Number
+// retains its original spelling so presentation code does not rewrite
+// compatible frames such as a zero-padded line number.
 type DecodedLine struct {
 	Hostname           string
 	TransmittedPercent string
@@ -53,26 +54,81 @@ type Message struct {
 	Content  string
 }
 
-// EncodeLine appends a complete remote log-line frame to dst. Header fields
-// must not contain the field separator; the compatibility wire format has no escape
-// sequence for delimiters in those fields.
-func EncodeLine(dst *bytes.Buffer, line Line) {
-	dst.WriteString(LineMessageID)
+// EncodeLine appends a complete remote log-line frame in framing f to dst.
+// Header fields must not contain the field separator; the wire format has no
+// escape sequence for field separators in those fields. Under EscapedFraming
+// (and EscapedControlFraming) the whole frame body, header fields and
+// content alike, is escaped, so a MessageDelimiter byte in any of them no
+// longer ends the frame early.
+func (f Framing) EncodeLine(dst *bytes.Buffer, line Line) {
+	f.writeLineHeader(dst, line.Hostname, line.TransmittedPercent)
+	writeLineNumber(dst, line.Number)
+	f.WriteString(dst, line.SourceID)
 	dst.WriteString(fieldDelimiter)
-	dst.WriteString(line.Hostname)
-	dst.WriteString(fieldDelimiter)
-	dst.WriteString(line.TransmittedPercent)
-	dst.WriteString(fieldDelimiter)
-	dst.WriteString(strconv.FormatUint(line.Number, 10))
-	dst.WriteString(fieldDelimiter)
-	dst.WriteString(line.SourceID)
-	dst.WriteString(fieldDelimiter)
-	dst.Write(line.Content)
+	f.Write(dst, line.Content)
 	dst.WriteByte(MessageDelimiter)
 }
 
+// LineEncoder appends the log-line frames of one host in one framing; it is
+// the per-line hot path of server-mode output. It writes the same bytes as
+// Framing.EncodeLine, but escapes the header fields that are the same for
+// every line (hostname and transmitted percent) once, and the source ID only
+// when it changes. It is not safe for concurrent use; a line writer
+// serializes its lines anyway.
+type LineEncoder struct {
+	framing Framing
+	// prefix is "REMOTE|hostname|percent|" in framing.
+	prefix []byte
+	// sourceID and encodedSourceID cache the last source ID and its
+	// encoding; cached is false until the first line.
+	sourceID        string
+	encodedSourceID []byte
+	cached          bool
+}
+
+// NewLineEncoder returns a LineEncoder for the lines of hostname.
+func (f Framing) NewLineEncoder(hostname, transmittedPercent string) *LineEncoder {
+	var prefix bytes.Buffer
+	f.writeLineHeader(&prefix, hostname, transmittedPercent)
+	return &LineEncoder{framing: f, prefix: prefix.Bytes()}
+}
+
+// Encode appends the complete frame of one log line to dst.
+func (e *LineEncoder) Encode(dst *bytes.Buffer, number uint64, sourceID string, content []byte) {
+	dst.Write(e.prefix)
+	writeLineNumber(dst, number)
+	if !e.cached || sourceID != e.sourceID {
+		var encoded bytes.Buffer
+		e.framing.WriteString(&encoded, sourceID)
+		e.sourceID, e.encodedSourceID, e.cached = sourceID, encoded.Bytes(), true
+	}
+	dst.Write(e.encodedSourceID)
+	dst.WriteString(fieldDelimiter)
+	e.framing.Write(dst, content)
+	dst.WriteByte(MessageDelimiter)
+}
+
+// writeLineHeader appends "REMOTE|hostname|percent|" in framing f.
+func (f Framing) writeLineHeader(dst *bytes.Buffer, hostname, transmittedPercent string) {
+	dst.WriteString(LineMessageID)
+	dst.WriteString(fieldDelimiter)
+	f.WriteString(dst, hostname)
+	dst.WriteString(fieldDelimiter)
+	f.WriteString(dst, transmittedPercent)
+	dst.WriteString(fieldDelimiter)
+}
+
+// writeLineNumber appends the decimal line number and its field separator,
+// formatted on the stack so the hot path does not allocate.
+func writeLineNumber(dst *bytes.Buffer, number uint64) {
+	var digits [20]byte
+	dst.Write(strconv.AppendUint(digits[:0], number, 10))
+	dst.WriteString(fieldDelimiter)
+}
+
 // DecodeLine decodes a remote log-line payload after its stream-level
-// MessageDelimiter has been removed.
+// MessageDelimiter has been removed and the frame was decoded with
+// Framing.DecodeFrame.
 func DecodeLine(payload string) (DecodedLine, error) {
 	parts := strings.SplitN(payload, fieldDelimiter, 6)
 	if len(parts) != 6 || parts[0] != LineMessageID {
@@ -97,24 +153,25 @@ func DecodeLine(payload string) (DecodedLine, error) {
 }
 
 // EncodeMessage appends a complete server, aggregate, or untagged message
-// frame to dst. Hostname must not contain the field separator for tagged messages;
-// the compatibility wire format has no escape sequence for that field.
-// Untagged messages retain their payload verbatim.
-func EncodeMessage(dst *bytes.Buffer, message Message) {
+// frame in framing f to dst. Hostname must not contain the field separator
+// for tagged messages; the wire format has no escape sequence for field
+// separators in that field. Untagged messages retain their payload verbatim
+// apart from the escaping of framing f.
+func (f Framing) EncodeMessage(dst *bytes.Buffer, message Message) {
 	if message.Kind != MessagePlain {
 		dst.WriteString(string(message.Kind))
 		dst.WriteString(fieldDelimiter)
-		dst.WriteString(message.Hostname)
+		f.WriteString(dst, message.Hostname)
 		dst.WriteString(fieldDelimiter)
 	}
-	dst.WriteString(message.Content)
+	f.WriteString(dst, message.Content)
 	dst.WriteByte(MessageDelimiter)
 }
 
 // DecodeMessage decodes a server or aggregate message. Unknown, hidden, and
 // plain payloads are returned as MessagePlain so callers can preserve their
 // existing routing. The stream-level MessageDelimiter must already have been
-// removed.
+// removed and the frame decoded with Framing.DecodeFrame.
 func DecodeMessage(payload string) (Message, error) {
 	parts := strings.SplitN(payload, fieldDelimiter, 3)
 	if len(parts) == 0 {
@@ -140,4 +197,28 @@ func DecodeMessage(payload string) (Message, error) {
 	default:
 		return Message{Kind: MessagePlain, Content: payload}, nil
 	}
+}
+
+// aggregateTag is the leading field of an aggregate message with its
+// separator.
+var aggregateTag = []byte(AggregateMessageID + fieldDelimiter)
+
+// CutAggregateContent tells whether payload is an aggregate message and
+// returns its content, for the client's per-message receive path: it
+// classifies payload exactly like DecodeMessage, but without converting it to
+// a string or splitting it. content aliases payload. isAggregate is false for
+// any other message; err is set (and content nil) for an aggregate message
+// that lacks the hostname field's separator, which DecodeMessage rejects as
+// malformed with the same error.
+func CutAggregateContent(payload []byte) (content []byte, isAggregate bool, err error) {
+	rest, ok := bytes.CutPrefix(payload, aggregateTag)
+	if !ok {
+		return nil, false, nil
+	}
+	// fieldDelimiter is a single byte.
+	hostnameEnd := bytes.IndexByte(rest, fieldDelimiter[0])
+	if hostnameEnd < 0 {
+		return nil, true, fmt.Errorf("decode message: malformed %s frame", AggregateMessageID)
+	}
+	return rest[hostnameEnd+1:], true, nil
 }

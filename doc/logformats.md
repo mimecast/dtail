@@ -12,7 +12,7 @@ The following log formats are currently available out of the box:
 * `default` - The default DTail log format
 * `generic` - A generic log format with a simple set of fields
 * `generickv` - A simple log format expecting all log lines in the form of `field1=value1|field2=value2|...`
-* `csv` - A simple CSV format expecting all files to be comma separated CSV files. The first line of the file must be the CSV header.
+* `csv` - Comma separated CSV with a header on the first line of each file. Fields and header names containing commas or double quotes use standard CSV quoting: surround the field with double quotes and double any quotes inside it. Query outfiles use the same encoding and can be read again with `logformat csv`. Records must fit on one physical line: embedded CR/LF characters are unsupported, malformed quoted input is reported as a parse error, and exporting values with CR/LF fails instead of writing corrupt rows. Append mode writes the header only when the destination is missing or empty.
 * `mimecast` and `mimecastgeneric` - Registered built-ins for Mimecast log formats. In the open source build these are stubs that return an error (`the mimecast logformat is not available in this build of DTail`); the real parsers are only compiled in with the proprietary build tag.
 * `custom1` and `custom2` - Customizable log formats. Out of the box these are templates returning a "not implemented" error; register your own parsers under these names (see below) to use them.
 

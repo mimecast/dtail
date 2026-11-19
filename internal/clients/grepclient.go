@@ -25,7 +25,7 @@ func NewGrepClient(args config.Args, cfg config.RuntimeConfig, loggers LoggerDep
 	loggers = loggers.normalized()
 
 	base, err := newBaseClient(args, cfg, loggers, firstColorizer(colorizers),
-		clientHandlerProfile(loggers.Client, false))
+		readClientProfile(loggers.Client))
 	if err != nil {
 		return nil, fmt.Errorf("initialize grep client: %w", err)
 	}

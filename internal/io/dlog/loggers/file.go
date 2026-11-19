@@ -281,12 +281,31 @@ func (f *file) write(data []byte) error {
 	}
 
 	if _, err := writer.Write(data); err != nil {
+		f.recoverWriter(writer)
 		return err
 	}
 	if writer.Buffered() == fileWriterBufSize {
-		return writer.Flush()
+		if err := writer.Flush(); err != nil {
+			f.recoverWriter(writer)
+			return err
+		}
 	}
 	return nil
+}
+
+// recoverWriter clears the error of the current file's writer after a failed
+// write or flush. A bufio.Writer keeps its first error for good and refuses
+// every later write, and the writer is only replaced when the file name
+// changes (the next day, or SIGHUP with signal rotation): one transient
+// ENOSPC or EIO would otherwise silently discard all log output until then,
+// even after the disk has space again. The data buffered at the time of the
+// error is lost (the caller reports the error); later writes go to the same
+// descriptor again. A writer of an already rotated file is left alone, as its
+// descriptor is closed.
+func (f *file) recoverWriter(writer *bufio.Writer) {
+	if writer != nil && writer == f.writer && f.fd != nil {
+		writer.Reset(f.fd)
+	}
 }
 
 func (f *file) writeBatch(chunk fileChunk) error {
@@ -365,7 +384,10 @@ func (f *file) drain(limit int) error {
 
 func (f *file) flushWriter() error {
 	if f.writer != nil {
-		return f.writer.Flush()
+		if err := f.writer.Flush(); err != nil {
+			f.recoverWriter(f.writer)
+			return err
+		}
 	}
 	return nil
 }

@@ -164,6 +164,6 @@ func (r *readCommand) readWithGroup(ctx context.Context, ltx lcontext.LContext, 
 	if errors.Is(err, fs.ErrReaderWorkerPanic) {
 		panic(err)
 	}
-	r.reportFailure(ctx, readFailureReadingFile)
+	r.reportReadError(ctx, err)
 	return true
 }

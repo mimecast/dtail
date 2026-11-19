@@ -56,7 +56,7 @@ func TestNewNetworkWriterRejectsNilContext(t *testing.T) {
 		}
 	}()
 	var nilContext context.Context
-	NewNetworkWriter(nilContext, nil, nil, "testhost", false, false, 0, nil, handlerTestLogger)
+	NewNetworkWriter(nilContext, protocol.RawFraming, nil, nil, "testhost", false, false, 0, nil, handlerTestLogger)
 }
 
 // TestDirectWriter_ServerlessPlainWithNewline tests that existing newlines are preserved
@@ -238,7 +238,7 @@ func TestNetworkWriterSelectsServerMessageSinkAtConstruction(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			messages := make(chan string, 1)
-			writer := NewNetworkWriter(context.Background(), nil, messages, "testhost",
+			writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, messages, "testhost",
 				true, test.serverless, 7, nil, handlerTestLogger)
 
 			if err := writer.WriteServerMessage("hello"); err != nil {
@@ -413,7 +413,7 @@ func TestNetworkWriterWriteLineDataStopsOnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	writer := NewNetworkWriter(ctx, outputLines, nil, "testhost", true, false,
+	writer := NewNetworkWriter(ctx, protocol.RawFraming, outputLines, nil, "testhost", true, false,
 		1, activeGeneration.Load, handlerTestLogger)
 	writer.bufSize = 0
 
@@ -443,7 +443,7 @@ func TestNetworkWriterStopsBlockedSendAfterGenerationAdvance(t *testing.T) {
 	var activeGeneration atomic.Uint64
 	activeGeneration.Store(1)
 
-	writer := NewNetworkWriter(context.Background(), outputLines, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, outputLines, nil, "testhost", true, false,
 		1, activeGeneration.Load, handlerTestLogger)
 	writer.bufSize = 0
 
@@ -512,7 +512,7 @@ func TestNetworkWriterFlushWaitsForBufferedDataAndInFlightSend(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	writer := NewNetworkWriter(ctx, outputLines, nil, "testhost", true, false,
+	writer := NewNetworkWriter(ctx, protocol.RawFraming, outputLines, nil, "testhost", true, false,
 		1, activeGeneration.Load, handlerTestLogger)
 	writer.bufSize = 8
 
@@ -608,7 +608,7 @@ func TestNetworkWriterStopsWaitingWhenContextIsCancelled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	writer := NewNetworkWriter(ctx, outputLines, nil, "testhost", true, false,
+	writer := NewNetworkWriter(ctx, protocol.RawFraming, outputLines, nil, "testhost", true, false,
 		1, activeGeneration.Load, handlerTestLogger)
 	writer.bufSize = 0
 
@@ -656,7 +656,7 @@ func TestNetworkWriterFlushCancelsWhileWaitingOnInFlightSend(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	writer := NewNetworkWriter(ctx, outputLines, nil, "testhost", true, false,
+	writer := NewNetworkWriter(ctx, protocol.RawFraming, outputLines, nil, "testhost", true, false,
 		1, activeGeneration.Load, handlerTestLogger)
 	writer.bufSize = 8
 
@@ -888,7 +888,7 @@ func TestDirectWriter_StatsEmptyLine(t *testing.T) {
 func TestNetworkWriter_StatsBytesWrittenBelowThreshold(t *testing.T) {
 
 	outputLines := make(chan []byte, 1)
-	writer := NewNetworkWriter(context.Background(), outputLines, nil, "testhost",
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, outputLines, nil, "testhost",
 		true, false, 0, nil, handlerTestLogger)
 
 	const numLines = 10
@@ -933,7 +933,7 @@ func TestNetworkWriter_StatsBytesWrittenAcrossFlushThreshold(t *testing.T) {
 
 	const numLines = 20
 	outputLines := make(chan []byte, numLines)
-	writer := NewNetworkWriter(context.Background(), outputLines, nil, "testhost",
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, outputLines, nil, "testhost",
 		true, false, 0, nil, handlerTestLogger)
 	writer.bufSize = 32 // Three 11-byte lines accumulate before each send.
 
@@ -979,7 +979,7 @@ drain:
 func TestNewNetworkWriter_SetsBufSize(t *testing.T) {
 	ch := make(chan []byte, 1)
 	msgCh := make(chan string, 1)
-	w := NewNetworkWriter(context.Background(), ch, msgCh, "testhost",
+	w := NewNetworkWriter(context.Background(), protocol.RawFraming, ch, msgCh, "testhost",
 		true, false, 0, nil, handlerTestLogger)
 
 	if w.bufSize != 64*1024 {
@@ -999,7 +999,7 @@ func TestNetworkWriter_BatchesSmallLines(t *testing.T) {
 	// were broken; the test asserts it does not.
 	const numLines = 100
 	outputLines := make(chan []byte, numLines)
-	w := NewNetworkWriter(context.Background(), outputLines, nil, "testhost",
+	w := NewNetworkWriter(context.Background(), protocol.RawFraming, outputLines, nil, "testhost",
 		true, false, 0, nil, handlerTestLogger)
 
 	content := []byte("small log line") // +1 byte for the message delimiter.
@@ -1055,7 +1055,7 @@ drain:
 func TestNetworkWriter_FlushEmitsPartialBufferPromptly(t *testing.T) {
 
 	outputLines := make(chan []byte, 4)
-	w := NewNetworkWriter(context.Background(), outputLines, nil, "testhost",
+	w := NewNetworkWriter(context.Background(), protocol.RawFraming, outputLines, nil, "testhost",
 		true, false, 0, nil, handlerTestLogger)
 
 	if err := w.WriteLineData([]byte("tail line"), 1, "app.log"); err != nil {
@@ -1091,7 +1091,7 @@ func TestNetworkWriter_FlushEmitsPartialBufferPromptly(t *testing.T) {
 func TestNetworkWriter_LineCrossingThresholdFlushes(t *testing.T) {
 
 	outputLines := make(chan []byte, 8)
-	w := NewNetworkWriter(context.Background(), outputLines, nil, "testhost",
+	w := NewNetworkWriter(context.Background(), protocol.RawFraming, outputLines, nil, "testhost",
 		true, false, 0, nil, handlerTestLogger)
 	w.bufSize = 32 // Small threshold so a few 11-byte lines cross it.
 

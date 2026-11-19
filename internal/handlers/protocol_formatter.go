@@ -26,10 +26,16 @@ const (
 	lineFormatColored
 )
 
-func newLineFormatter(format lineFormat, hostname string, colorizer Colorizer) lineFormatter {
+// newLineFormatter returns the formatter of one line output format. framing
+// applies to the frame-producing formats (protocol and delimited) only: the
+// newline and colored formats write terminal output, not frames.
+func newLineFormatter(format lineFormat, hostname string, colorizer Colorizer,
+	framing protocol.Framing) lineFormatter {
 	switch format {
 	case lineFormatDelimited:
-		return appendDelimitedLine
+		return func(dst *bytes.Buffer, content []byte, _ uint64, _ string) {
+			framing.EncodePayload(dst, content)
+		}
 	case lineFormatNewline:
 		return appendNewlineLine
 	case lineFormatColored:
@@ -40,21 +46,13 @@ func newLineFormatter(format lineFormat, hostname string, colorizer Colorizer) l
 			appendColoredLine(dst, hostname, content, lineNumber, sourceID, colorizer)
 		}
 	default:
+		// One encoder per formatter, i.e. per line writer, whose mutex
+		// serializes the calls; it escapes the constant header fields once.
+		encoder := framing.NewLineEncoder(hostname, defaultTransmittedPerc)
 		return func(dst *bytes.Buffer, content []byte, lineNumber uint64, sourceID string) {
-			protocol.EncodeLine(dst, protocol.Line{
-				Hostname:           hostname,
-				TransmittedPercent: defaultTransmittedPerc,
-				Number:             lineNumber,
-				SourceID:           sourceID,
-				Content:            content,
-			})
+			encoder.Encode(dst, lineNumber, sourceID, content)
 		}
 	}
-}
-
-func appendDelimitedLine(dst *bytes.Buffer, content []byte, _ uint64, _ string) {
-	dst.Write(content)
-	dst.WriteByte(protocol.MessageDelimiter)
 }
 
 func appendNewlineLine(dst *bytes.Buffer, content []byte, _ uint64, _ string) {
@@ -70,8 +68,10 @@ func appendColoredLine(dst *bytes.Buffer, hostname string, content []byte, lineN
 		content = content[:len(content)-1]
 	}
 
+	// The colored line is terminal output, not a frame: RawFraming only
+	// borrows the frame layout, whose delimiter is cut off again below.
 	var encoded bytes.Buffer
-	protocol.EncodeLine(&encoded, protocol.Line{
+	protocol.RawFraming.EncodeLine(&encoded, protocol.Line{
 		Hostname:           hostname,
 		TransmittedPercent: defaultTransmittedPerc,
 		Number:             lineNumber,

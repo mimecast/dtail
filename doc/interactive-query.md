@@ -14,7 +14,9 @@ The interactive session understands four control commands:
 
 * `:reload <flags>` apply a new workload by reusing the current session when
   the active servers support it
-* `:show` print the current interactive state, including capability counts
+* `:show` print the current interactive state (mode, files, query, regex,
+  whether the regex is inverted, options, timeout), including capability
+  counts
 * `:help` print the interactive command help text
 * `:quit` stop the interactive session
 
@@ -35,8 +37,80 @@ Mode-specific flags:
 * `dtail` (grep-driven) and `dgrep`: `--grep`/`--regex`, `--before`, `--after`,
   `--max`, `--invert`, plus the shared flags
 * `dmap`, and query-driven `dtail` (started with `--query`): `--query`, plus
-  the shared flags
+  the shared flags. `--invert` is rejected with a reason (a query selects
+  the lines of its table itself, so its filter is never inverted);
+  `--invert=false` is accepted and changes nothing
 * `dcat`: the shared flags only
+
+`--grep` is an alias of `--regex` and behaves as on the `dgrep` and `dtail`
+command lines: a non-empty `--grep` wins over `--regex` whatever their order.
+The command lines ignore `--grep ''`; a reload rejects it with an error
+instead of restarting the unchanged workload. Use `--regex ''` to clear the
+regex.
+
+`--invert` carries over between reloads like the other flags: a reload that
+does not give it keeps the current value (`:show` prints it as `invert=`).
+Inverted, the cleared regex `''` matches no line, and `.` only the empty
+lines; give `--invert=false` together with the new regex to match it
+positively again, e.g. `:reload --regex '' --invert=false` for every line.
+
+A reload must leave the session something to do: `--files` needs at least
+one non-blank file (`--files ''`, `--files ' '` and `--files ,` are rejected),
+and in `dmap` and query-driven `dtail` a blank `--query` is rejected. A
+rejected reload keeps the current workload running unchanged.
+
+## Quoting
+
+The flags of a `:reload` line are split into arguments like a POSIX shell
+splits a command line, without any variable, command or glob expansion
+(`$line` and `*` stay as typed):
+
+* Spaces and tabs separate arguments; quote a value to keep its spaces.
+  A `--regex` (or `--grep`) value reaches the servers with its blanks
+  exactly as typed (a leading or trailing blank, a run of blanks and a tab
+  stay what they are), so `:reload --regex 'x  y'` matches `x  y` but not
+  `x y`; so do the blanks inside a `--query`. Other values are trimmed: each
+  comma-separated `--files` entry loses its leading and trailing blanks, and
+  so does the whole `--query`. Older dservers that already accept reloads
+  (capability `query-update-v1`) split the commands they receive at every run
+  of blanks, so they collapse a run of blanks or a tab in a regex or query
+  into one space and drop a regex's leading and trailing blanks.
+* Single quotes keep everything up to the closing quote literally,
+  backslashes included. Use them for regular expressions:
+  `:reload --regex '\d+ ms'` matches the regex `\d+ ms`.
+* Double quotes also keep backslashes, except that `\\`, `\"`, `\$` and
+  ``\` `` stand for a backslash, a double quote, a dollar sign and a backtick,
+  as in a POSIX shell: `:reload --regex "a\.b"` is the regex `a\.b`, and
+  `"\$"` is `$`. (A shell's backslash-newline continuation does not apply,
+  as each control line is read on its own.)
+* Outside quotes, a backslash makes the next character literal, so `\d`
+  becomes `d` there; `foo\ bar` is the one argument `foo bar`.
+* An empty quoted string is an empty value: `:reload --regex ''` clears the
+  regex, so every line matches again, unless `--invert` is in effect (also
+  from an earlier reload or the command line): then no line matches. Add
+  `--invert=false` to match every line.
+* Quoted and unquoted parts next to each other form one argument, and an
+  unterminated quote or a trailing backslash rejects the whole line with an
+  error, leaving the current workload unchanged.
+* Non-ASCII text is passed through byte for byte. A `:reload` line that is
+  not valid UTF-8 is rejected with an error, as the update sent to the
+  servers is JSON, which cannot carry invalid UTF-8 unchanged. The check
+  covers `:reload` lines only: the initial workload from the command-line
+  flags is not checked, and when it starts with `SESSION START` (see below)
+  invalid bytes in its values reach the servers as U+FFFD.
+* Only leading blanks and the line ending are removed before splitting, so
+  an escaped trailing blank stays part of the value: `--regex foo\ ` (with
+  a space after the backslash) is the regex `foo ` with the trailing space.
+* A file path containing spaces is quoted or escaped like any other value:
+  `:reload --files '/var/log/my app/a.log'`. The servers must advertise the
+  capability `encoded-read-path-v1` (dserver of this version or newer);
+  otherwise the reload is rejected with `file paths containing spaces or
+  starting with base64% require server capability encoded-read-path-v1:
+  <servers>` before any server switches, and the current workload keeps
+  running. To read several files, list them comma-separated, e.g.
+  `:reload --files /var/log/a.log,/var/log/b.log`; a comma therefore always
+  separates two files, so paths containing a comma cannot be read, and
+  blanks around each path are removed.
 
 ## Examples
 

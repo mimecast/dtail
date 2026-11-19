@@ -95,10 +95,24 @@ func createKnownHostsTemp(root *os.Root, name string) (*os.File, string, error) 
 
 // openLockFile opens the lock file read-write, creating it if needed, and falls
 // back to read-only when read-write access is refused.
+//
+// Concurrent O_CREATE through os.Root can spuriously return ENOENT on Darwin
+// (openat race while another goroutine creates the same name). Retry a few
+// times so clients that share a known_hosts file still take the lock.
 func openLockFile(root *os.Root, name string) (*os.File, error) {
-	lockFd, err := root.OpenFile(name, os.O_RDWR|os.O_CREATE, 0o644)
-	if refused := errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.EROFS); !refused {
-		return lockFd, err
+	var err error
+	for range 8 {
+		var lockFd *os.File
+		lockFd, err = root.OpenFile(name, os.O_RDWR|os.O_CREATE, 0o644)
+		if err == nil {
+			return lockFd, nil
+		}
+		if errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.EROFS) {
+			return root.OpenFile(name, os.O_RDONLY, 0)
+		}
+		if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOENT) {
+			return nil, err
+		}
 	}
-	return root.OpenFile(name, os.O_RDONLY, 0)
+	return nil, err
 }

@@ -126,7 +126,7 @@ func TestProcessorSinkEmitDoesNotRecycleOnError(t *testing.T) {
 func TestNewReaderFailsWhenJournalctlIsMissing(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
-	reader, err := NewReader(nil, "journal", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal"})
 	if err == nil {
 		t.Fatal("expected missing journalctl error")
 	}
@@ -148,7 +148,7 @@ func TestStartReadsJournalctlOutputWithoutFollowFlags(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader([]string{"-u", "ssh.service"}, "journal-id", false, make(chan string, 1))
+	reader, err := NewReader(ReaderOptions{Args: []string{"-u", "ssh.service"}, SourceID: "journal-id", ServerMessages: make(chan string, 1)})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestStartFollowReadsLinesInOrder(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader([]string{"-u", "ssh.service"}, "journal-id", true, make(chan string, 8))
+	reader, err := NewReader(ReaderOptions{Args: []string{"-u", "ssh.service"}, SourceID: "journal-id", Follow: true, ServerMessages: make(chan string, 8)})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestStartFollowPassesFollowFlagsAndTerminatesOnCancel(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader([]string{"-u", "ssh.service"}, "journal-id", true, make(chan string, 1))
+	reader, err := NewReader(ReaderOptions{Args: []string{"-u", "ssh.service"}, SourceID: "journal-id", Follow: true, ServerMessages: make(chan string, 1)})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestStartSurfacesStderrAsServerMessages(t *testing.T) {
 	})
 
 	serverMessages := make(chan string, stderrLineCount)
-	reader, err := NewReader(nil, "journal-id", false, serverMessages)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id", ServerMessages: serverMessages})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -410,7 +410,7 @@ func TestStartPropagatesStderrForwarderPanic(t *testing.T) {
 	mock := journaltest.InstallMock(t, journaltest.Scenario{
 		Default: journaltest.Invocation{HoldOpen: true},
 	})
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestRunPrioritizesStderrWorkerPanicOverParentCancellation(t *testing.T) {
 	journaltest.InstallMock(t, journaltest.Scenario{
 		Default: journaltest.Invocation{HoldOpen: true},
 	})
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestRunJoinsProcessorFailureWithWaitWorkerPanic(t *testing.T) {
 	journaltest.InstallMock(t, journaltest.Scenario{
 		Default: journaltest.Invocation{Lines: []string{"line"}},
 	})
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestRunKillsAndReapsTermIgnoringChildWhenWaitPanicsBeforeWait(t *testing.T)
 			IgnoreSIGTERM: true,
 		},
 	})
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -566,7 +566,7 @@ func TestRunReapsAfterWaitPanicWhileStderrDeliveryBlocked(t *testing.T) {
 	// The unread channel blocks delivery of the first diagnostic. Draining the
 	// process pipe must continue independently so stdout can close and the
 	// recovered Wait panic can still reap the child.
-	reader, err := NewReader(nil, "journal-id", false, make(chan string))
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id", ServerMessages: make(chan string)})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -604,7 +604,7 @@ func TestRunRecoversScanProcessorPanicAndReapsTermIgnoringChild(t *testing.T) {
 			IgnoreSIGTERM: true,
 		},
 	})
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -661,7 +661,7 @@ func TestStartReturnsExitErrorAndForwardsStderrOnNonZeroExit(t *testing.T) {
 	})
 
 	serverMessages := make(chan string, 2)
-	reader, err := NewReader(nil, "journal-id", false, serverMessages)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id", ServerMessages: serverMessages})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -709,7 +709,7 @@ func TestStartReadsLongJournalLine(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -737,7 +737,7 @@ func TestStartDropsPartialLineAtShutdown(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -760,7 +760,7 @@ func TestStartPreservesUTF8Lines(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -796,7 +796,7 @@ func TestConcurrentReadersDifferentUnitsDoNotInterfere(t *testing.T) {
 	runReader := func(unit string) <-chan result {
 		resultCh := make(chan result, 1)
 		go func() {
-			reader, err := NewReader([]string{"-u", unit}, unit, false, nil)
+			reader, err := NewReader(ReaderOptions{Args: []string{"-u", unit}, SourceID: unit})
 			if err != nil {
 				resultCh <- result{err: err}
 				return
@@ -836,7 +836,7 @@ func TestStartAppliesRegexAndLocalContext(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -916,7 +916,7 @@ func TestStartFollowFlushesEachLine(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader([]string{"-u", "ssh.service"}, "journal-id", true, make(chan string, 8))
+	reader, err := NewReader(ReaderOptions{Args: []string{"-u", "ssh.service"}, SourceID: "journal-id", Follow: true, ServerMessages: make(chan string, 8)})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -966,7 +966,7 @@ func TestStartNonFollowFlushesOnceAtEnd(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -995,7 +995,7 @@ func TestStartErrorTerminatesJournalctl(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
@@ -1034,7 +1034,7 @@ func TestStartErrorKillsTermIgnoringJournalctl(t *testing.T) {
 		},
 	})
 
-	reader, err := NewReader(nil, "journal-id", false, nil)
+	reader, err := NewReader(ReaderOptions{SourceID: "journal-id"})
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}

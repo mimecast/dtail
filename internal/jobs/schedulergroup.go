@@ -24,6 +24,9 @@ type dueJob struct {
 	// final is set for a run after the TimeRange of a failed run ended
 	// (see jobBackoff): it writes what it could read.
 	final bool
+	// servers is the number of servers the run connects to, set for the
+	// runs of a group (see scheduler.nextGroup); 0 otherwise.
+	servers int
 }
 
 // jobGroupKey identifies the jobs that read the same files from the same
@@ -112,12 +115,20 @@ type serversKey struct {
 // reaches it, while it forms the next group; the goroutines that runGroup
 // starts for the jobs of a group run no group formation and never touch it.
 type groupLimits struct {
-	limits  map[serversKey]int
+	limits  map[serversKey]groupSize
 	reaches map[string]bool
 }
 
+// groupSize is how many jobs connecting to a set of servers may run together
+// (limit) and to how many servers each of them connects (servers; 0 when the
+// jobs run one at a time, which needs no count).
+type groupSize struct {
+	limit   int
+	servers int
+}
+
 func newGroupLimits() *groupLimits {
-	return &groupLimits{limits: make(map[serversKey]int), reaches: make(map[string]bool)}
+	return &groupLimits{limits: make(map[serversKey]groupSize), reaches: make(map[string]bool)}
 }
 
 // nextGroup evaluates the first pending run at the current time and, if it
@@ -152,31 +163,66 @@ func (s *scheduler) nextGroup(ctx context.Context, pending []pendingRun, limits 
 	if len(pending) == 1 {
 		return group, nil
 	}
-	limit := s.groupLimit(ctx, first.args, limits)
+	size := s.groupSize(ctx, first.args, limits)
+	limit := size.limit
 	if limit <= 1 {
 		return group, pending[1:]
 	}
+	// Every job of the group opens one session per server (see runGroup).
+	group[0].servers = size.servers
 	key := first.groupKey()
 	// before holds the footprints of the group's runs and of the earlier
 	// runs that stay pending: the runs a later run must not conflict with to
 	// join the group.
-	before := []jobFootprint{pending[0].footprint(now)}
+	//
+	// Footprints resolve symlinks, which is costly, and are only needed once
+	// a run could join the group. They are therefore computed on demand
+	// (lazyFootprint): computing one for every pending run of every group
+	// made a scheduler run with many due jobs on different files quadratic
+	// in file system lookups (13 s for 800 jobs).
+	before := []*lazyFootprint{{run: pending[0], now: now}}
 	var rest []pendingRun
 	for i, run := range pending[1:] {
 		if len(group) >= limit {
 			rest = append(rest, pending[1+i:]...)
 			break
 		}
-		footprint := run.footprint(now)
+		footprint := &lazyFootprint{run: run, now: now}
 		due, reason := run.evaluate(s, now)
 		if reason != "" || due.groupKey() != key || footprint.conflictsWithAny(before) {
 			rest = append(rest, run)
 		} else {
+			due.servers = size.servers
 			group = append(group, due)
 		}
 		before = append(before, footprint)
 	}
 	return group, rest
+}
+
+// lazyFootprint is the footprint of run at now, computed when first asked
+// for.
+type lazyFootprint struct {
+	run      pendingRun
+	now      time.Time
+	value    jobFootprint
+	computed bool
+}
+
+func (l *lazyFootprint) get() jobFootprint {
+	if !l.computed {
+		l.value, l.computed = l.run.footprint(l.now), true
+	}
+	return l.value
+}
+
+// conflictsWithAny reports whether l conflicts with one of others (see
+// jobFootprint.conflicts).
+func (l *lazyFootprint) conflictsWithAny(others []*lazyFootprint) bool {
+	footprint := l.get()
+	return slices.ContainsFunc(others, func(other *lazyFootprint) bool {
+		return footprint.conflicts(other.get())
+	})
 }
 
 // runPending runs pending, one group after another (see nextGroup), with the
@@ -221,41 +267,49 @@ func (s *scheduler) runPending(ctx context.Context, pending []pendingRun, limits
 // up their connections: jobs on them, and jobs whose servers cannot be
 // discovered, run one at a time, as the scheduler did before it grouped jobs.
 func (s *scheduler) groupLimit(ctx context.Context, args config.Args, limits *groupLimits) int {
+	return s.groupSize(ctx, args, limits).limit
+}
+
+// groupSize returns the group limit of args (see groupLimit) together with
+// the number of servers each job connects to.
+func (s *scheduler) groupSize(ctx context.Context, args config.Args, limits *groupLimits) groupSize {
 	if s.cfg.Server.SharedReadsDisable {
-		return 1
+		return groupSize{limit: 1}
 	}
 	key := serversKey{servers: args.ServersStr, discovery: args.Discovery}
 	if !dynamicServerList(args) {
-		if limit, ok := limits.limits[key]; ok {
-			return limit
+		if size, ok := limits.limits[key]; ok {
+			return size
 		}
-		limit := s.discoverGroupLimit(ctx, args, limits)
-		limits.limits[key] = limit
-		return limit
+		size := s.discoverGroupLimit(ctx, args, limits)
+		limits.limits[key] = size
+		return size
 	}
 	// A FILE may keep the same hostname while its DNS answer changes. Use a
 	// fresh reachability memo as well as a fresh server list for this wave.
 	return s.discoverGroupLimit(ctx, args, newGroupLimits())
 }
 
-// dynamicServerList mirrors discovery's implicit file selection as well as
-// its explicit FILE module. Checking the path on every wave also notices a
+// dynamicServerList mirrors discovery's implicit file selection (the shared
+// discovery.IsServerListFile, which ignores whitespace around the path) as
+// well as its explicit FILE module, whose name it normalizes with
+// strings.ToUpper as discovery.New does (strings.EqualFold would disagree on
+// names such as "fıle"). Checking the path on every wave also notices a
 // file that appears after the first wave.
 func dynamicServerList(args config.Args) bool {
 	method, _, _ := strings.Cut(args.Discovery, ":")
-	if strings.EqualFold(method, "file") {
+	if strings.ToUpper(method) == "FILE" {
 		return true
 	}
 	if method != "" {
 		return false
 	}
-	_, err := os.Stat(args.ServersStr)
-	return err == nil
+	return discovery.IsServerListFile(args.ServersStr)
 }
 
 // discoverGroupLimit discovers the servers of args and returns the group
 // limit of jobs connecting to them.
-func (s *scheduler) discoverGroupLimit(ctx context.Context, args config.Args, limits *groupLimits) int {
+func (s *scheduler) discoverGroupLimit(ctx context.Context, args config.Args, limits *groupLimits) groupSize {
 	finder, err := discovery.New(args.Discovery, args.ServersStr, discovery.Shuffle, s.log())
 	var servers []string
 	if err == nil {
@@ -263,19 +317,22 @@ func (s *scheduler) discoverGroupLimit(ctx context.Context, args config.Args, li
 	}
 	if err != nil {
 		s.log().Warn("Running jobs one at a time as their servers can not be discovered", err)
-		return 1
+		return groupSize{limit: 1}
 	}
 	if len(servers) == 0 {
-		return 1
+		return groupSize{limit: 1}
 	}
 	for _, server := range servers {
 		if !s.reachesThisDServer(ctx, server, limits) {
 			s.log().Debug("Running jobs one at a time as a server is not this dserver", server)
-			return 1
+			return groupSize{limit: 1}
 		}
 	}
 	cats := max(1, s.cfg.Server.MaxConcurrentCats)
-	return max(1, min(s.cfg.Server.MaxConnections/4, cats)/len(servers))
+	return groupSize{
+		limit:   max(1, min(s.cfg.Server.MaxConnections/4, cats)/len(servers)),
+		servers: len(servers),
+	}
 }
 
 // reachesThisDServer reports whether server reaches this dserver (see
@@ -335,11 +392,6 @@ func filePatterns(pattern string) []string {
 		patterns = append(patterns, filepath.Join(dir, filepath.Base(path)))
 	}
 	return patterns
-}
-
-// conflictsWithAny reports whether f conflicts with one of others.
-func (f jobFootprint) conflictsWithAny(others []jobFootprint) bool {
-	return slices.ContainsFunc(others, f.conflicts)
 }
 
 // conflicts reports whether the jobs of f and other may not run in another
@@ -402,7 +454,10 @@ func (s *scheduler) runGroup(ctx context.Context, group []dueJob) {
 		return
 	}
 
-	share, err := config.NewReadShare(len(group))
+	// The members of a read share are sessions, and every job opens one
+	// session per server: counting only the jobs made dserver refuse the
+	// sessions beyond that count, which then read the files on their own.
+	share, err := config.NewReadShare(len(group) * max(1, group[0].servers))
 	if err != nil {
 		s.log().Warn("Running job group without a read share", err)
 	}

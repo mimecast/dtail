@@ -23,7 +23,37 @@ import (
 	"github.com/mimecast/dtail/internal/regex"
 )
 
-const waitTimeout = 10 * time.Second
+// waitTimeout is the one bound of the package's tests for anything they wait
+// for; waits that include several whole burst reads use a multiple of it.
+// Every use is an upper bound on an expected event, so a passing test never
+// waits for it, and goes through waitBound, which shortens it to fit into
+// what is left of the go test -timeout. It is generous because the reads behind these waits are CPU
+// bound: under the race detector, filtering a 20,000 line burst (see burst)
+// with a regex takes a session about a second on an idle machine and several
+// times that when several -race suites share the CPUs, which used to exceed a
+// 10 s bound ("timed out waiting for slow session to read the new file").
+const waitTimeout = 60 * time.Second
+
+// deadlineMargin is how long before the go test -timeout (t.Deadline) every
+// wait gives up, so a wait that fails reports its own message instead of the
+// test binary panicking with a dump of every goroutine.
+const deadlineMargin = 10 * time.Second
+
+// waitBound returns limit, shortened to end deadlineMargin before the test
+// binary's deadline. With less than twice the margin left it returns half of
+// what is left, so waits started late still end before the deadline. The
+// whole package (about 170 s under the race detector) runs within the default
+// 10 minute timeout, so the bound only shortens waits of a run that is
+// already far behind.
+func waitBound(t interface{ Deadline() (time.Time, bool) }, limit time.Duration) time.Duration {
+	deadline, ok := t.Deadline()
+	if !ok {
+		return limit
+	}
+	remaining := time.Until(deadline)
+	bound := max(remaining-deadlineMargin, remaining/2)
+	return min(bound, limit)
+}
 
 // event is one call a recordingProcessor saw.
 type event struct {
@@ -39,6 +69,9 @@ type recorder struct {
 	mu     sync.Mutex
 	events []event
 	made   int
+	// scanned is, per text hasLine waits for, how many events hasLine
+	// already examined without finding it.
+	scanned map[string]int
 	// failAt makes ProcessLine fail on the line with this text.
 	failAt string
 }
@@ -85,12 +118,26 @@ func (r *recorder) lineNums() []uint64 {
 	return nums
 }
 
+// hasLine reports whether a line with text was recorded. Tests poll it while
+// sessions read whole bursts, so each poll examines, in place, only the
+// events recorded since the previous poll for the same text: rescanning (or
+// copying) every event on each poll took CPU time from the reads the test
+// waits for, under the race detector on a loaded machine. Events are only
+// appended, so an examined event never has to be looked at again.
 func (r *recorder) hasLine(text string) bool {
-	for _, got := range r.lines() {
-		if got == text {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.scanned == nil {
+		r.scanned = make(map[string]int)
+	}
+	for i := r.scanned[text]; i < len(r.events); i++ {
+		if e := r.events[i]; e.kind == "line" && e.text == text {
+			// Keep the position, so later polls for this text return at once.
+			r.scanned[text] = i
 			return true
 		}
 	}
+	r.scanned[text] = len(r.events)
 	return false
 }
 
@@ -206,25 +253,38 @@ func startFollower(t *testing.T, hub *Hub, file *testFile, ltx lcontext.LContext
 		Regex:          re,
 		ServerMessages: f.messages,
 		NewProcessor:   f.recorder.newProcessor,
-		ReportFailure:  func() { f.failures.Add(1) },
+		ReportFailure:  func(error) { f.failures.Add(1) },
 	}
 	go func() { f.done <- hub.Follow(ctx, session) }()
 	t.Cleanup(func() {
 		cancel()
-		<-f.done
+		checkSessionEnd(t, "Follow()", f.done)
 	})
 	return f
 }
 
-// stop cancels the session and returns what Follow returned.
+// checkSessionEnd receives the result of a session (or read) the cleanup
+// just canceled and fails the test unless it is nil: a canceled session ends
+// without an error. A test that checks a result itself, e.g. an expected
+// failure via stop or wait, hands nil back for the cleanup, so an error here
+// is one no test expected.
+func checkSessionEnd(t *testing.T, what string, done <-chan error) {
+	t.Helper()
+	if err := <-done; err != nil {
+		t.Errorf("%s = %v after cancel, want nil", what, err)
+	}
+}
+
+// stop cancels the session and returns what Follow returned. It hands nil
+// back to f.done for the cleanup, as the caller checks the result.
 func (f *follower) stop(t *testing.T) error {
 	t.Helper()
 	f.cancel()
 	select {
 	case err := <-f.done:
-		f.done <- err // for the cleanup
+		f.done <- nil // checked by the caller; see checkSessionEnd
 		return err
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("Follow did not return after its context ended")
 		return nil
 	}
@@ -236,13 +296,15 @@ func waitFor(t *testing.T, what string, condition func() bool) {
 }
 
 // waitWithin is waitFor with a timeout of its own, for waits that include a
-// whole burst read under the race detector on a loaded machine.
+// whole burst read under the race detector on a loaded machine. The timeout
+// goes through waitBound, like every wait of the package's tests.
 func waitWithin(t *testing.T, timeout time.Duration, what string, condition func() bool) {
 	t.Helper()
+	timeout = waitBound(t, timeout)
 	deadline := time.Now().Add(timeout)
 	for !condition() {
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
+			t.Fatalf("timed out after %v waiting for %s", timeout, what)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -460,7 +522,7 @@ func TestFollowLastSessionLeavingStopsTheReader(t *testing.T) {
 	}
 	select {
 	case <-e.done:
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("the reader did not stop after the last session left")
 	}
 	if hub.entryFor(file.path) != nil {
@@ -556,7 +618,7 @@ func TestFollowReturnsWhenTheSessionReadEnds(t *testing.T) {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("Follow() = %v, want %v", err, tt.wantErr)
 				}
-			case <-time.After(waitTimeout):
+			case <-time.After(waitBound(t, waitTimeout)):
 				t.Fatal("Follow did not return")
 			}
 			events := rec.snapshot()
@@ -602,7 +664,7 @@ func TestFollowWarnsEverySessionAboutLongLinesWithItsOwnPath(t *testing.T) {
 			if !strings.Contains(message, "Long log line") || !strings.Contains(message, tt.path) {
 				t.Errorf("message = %q, want the long line warning for %s", message, tt.path)
 			}
-		case <-time.After(waitTimeout):
+		case <-time.After(waitBound(t, waitTimeout)):
 			t.Fatal("a session did not get the long line warning")
 		}
 	}
@@ -620,7 +682,7 @@ func startFollowerWithPath(t *testing.T, hub *Hub, file *testFile, path string) 
 	go func() { f.done <- hub.Follow(ctx, session) }()
 	t.Cleanup(func() {
 		cancel()
-		<-f.done
+		checkSessionEnd(t, "Follow()", f.done)
 	})
 	return f
 }
@@ -680,17 +742,17 @@ func TestFollowSurvivesAReaderPanic(t *testing.T) {
 			for _, f := range followers {
 				select {
 				case err := <-f.done:
-					f.done <- err
+					f.done <- nil // checked here; see checkSessionEnd
 					if !errors.Is(err, ErrReaderFailed) || !errors.Is(err, fs.ErrReaderWorkerPanic) {
 						t.Errorf("Follow() = %v, want an error wrapping ErrReaderFailed and fs.ErrReaderWorkerPanic", err)
 					}
-				case <-time.After(waitTimeout):
+				case <-time.After(waitBound(t, waitTimeout)):
 					t.Fatal("Follow did not return after the reader failed")
 				}
 			}
 			select {
 			case <-failed.done:
-			case <-time.After(waitTimeout):
+			case <-time.After(waitBound(t, waitTimeout)):
 				t.Fatal("the failed reader did not stop")
 			}
 
@@ -746,35 +808,8 @@ func TestFollowMatchesPrivateFollowRead(t *testing.T) {
 			re := mustRegex(t, "ERROR|sync")
 
 			shared := startFollower(t, hub, file, ltx, re, "glob")
-			private := &recorder{}
-			ctx, cancel := context.WithCancel(context.Background())
-			privateDone := make(chan error, 1)
-			reader, err := fs.NewReadFile(fs.ReadOptions{
-				Mode: omode.TailClient, FilePath: file.path, GlobID: "glob", SeekEOF: true,
-				Logger: logging.NopLogger{},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			go func() { privateDone <- reader.Start(ctx, ltx, private.newProcessor(), re) }()
-			defer func() {
-				cancel()
-				<-privateDone
-			}()
-
-			// Append sync lines until both readers have seen the same one.
-			var marker string
-			for i := 0; marker == ""; i++ {
-				text := fmt.Sprintf("sync %d", i)
-				file.appendLines(text)
-				time.Sleep(50 * time.Millisecond)
-				if shared.recorder.hasLine(text) && private.hasLine(text) {
-					marker = text
-				}
-				if i > 200 {
-					t.Fatal("the readers never saw a common sync line")
-				}
-			}
+			private := startPrivateFollower(t, file, ltx, re, 0, nil)
+			marker := syncWithPrivate(t, file, shared, private)
 
 			lines := []string{"INFO 1", "ERROR 2", "INFO 3", "INFO 4", "INFO 5", "ERROR 6", "", "INFO 7", "ERROR 8", "last"}
 			file.appendLines(lines...)
@@ -794,6 +829,48 @@ func TestFollowMatchesPrivateFollowRead(t *testing.T) {
 				t.Errorf("shared line number steps = %v, private = %v", gotSteps, wantSteps)
 			}
 		})
+	}
+}
+
+// startPrivateFollower follows the test file with a private follow reader of
+// MaxLineLength maxLineLength (0 for the default) that sends its server
+// messages to messages, if given, until the test ends.
+func startPrivateFollower(t *testing.T, file *testFile, ltx lcontext.LContext, re regex.Regex,
+	maxLineLength int, messages chan<- string) *recorder {
+
+	t.Helper()
+	private := &recorder{}
+	ctx, cancel := context.WithCancel(context.Background())
+	privateDone := make(chan error, 1)
+	reader, err := fs.NewReadFile(fs.ReadOptions{
+		Mode: omode.TailClient, FilePath: file.path, GlobID: "glob", SeekEOF: true,
+		MaxLineLength: maxLineLength, ServerMessages: messages, Logger: logging.NopLogger{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { privateDone <- reader.Start(ctx, ltx, private.newProcessor(), re) }()
+	t.Cleanup(func() {
+		cancel()
+		checkSessionEnd(t, "private reference read: Start()", privateDone)
+	})
+	return private
+}
+
+// syncWithPrivate appends sync lines until the shared session and the private
+// reader have seen the same one, and returns it.
+func syncWithPrivate(t *testing.T, file *testFile, shared *follower, private *recorder) string {
+	t.Helper()
+	for i := 0; ; i++ {
+		text := fmt.Sprintf("sync %d", i)
+		file.appendLines(text)
+		time.Sleep(50 * time.Millisecond)
+		if shared.recorder.hasLine(text) && private.hasLine(text) {
+			return text
+		}
+		if i > 200 {
+			t.Fatal("the readers never saw a common sync line")
+		}
 	}
 }
 
@@ -881,7 +958,7 @@ func TestFailedHandOverMovesTheRemainingSessionToAPrivateRead(t *testing.T) {
 	}
 	select {
 	case <-failed.done:
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("the reader did not stop after the hand-over failed")
 	}
 	// The failure is not the session's: it goes on privately, from where the
@@ -890,6 +967,7 @@ func TestFailedHandOverMovesTheRemainingSessionToAPrivateRead(t *testing.T) {
 	waitFor(t, "lines after the failure", func() bool { return other.recorder.hasLine("after the failure 2") })
 	select {
 	case err := <-other.done:
+		other.done <- nil // checked here; see checkSessionEnd
 		t.Fatalf("Follow() = %v after a failed hand-over, want the session to go on", err)
 	default:
 	}

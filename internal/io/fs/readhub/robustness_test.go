@@ -60,7 +60,7 @@ func TestNewDefaultsRetryIntervalForFailedFollowReads(t *testing.T) {
 	follower := startFollower(t, hub, file, lcontext.LContext{}, regex.NewNoop(), "retry")
 	select {
 	case <-attempts:
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("the first read did not start")
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -131,7 +131,7 @@ func TestFailedHandOverPublishesFailureAfterReaderStops(t *testing.T) {
 	}()
 	select {
 	case <-started:
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("shared reader did not start")
 	}
 	e.mu.Lock()
@@ -139,7 +139,7 @@ func TestFailedHandOverPublishesFailureAfterReaderStops(t *testing.T) {
 	e.mu.Unlock()
 	select {
 	case <-canceled:
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("shared reader was not canceled")
 	}
 	// While the reader is still able to publish its final line, the failure
@@ -156,7 +156,7 @@ func TestFailedHandOverPublishesFailureAfterReaderStops(t *testing.T) {
 		if it.kind != chunkItem || string(it.chunk.line(0)) != "last line" {
 			t.Fatalf("first publication = %+v, want the reader's final line", it)
 		}
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("reader did not flush its final line")
 	}
 	select {
@@ -164,7 +164,7 @@ func TestFailedHandOverPublishesFailureAfterReaderStops(t *testing.T) {
 		if it.kind != failedItem || !errors.Is(it.err, ErrReaderFailed) {
 			t.Errorf("second publication = %+v, want the hand-over failure after the final line", it)
 		}
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("hand-over failure was not published after the final line")
 	}
 }

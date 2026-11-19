@@ -78,6 +78,13 @@ func (f *journalFilter) Process(ctx context.Context, rawLine *bytes.Buffer) erro
 	return f.processWithContext(ctx, rawLine)
 }
 
+// matches runs the regex on the entry without its line terminator, as file
+// reads do (fs.filteringProcessor.matches): with the LF, "$" and "^$" could
+// never match a terminated entry.
+func (f *journalFilter) matches(rawLine *bytes.Buffer) bool {
+	return f.re.Match(bytes.TrimSuffix(rawLine.Bytes(), []byte{'\n'}))
+}
+
 func (f *journalFilter) Close() {
 	for _, line := range f.before {
 		pool.RecycleBytesBuffer(line.content)
@@ -86,7 +93,7 @@ func (f *journalFilter) Close() {
 }
 
 func (f *journalFilter) processWithoutContext(ctx context.Context, rawLine *bytes.Buffer) error {
-	if !f.re.Match(rawLine.Bytes()) {
+	if !f.matches(rawLine) {
 		f.stats.updateLineNotMatched()
 		f.stats.updateLineNotTransmitted()
 		pool.RecycleBytesBuffer(rawLine)
@@ -104,7 +111,7 @@ func (f *journalFilter) processWithoutContext(ctx context.Context, rawLine *byte
 }
 
 func (f *journalFilter) processWithContext(ctx context.Context, rawLine *bytes.Buffer) error {
-	if !f.re.Match(rawLine.Bytes()) {
+	if !f.matches(rawLine) {
 		return f.processContextMiss(ctx, rawLine)
 	}
 

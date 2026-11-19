@@ -222,8 +222,15 @@ func (o *testOutput) waitForContains(t *testing.T, substr string, timeout time.D
 // writeMu stands in for the single SSH input goroutine of a real session:
 // baseHandler.Write is not safe for concurrent use, so the test serializes
 // its own command writes and the reader's ack write through this mutex.
-func startTestReader(handler *ServerHandler, output *testOutput,
+func startTestReader(handler io.ReadWriter, output *testOutput,
 	writeMu *sync.Mutex) <-chan struct{} {
+	return startTestReaderAcking(handler, output, writeMu, encodeTestCommand(".ack close connection"))
+}
+
+// startTestReaderAcking is startTestReader, but answers the close handshake
+// with ack, e.g. a close acknowledgement of another protocol version.
+func startTestReaderAcking(handler io.ReadWriter, output *testOutput,
+	writeMu *sync.Mutex, ack string) <-chan struct{} {
 
 	readerDone := make(chan struct{})
 	var ackOnce sync.Once
@@ -238,7 +245,7 @@ func startTestReader(handler *ServerHandler, output *testOutput,
 					ackOnce.Do(func() {
 						writeMu.Lock()
 						defer writeMu.Unlock()
-						_, _ = handler.Write([]byte(encodeTestCommand(".ack close connection")))
+						_, _ = handler.Write([]byte(ack))
 					})
 				}
 			}

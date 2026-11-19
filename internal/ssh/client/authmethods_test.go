@@ -329,8 +329,8 @@ func TestCollectKnownHostsSignersIncludesConfiguredFallbackForExplicitKey(t *tes
 
 	wantOrder := []string{
 		"private:" + explicitKeyPath,
-		"agent:4",
 		"private:" + suiteKeyPath,
+		"agent:4",
 		"private:" + homeDir + "/.ssh/id_rsa",
 		"private:" + homeDir + "/.ssh/id_dsa",
 		"private:" + homeDir + "/.ssh/id_ecdsa",

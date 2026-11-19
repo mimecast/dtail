@@ -133,14 +133,14 @@ The example config above only sets a few keys. The most important ``Server`` set
 | ``MaxConcurrentCats`` | ``2`` | Max concurrent cat/grep/MapReduce reads; also bounds grouped scheduled jobs |
 | ``MaxConcurrentTails`` | ``50`` | Max concurrent tails |
 | ``SharedReadsDisable`` | ``false`` | Turn off shared reads (same-file follow reads and grouped job reads) |
-| ``MaxLineLength`` | ``1048576`` | Max line length in bytes before a line is split |
+| ``MaxLineLength`` | ``1048576`` | Max line length in bytes before a line of a file read, or an entry of a `journal:` read, is split |
 | ``HostKeyPath`` | ``./cache/ssh_host_key`` | Private SSH host key (generated on first start) |
 | ``HostKeyBits`` | ``4096`` | RSA host key size in bits |
 | ``AuthKeyEnabled`` | ``true`` | In-memory auth-key registration and fast reconnect |
 | ``AuthKeyTTLSeconds`` | ``86400`` | Auth-key cache entry TTL in seconds |
 | ``AuthKeyMaxPerUser`` | ``5`` | Max cached auth keys per user |
 | ``OutputBufferMaxBytes`` | ``2097152`` | Per-session payload backing memory cap; producers apply backpressure |
-| ``OutputFlushTimeoutMs`` | ``2000`` | Max wait for the session reader to drain output |
+| ``OutputFlushTimeoutMs`` | ``2000`` | Max time without progress of the session reader while output is drained (slow or paused clients are waited for) |
 | ``OutputReadRetryIntervalMs`` | ``1`` | Stale-generation fallback poll interval |
 | ``OutputEOFAckTimeoutMs`` | ``2000`` | Max wait for the output EOF acknowledgement |
 | ``MaxGlobTargets`` | ``1000`` | Max files one read command's glob may dispatch |
@@ -151,6 +151,9 @@ A few pointers beyond the table:
 * **Auth-key fast reconnect**: ``AuthKeyEnabled``/``AuthKeyTTLSeconds``/``AuthKeyMaxPerUser`` tune the in-memory auth-key cache, see [auth-key-fast-reconnect.md](auth-key-fast-reconnect.md).
 * **Session/output tuning**: ``IdleSessionTimeoutS`` plus the ``Output*`` keys above bound idle sessions and slow clients; ``SharedReadsDisable`` trades the shared-read optimization for per-session readers; ``MaxConnections``/``MaxConcurrentCats``/``MaxConcurrentTails`` size the connection and read slots.
 * **Journal support**: dserver advertises the ``journal-v1`` capability on Linux when ``journalctl`` is on ``PATH``; clients can then read ``journal:unit.service`` targets (permission rules must match the full ``journal:...`` target).
+* **UTF-8 lines with `€`, `¬`, `Ь`**: dserver advertises the ``escaped-framing-v1`` capability. Only when both the client and dserver are of this version or newer are such characters (whose UTF-8 encoding contains the protocol's 0xAC message delimiter byte) transferred intact; with an older client or an older dserver, server-mode output still splits those lines as before. Upgrade both sides to get them unchanged.
+* **File paths containing spaces**: dserver advertises the ``encoded-read-path-v1`` capability and reads such paths (also globs, job ``Files`` and ``:reload --files``). A client of this version refuses to send such a path to an older dserver and fails with ``file paths containing spaces or starting with base64% require server capability encoded-read-path-v1`` (a scheduled job counts this as a failed run and writes no outfile); paths without spaces work with every combination of versions. Commas always separate files (``--files a.log,b.log``, positional arguments and job ``Files`` are joined and split at commas), so paths containing a comma cannot be read, and blanks around a path are removed.
+* **`--plain` lines starting with `.` or reading `AUTHKEY OK`**: dserver also advertises the ``control-frames-v1`` capability and then marks its control messages (hidden `.syn ...` messages, `AUTHKEY` replies). Only when both the client and dserver are of this version or newer does `--plain` server-mode output keep log lines such as `.hidden`, `.syn close connection` or `AUTHKEY OK` (and never acts upon them); with an older client or an older dserver such lines are still dropped (and a `.syn ...` line may still end the session or count as a failed command) as before. Output without `--plain` is not affected in any version.
 * **Scheduled and continuous MapReduce jobs**: the ``Schedule`` and ``Continuous`` config arrays run MapReduce queries periodically (``TimeRange`` hours) or continuously and write CSV outfiles; see the config schema for the job fields.
 
 # Start it

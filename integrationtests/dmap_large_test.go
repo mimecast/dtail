@@ -234,33 +234,3 @@ func testDMapLargeFileWithServer(t *testing.T, logger *TestLogger, largeFile str
 	// Note: CSV verification should be done per query, not globally
 	// since csvFile gets overwritten by each query
 }
-
-// verifyLargeFileResults does basic sanity checks on the output
-func verifyLargeFileResults(ctx context.Context, t *testing.T, csvFile string) error {
-	t.Helper()
-
-	data, err := os.ReadFile(csvFile)
-	if err != nil {
-		return fmt.Errorf("failed to read CSV file: %w", err)
-	}
-
-	lines := string(data)
-	if len(lines) == 0 {
-		return fmt.Errorf("CSV file is empty")
-	}
-
-	// Basic check: should have at least a header and some data
-	lineCount := 0
-	for _, line := range lines {
-		if line == '\n' {
-			lineCount++
-		}
-	}
-
-	if lineCount < 2 {
-		return fmt.Errorf("CSV file has insufficient data (only %d lines)", lineCount)
-	}
-
-	t.Logf("CSV output has %d lines", lineCount)
-	return nil
-}

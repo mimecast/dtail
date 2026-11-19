@@ -213,7 +213,7 @@ func TestSchedulerBoundsWavesByTheCatSlots(t *testing.T) {
 		SSHBindAddress: "127.0.0.1", MaxConcurrentCats: 2, MaxConnections: 40, Schedule: schedule,
 	}}, jobTestLoggers)
 	recorder := &waveRecorder{t: t, shares: map[string]config.ReadShare{},
-		started: map[string]int{}, joined: map[string]chan struct{}{}}
+		started: map[string]int{}, joined: map[string]chan struct{}{}, sessions: map[string]int{}}
 	s.newMaprClient = recorder.newClient
 	s.runJobs(context.Background())
 
@@ -227,16 +227,19 @@ func TestSchedulerBoundsWavesByTheCatSlots(t *testing.T) {
 }
 
 // waveRecorder is a fake client factory that records the read share of each
-// job and the most jobs that ran at the same time. A job runs until every
-// job of its read share started, so jobs sharing a read that did not run
-// together time out.
+// job and the most jobs that ran at the same time. A job stands for one
+// session per server it connects to, the members of a read share. It runs
+// until every session of its read share started, so jobs sharing a read that
+// did not run together time out.
 type waveRecorder struct {
 	t *testing.T
 
-	mu         sync.Mutex
-	shares     map[string]config.ReadShare
-	started    map[string]int
-	joined     map[string]chan struct{}
+	mu      sync.Mutex
+	shares  map[string]config.ReadShare
+	started map[string]int
+	joined  map[string]chan struct{}
+	// sessions is the number of sessions each job of a read share opens.
+	sessions   map[string]int
 	running    int
 	maxRunning int
 }
@@ -246,12 +249,18 @@ func (r *waveRecorder) newClient(args config.Args, _ clients.MaprClientMode) (ba
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.shares[name] = args.ReadShare
-	return waveClient{recorder: r, share: args.ReadShare}, nil
+	servers := map[string]bool{}
+	for _, server := range strings.Split(args.ServersStr, ",") {
+		servers[strings.TrimSpace(server)] = true
+	}
+	return waveClient{recorder: r, share: args.ReadShare, sessions: len(servers)}, nil
 }
 
 type waveClient struct {
 	recorder *waveRecorder
 	share    config.ReadShare
+	// sessions is the number of sessions the job opens: one per server.
+	sessions int
 }
 
 func (c waveClient) Start(context.Context, <-chan string) int {
@@ -265,7 +274,8 @@ func (c waveClient) Start(context.Context, <-chan string) int {
 			r.joined[c.share.Group] = make(chan struct{})
 		}
 		joined = r.joined[c.share.Group]
-		r.started[c.share.Group]++
+		r.started[c.share.Group] += c.sessions
+		r.sessions[c.share.Group] = c.sessions
 		if r.started[c.share.Group] == c.share.Members {
 			close(joined)
 		}
@@ -317,6 +327,8 @@ func TestSchedulerRunsLargeGroupsInBoundedWaves(t *testing.T) {
 			wantWaves: []int{1, 1}},
 		{name: "servers not discoverable", maxConnections: 40, discovery: "nosuchmodule", jobs: 3,
 			wantWaves: []int{1, 1, 1}},
+		{name: "comma module with options rejected", maxConnections: 40, discovery: "comma:server1,server2",
+			jobs: 3, wantWaves: []int{1, 1, 1}},
 		{name: "another dserver", maxConnections: 40, servers: []string{"192.0.2.1:2222"}, jobs: 3,
 			wantWaves: []int{1, 1, 1}},
 		{name: "this and another dserver", maxConnections: 40, servers: []string{"127.0.0.1", "192.0.2.1"},
@@ -350,7 +362,7 @@ func TestSchedulerRunsLargeGroupsInBoundedWaves(t *testing.T) {
 				SharedReadsDisable: tt.sharedReadsDisable, Schedule: schedule,
 			}}, jobTestLoggers)
 			recorder := &waveRecorder{t: t, shares: map[string]config.ReadShare{},
-				started: map[string]int{}, joined: map[string]chan struct{}{}}
+				started: map[string]int{}, joined: map[string]chan struct{}{}, sessions: map[string]int{}}
 			s.newMaprClient = recorder.newClient
 			s.runJobs(context.Background())
 
@@ -414,7 +426,7 @@ func TestSchedulerLooksUpTheServersOncePerRun(t *testing.T) {
 				return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
 			}
 			recorder := &waveRecorder{t: t, shares: map[string]config.ReadShare{},
-				started: map[string]int{}, joined: map[string]chan struct{}{}}
+				started: map[string]int{}, joined: map[string]chan struct{}{}, sessions: map[string]int{}}
 			s.newMaprClient = recorder.newClient
 			s.runJobs(context.Background())
 
@@ -512,7 +524,7 @@ func TestSchedulerRunsFinalRunsInBoundedWaves(t *testing.T) {
 	now := time.Date(2026, 9, 22, 1, 30, 0, 0, time.Local)
 	s.now = func() time.Time { return now }
 	recorder := &waveRecorder{t: t, shares: map[string]config.ReadShare{},
-		started: map[string]int{}, joined: map[string]chan struct{}{}}
+		started: map[string]int{}, joined: map[string]chan struct{}{}, sessions: map[string]int{}}
 	var mu sync.Mutex
 	var modes []clients.MaprClientMode
 	s.newMaprClient = func(args config.Args, mode clients.MaprClientMode) (backgroundClient, error) {
@@ -573,9 +585,10 @@ func (r *waveRecorder) assertWaves(t *testing.T, jobs int, wantWaves []int) {
 	}
 	for i := range jobs {
 		share := r.shares[fmt.Sprintf("j%d", i)]
-		if !share.IsZero() && (share.Members != jobsOfShare[share.Group] || share.Members != r.started[share.Group]) {
-			t.Errorf("j%d read share %+v: %d jobs have it, %d started", i, share,
-				jobsOfShare[share.Group], r.started[share.Group])
+		wantMembers := jobsOfShare[share.Group] * r.sessions[share.Group]
+		if !share.IsZero() && (share.Members != wantMembers || share.Members != r.started[share.Group]) {
+			t.Errorf("j%d read share %+v: %d jobs of %d sessions each have it, %d sessions started", i, share,
+				jobsOfShare[share.Group], r.sessions[share.Group], r.started[share.Group])
 		}
 	}
 	if want := slices.Max(wantWaves); r.maxRunning != want {

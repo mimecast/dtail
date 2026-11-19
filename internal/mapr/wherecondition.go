@@ -3,6 +3,7 @@ package mapr
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -152,19 +153,42 @@ func (wc *whereCondition) fill(tokens []token) ([]token, error) {
 		return tokens[3:], nil
 	}
 
-	if tokens[0].isBareword {
-		wc.lType = Field
-	} else {
-		wc.lType = String
-	}
-
-	if tokens[2].isBareword {
-		wc.rType = Field
-	} else {
-		wc.rType = String
-	}
+	wc.lType = stringOperandType(tokens[0])
+	wc.rType = stringOperandType(tokens[2])
 
 	return tokens[3:], nil
+}
+
+// stringOperandType tells what an operand of a string operation is: a quoted
+// token is a string, a bareword a field name. A bareword that is a number
+// (e.g. the 1 of "where $a eq 1") is a string literal too, as the grammar
+// (ARG := FIELD|FLOAT|STRING) allows a number there; looked up as a field it
+// would never exist, so the condition matched no line. A field that is named
+// like a number can still be given in backticks.
+func stringOperandType(t token) fieldType {
+	if !t.isBareword {
+		return String
+	}
+	if !t.quotesStripped && isNumericLiteral(t.str) {
+		return String
+	}
+	return Field
+}
+
+// isNumericLiteral reports whether str is a plain decimal number. It is
+// stricter than strconv.ParseFloat alone, which also accepts names such as
+// "inf", "nan" or "infinity" that may well be field names.
+func isNumericLiteral(str string) bool {
+	if str == "" {
+		return false
+	}
+	switch c := str[0]; {
+	case c >= '0' && c <= '9', c == '-', c == '+', c == '.':
+	default:
+		return false
+	}
+	f, err := strconv.ParseFloat(str, 64)
+	return err == nil && !math.IsInf(f, 0) && !math.IsNaN(f)
 }
 
 func (wc *whereCondition) floatClause(lValue float64, rValue float64, logger logging.Logger) bool {

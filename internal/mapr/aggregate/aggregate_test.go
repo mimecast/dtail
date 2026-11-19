@@ -323,44 +323,94 @@ func TestAggregateShutdownSerializesWithPendingRequest(t *testing.T) {
 // serialize is cancelled after the live map has already advanced, the
 // canceled snapshot is merged back without overwriting newer overwrite-style
 // values. This guards against stale last()/len() values clobbering more recent
-// updates that arrived after swapGroupSets.
+// updates that arrived after swapGroupSets. checkRemainingSet compares the
+// exact key sets, so the re-merge must also create no extra key. The old and
+// new len() strings differ in length, so the numeric len() value also shows
+// which set won and that it came from the same set as the string.
 func TestAggregateDoSerializeReMergesOnCtxCancel(t *testing.T) {
-
-	queryStr := `from STATS select count($time),last($message),len($message) from - group by $service`
-	agg, err := newAggregateFromTextForTest(queryStr, logging.NopLogger{})
+	agg, err := newAggregateFromTextForTest(`from STATS select count($time),`+
+		`last($message),len($message) from - group by $service`, logging.NopLogger{})
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
-
-	countStorage := agg.query.Select[0].FieldStorage
-	lastStorage := agg.query.Select[1].FieldStorage
-	lenStorage := agg.query.Select[2].FieldStorage
+	count := agg.query.Select[0].FieldStorage
+	last := agg.query.Select[1].FieldStorage
+	length := agg.query.Select[2].FieldStorage
 
 	agg.serializer.groupMu.Lock()
-	agg.serializer.groupSets["svc"] = &mapr.AggregateSet{
-		Samples: 1,
-		FValues: map[string]float64{
-			countStorage: 1,
-			lenStorage:   float64(len("old-len")),
-		},
-		SValues: map[string]string{
-			lastStorage: "old-last",
-			lenStorage:  "old-len",
-		},
-	}
+	agg.serializer.groupSets["svc"] = &mapr.AggregateSet{Samples: 1,
+		FValues: map[string]float64{count: 1, length: float64(len("old-len"))},
+		SValues: map[string]string{last: "old-last", length: "old-len"}}
 	agg.serializer.groupMu.Unlock()
 
-	if got := agg.countGroups(); got != 1 {
-		t.Fatalf("precondition: expected 1 group, got %d", got)
-	}
+	// The blocked send of the snapshot is cancelled after the live state of
+	// the same group advanced.
+	cancelSerializeWithNewerLiveSets(t, agg, map[string]*mapr.AggregateSet{
+		"svc": {Samples: 2,
+			FValues: map[string]float64{count: 2, length: float64(len("newer-len"))},
+			SValues: map[string]string{last: "new-last", length: "newer-len"}},
+	})
 
-	// Block the first send so doSerialize captures a snapshot and then waits
-	// in AggregateSet.Serialize. While it is blocked we advance the live state
-	// for the same group, then cancel the serialize context.
+	agg.serializer.groupMu.Lock()
+	set := agg.serializer.groupSets["svc"]
+	agg.serializer.groupMu.Unlock()
+	checkRemainingSet(t, "svc", set, 3,
+		map[string]float64{count: 3, length: float64(len("newer-len"))},
+		map[string]string{last: "new-last", length: "newer-len"})
+}
+
+// TestAggregateDoSerializeReMergesSparseFieldsOnCtxCancel drives a real
+// cancelled serialization with sparse fields: the unsent snapshot has
+// min()/max()/last()/len() values the newer live set lacks, and the live set
+// has a min() value and count the snapshot lacks. The re-merge must keep every
+// value a set carries and create no key for a field neither set has
+// (min($absent): checkRemainingSet compares the exact key sets).
+func TestAggregateDoSerializeReMergesSparseFieldsOnCtxCancel(t *testing.T) {
+	agg, err := newAggregateFromTextForTest(`from STATS select min($lat),max($neg),`+
+		`min($absent),last($name),len($name),count($status) from - group by $service`,
+		logging.NopLogger{})
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	storage := make([]string, len(agg.query.Select))
+	for i, sc := range agg.query.Select {
+		storage[i] = sc.FieldStorage
+	}
+	minLat, maxNeg, last, length, count := storage[0], storage[1], storage[3], storage[4], storage[5]
+
+	agg.serializer.groupMu.Lock()
+	agg.serializer.groupSets["svc"] = &mapr.AggregateSet{Samples: 1,
+		FValues: map[string]float64{minLat: 5, maxNeg: -3, length: 5},
+		SValues: map[string]string{last: "alice", length: "alice"}}
+	agg.serializer.groupMu.Unlock()
+
+	cancelSerializeWithNewerLiveSets(t, agg, map[string]*mapr.AggregateSet{
+		"svc": {Samples: 1, FValues: map[string]float64{minLat: 3, count: 1},
+			SValues: map[string]string{}},
+	})
+
+	agg.serializer.groupMu.Lock()
+	set := agg.serializer.groupSets["svc"]
+	agg.serializer.groupMu.Unlock()
+	checkRemainingSet(t, "svc", set, 2,
+		map[string]float64{minLat: 3, maxNeg: -3, length: 5, count: 1},
+		map[string]string{last: "alice", length: "alice"})
+}
+
+// cancelSerializeWithNewerLiveSets runs doSerialize on agg's current groups
+// with nobody reading its messages, so the send of the snapshot blocks. Once
+// the live state was swapped out it installs live as the newer live sets of
+// the groups, cancels the serialization and waits until it returned, which
+// re-merged the unsent snapshot with live.
+func cancelSerializeWithNewerLiveSets(t *testing.T, agg *Aggregate,
+	live map[string]*mapr.AggregateSet) {
+
+	t.Helper()
 	messages := make(chan string)
 	agg.PrepareOutput(context.Background(), messages)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan struct{})
 	go func() {
 		agg.doSerialize(ctx)
@@ -368,10 +418,7 @@ func TestAggregateDoSerializeReMergesOnCtxCancel(t *testing.T) {
 	}()
 
 	deadline := time.After(2 * time.Second)
-	for {
-		if got := agg.countGroups(); got == 0 {
-			break
-		}
+	for agg.countGroups() != 0 {
 		select {
 		case <-deadline:
 			t.Fatal("timed out waiting for aggregate to swap live state")
@@ -380,47 +427,16 @@ func TestAggregateDoSerializeReMergesOnCtxCancel(t *testing.T) {
 	}
 
 	agg.serializer.groupMu.Lock()
-	agg.serializer.groupSets["svc"] = &mapr.AggregateSet{
-		Samples: 2,
-		FValues: map[string]float64{
-			countStorage: 2,
-			lenStorage:   float64(len("new-len")),
-		},
-		SValues: map[string]string{
-			lastStorage: "new-last",
-			lenStorage:  "new-len",
-		},
+	for key, set := range live {
+		agg.serializer.groupSets[key] = set
 	}
 	agg.serializer.groupMu.Unlock()
 
 	cancel()
-
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("doSerialize did not return after ctx cancel")
-	}
-
-	agg.serializer.groupMu.Lock()
-	set, ok := agg.serializer.groupSets["svc"]
-	agg.serializer.groupMu.Unlock()
-	if !ok {
-		t.Fatal("expected svc group to be re-merged after ctx cancel")
-	}
-	if got := set.Samples; got != 3 {
-		t.Fatalf("expected merged samples to be 3, got %d", got)
-	}
-	if got := set.FValues[countStorage]; got != 3 {
-		t.Fatalf("expected merged count to be 3, got %v", got)
-	}
-	if got := set.SValues[lastStorage]; got != "new-last" {
-		t.Fatalf("expected latest last() value to survive cancel, got %q", got)
-	}
-	if got := set.SValues[lenStorage]; got != "new-len" {
-		t.Fatalf("expected latest len() string value to survive cancel, got %q", got)
-	}
-	if got := set.FValues[lenStorage]; got != float64(len("new-len")) {
-		t.Fatalf("expected latest len() numeric value to survive cancel, got %v", got)
 	}
 }
 
@@ -1047,8 +1063,10 @@ func TestAggregatePreparedContextControlsStartOwnedFinalization(t *testing.T) {
 	if emitted != cap(messages) {
 		t.Fatalf("emitted %d results, want the %d that fit before cancellation", emitted, cap(messages))
 	}
-	if remaining := aggregate.countGroups(); remaining == 0 {
-		t.Fatal("expected canceled finalization to retain unsent groups")
+	// The final serialization drops what it could not send (nothing would
+	// send it any more) and reports the result as interrupted instead.
+	if !aggregate.FinalResultInterrupted() {
+		t.Fatal("canceled finalization did not report its final result as interrupted")
 	}
 }
 

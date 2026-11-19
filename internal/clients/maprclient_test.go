@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mimecast/dtail/internal/clients/connectors"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/mapr"
@@ -18,24 +19,22 @@ import (
 
 func TestMaprClientCommitSessionSpecResetsSharedState(t *testing.T) {
 	query := mustMaprClientQuery(t, "select count(status) from stats group by status")
+	args := config.Args{Mode: omode.MapClient, QueryStr: query.RawQuery, RegexStr: maprRegexForQuery(query)}
 	client := &MaprClient{
 		baseClient: baseClient{
 			mu:   newBaseClientMu(),
-			Args: config.Args{Mode: omode.MapClient},
+			Args: args,
 		},
 		session: maprclient.NewSessionState(query, logging.NopLogger{}),
 		mode:    DefaultMode,
 	}
-	client.setRegexForQuery(query)
 
 	initial := client.session.Snapshot()
-	group := mapr.NewGroupSet(logging.NopLogger{})
-	set := group.GetSet("ERROR")
-	set.Samples = 1
-	set.FValues[query.Select[0].FieldStorage] = 1
-	if err := initial.GlobalGroup.Merge(query, group); err != nil {
-		t.Fatalf("Merge() error = %v", err)
-	}
+	initial.GlobalGroup.Update(func(group *mapr.GroupSet) {
+		set := group.GetSet("ERROR")
+		set.Samples = 1
+		set.FValues[query.Select[0].FieldStorage] = 1
+	})
 	if changed, ok := client.session.CommitRenderedResult(initial.Generation, "old-result"); !ok || !changed {
 		t.Fatalf("CommitRenderedResult() = changed:%v ok:%v, want changed and ok", changed, ok)
 	}
@@ -60,10 +59,74 @@ func TestMaprClientCommitSessionSpecResetsSharedState(t *testing.T) {
 	if updated.LastResult != "" {
 		t.Fatalf("last result = %q, want empty", updated.LastResult)
 	}
-	if client.RegexStr != "\\|MAPREDUCE:WARNINGS\\|" {
-		t.Fatalf("RegexStr = %q, want WARNINGS table regex", client.RegexStr)
+	// The args are left to applyInteractiveReload, which stores them under
+	// the state lock; the commit must not write them unlocked.
+	if client.QueryStr != args.QueryStr || client.RegexStr != args.RegexStr {
+		t.Fatalf("commitSessionSpec() changed the args: query %q regex %q, want %q and %q",
+			client.QueryStr, client.RegexStr, args.QueryStr, args.RegexStr)
 	}
+}
 
+// TestMaprClientReloadDoesNotRaceWithSnapshots runs interactive query
+// reloads, whose profile commit is commitSessionSpec, while another goroutine
+// snapshots the args as a reconnect does. Run with -race: the commit must not
+// write c.Args, which the snapshot reads under the state lock. The stored args
+// are the reloaded, normalized ones.
+func TestMaprClientReloadDoesNotRaceWithSnapshots(t *testing.T) {
+	queries := []string{
+		"select count(status) from stats group by status",
+		"select count(status) from warnings group by status",
+	}
+	query := mustMaprClientQuery(t, queries[0])
+	spec := SessionSpec{Mode: omode.MapClient, Files: []string{"/var/log/app.log"},
+		Query: queries[0], Regex: maprRegexForQuery(query)}
+	conn := &interactiveReloadConnector{server: "srv1", supported: true,
+		committedSpec: spec, liveSpec: spec, generation: 1}
+	client := &MaprClient{
+		baseClient: baseClient{
+			mu:          newBaseClientMu(),
+			Args:        config.Args{Mode: omode.MapClient, What: "/var/log/app.log", QueryStr: queries[0]},
+			sessionSpec: spec,
+			connections: []connectors.Connector{conn},
+		},
+		session: maprclient.NewSessionState(query, logging.NopLogger{}),
+		mode:    DefaultMode,
+	}
+	client.profile.commit = client.commitSessionSpec
+
+	stop := make(chan struct{})
+	snapshots := make(chan struct{})
+	go func() {
+		defer close(snapshots)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_, _ = client.snapshotConnectionState()
+			}
+		}
+	}()
+
+	var last config.Args
+	for i := 0; i < 50; i++ {
+		command, err := parseInteractiveCommand(client.Args, ":reload --query '"+queries[(i+1)%2]+"'", nil)
+		if err != nil {
+			t.Fatalf("parseInteractiveCommand() error = %v", err)
+		}
+		if err := client.applyInteractiveReload(command.next, command.spec); err != nil {
+			t.Fatalf("applyInteractiveReload() error = %v", err)
+		}
+		last = command.next
+	}
+	close(stop)
+	<-snapshots
+
+	args, _ := client.snapshotConnectionState()
+	if args.QueryStr != last.QueryStr || args.RegexStr != `\|MAPREDUCE:STATS\|` {
+		t.Fatalf("stored args = query %q regex %q, want %q with the STATS filter",
+			args.QueryStr, args.RegexStr, last.QueryStr)
+	}
 }
 
 func TestMaprClientCommitSessionSpecRejectsMissingQuery(t *testing.T) {
@@ -299,11 +362,14 @@ func outfileTestQuery(t *testing.T, outfile string, appendMode bool) *mapr.Query
 func mergeOutfileTestRow(t *testing.T, snapshot maprclient.SessionSnapshot, count int) {
 	t.Helper()
 
-	group := mapr.NewGroupSet(logging.NopLogger{})
-	set := group.GetSet("host-a")
+	set := mapr.NewAggregateSet()
 	set.Samples = 1
 	set.FValues["count(foo)"] = float64(count)
-	if err := snapshot.GlobalGroup.Merge(snapshot.Query, group); err != nil {
+	var err error
+	snapshot.GlobalGroup.Update(func(group *mapr.GroupSet) {
+		err = group.GetSet("host-a").Merge(snapshot.Query, set)
+	})
+	if err != nil {
 		t.Fatalf("Merge() error = %v", err)
 	}
 }

@@ -248,6 +248,29 @@ func TestNewMaprClientDerivesModeAndRegex(t *testing.T) {
 	}
 }
 
+// TestNewMaprClientIgnoresInvert pins that dtail --invert --query reads the
+// lines of the query's table, not the other lines, in the base client and in
+// the session spec sent to servers alike.
+func TestNewMaprClientIgnoresInvert(t *testing.T) {
+	client, err := NewMaprClient(config.Args{
+		Mode:              omode.TailClient,
+		QueryStr:          "from STATS select count(*)",
+		RegexInvert:       true,
+		Serverless:        true,
+		ConnectionsPerCPU: 1,
+	}, clientTestRuntimeConfig(), DefaultMode, LoggerDependencies{})
+	if err != nil {
+		t.Fatalf("NewMaprClient() error = %v", err)
+	}
+	if client.RegexInvert || client.sessionSpec.RegexInvert {
+		t.Fatalf("invert = client %v, session spec %v, want false for both",
+			client.RegexInvert, client.sessionSpec.RegexInvert)
+	}
+	if !client.Regex.MatchString("INFO|1|MAPREDUCE:STATS|a=b") {
+		t.Fatalf("regex %q does not match a STATS line", client.RegexStr)
+	}
+}
+
 func TestMaprClientCumulativePolicy(t *testing.T) {
 	t.Parallel()
 
@@ -413,11 +436,31 @@ func TestInteractiveControlWritersDescribeCurrentSession(t *testing.T) {
 	}
 	for _, want := range []string{
 		"mode=tail", "files=app.log,audit.log", `query="from STATS select count(*)"`,
-		`regex="ERROR"`, `options="plain=true"`, "timeout=7", "capable=1/2",
+		`regex="ERROR"`, "invert=false", `options="plain=true"`, "timeout=7", "capable=1/2",
 	} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("state output = %q, want substring %q", output.String(), want)
 		}
+	}
+}
+
+// TestInteractiveStateShowsInvert pins that :show tells an inverted regex
+// apart: --invert carries over between reloads, and inverted, regex="" matches
+// no line instead of every line.
+func TestInteractiveStateShowsInvert(t *testing.T) {
+	t.Parallel()
+
+	client := &baseClient{
+		mu:          newBaseClientMu(),
+		Args:        config.Args{Mode: omode.GrepClient, RegexInvert: true},
+		sessionSpec: SessionSpec{Mode: omode.GrepClient, Files: []string{"app.log"}, RegexInvert: true},
+	}
+	var output bytes.Buffer
+	if err := client.writeInteractiveState(&output); err != nil {
+		t.Fatalf("writeInteractiveState() error = %v", err)
+	}
+	if want := `regex="" invert=true `; !strings.Contains(output.String(), want) {
+		t.Fatalf("state output = %q, want substring %q", output.String(), want)
 	}
 }
 

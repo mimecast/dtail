@@ -55,8 +55,15 @@ func makeReaderFactory(mode omode.Mode, seekEOF bool) readerFactory {
 
 func makeReader(options readerFactoryOptions, mode omode.Mode, seekEOF bool) (fs.FileReader, error) {
 	if options.target != nil && options.target.Kind == fs.JournalKind {
-		return journal.NewReader(journalArgs(options.path), options.path,
-			mode == omode.TailClient, options.serverMessages)
+		// Journal entries are cut at MaxLineLength like file lines.
+		return journal.NewReader(journal.ReaderOptions{
+			Args:           journalArgs(options.path),
+			SourceID:       options.path,
+			Follow:         mode == omode.TailClient,
+			ServerMessages: options.serverMessages,
+			MaxLineLength:  options.maxLineLength,
+			Logger:         options.logger,
+		})
 	}
 
 	return fs.NewReadFile(fs.ReadOptions{

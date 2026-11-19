@@ -105,6 +105,47 @@ func TestGroupSetPercentageReturnsZeroWhenTotalIsZero(t *testing.T) {
 	}
 }
 
+// TestGroupSetPercentileSkipsGroupsLackingField verifies that a group none of
+// whose lines had the percentile field takes no part in the ranking and shows
+// 0. It used to be ranked as 0, which shifted the other groups' ranks: with
+// the groups lat=-5, no lat and lat=-1 the result was 33.3, 100.0 and 66.7.
+func TestGroupSetPercentileSkipsGroupsLackingField(t *testing.T) {
+	query, err := NewQuery("select percentile(lat),count(status) from stats group by host order by percentile(lat)",
+		logging.NopLogger{})
+	if err != nil {
+		t.Fatalf("Unable to parse query: %v", err)
+	}
+	groupSet := NewGroupSet(logging.NopLogger{})
+	for host, lat := range map[string]string{"host-a": "-5", "host-b": "", "host-c": "-1"} {
+		set := groupSet.GetSet(host)
+		if lat != "" {
+			if aggErr := set.Aggregate("percentile(lat)", Percentile, lat, false); aggErr != nil {
+				t.Fatalf("Unable to aggregate percentile for %s: %v", host, aggErr)
+			}
+		}
+		if aggErr := set.Aggregate("count(status)", Count, "ok", false); aggErr != nil {
+			t.Fatalf("Unable to aggregate count for %s: %v", host, aggErr)
+		}
+	}
+
+	rows, _, err := groupSet.result(query, false)
+	if err != nil {
+		t.Fatalf("Unable to build result rows: %v", err)
+	}
+	want := []struct {
+		host       string
+		percentile string
+	}{{"host-c", "100.000000"}, {"host-a", "50.000000"}, {"host-b", "0.000000"}}
+	if len(rows) != len(want) {
+		t.Fatalf("Expected %d result rows, got %d", len(want), len(rows))
+	}
+	for i, w := range want {
+		if rows[i].groupKey != w.host || rows[i].values[0] != w.percentile || rows[i].values[1] != "1" {
+			t.Errorf("row %d = %s %v, want %s [%s 1]", i, rows[i].groupKey, rows[i].values, w.host, w.percentile)
+		}
+	}
+}
+
 func TestPercentileRank(t *testing.T) {
 	sortedValues := []float64{10, 20, 30}
 

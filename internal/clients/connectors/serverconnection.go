@@ -550,8 +550,12 @@ func preferContextError(ctx context.Context, err error) error {
 	return err
 }
 
+// shouldReportConnectionError reports whether err, which ended a connection,
+// still has to be reported to the user. A missing read-target capability was
+// already reported by requireSpecCapabilities, and a canceled context is no
+// error of the connection.
 func shouldReportConnectionError(ctx context.Context, err error) bool {
-	if errors.Is(err, ErrJournalUnsupported) {
+	if errors.Is(err, ErrJournalUnsupported) || errors.Is(err, ErrEncodedReadPathUnsupported) {
 		return false
 	}
 	ctxErr := ctx.Err()

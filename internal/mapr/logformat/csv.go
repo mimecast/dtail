@@ -1,6 +1,7 @@
 package logformat
 
 import (
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"strings"
@@ -42,6 +43,7 @@ var _ Parser = (*csvParser)(nil)
 var _ FieldsIntoParser = (*csvParser)(nil)
 var _ queryAwareParser = (*csvParser)(nil)
 var _ SourceReleaser = (*csvParser)(nil)
+var _ WhitespacePreservingParser = (*csvParser)(nil)
 
 func newCSVParser(hostname, timeZoneName string, timeZoneOffset int) (*csvParser, error) {
 	defaultParser, err := newDefaultParser(hostname, timeZoneName, timeZoneOffset)
@@ -57,6 +59,9 @@ func newCSVParser(hostname, timeZoneName string, timeZoneOffset int) (*csvParser
 func (p *csvParser) setQuery(query *mapr.Query) {
 	p.base.setQuery(query)
 }
+
+// PreserveWhitespace keeps leading and trailing spaces in CSV fields.
+func (p *csvParser) PreserveWhitespace() bool { return true }
 
 func (p *csvParser) MakeFields(maprLine, sourceID string) (map[string]string, error) {
 	fields := make(map[string]string, p.base.fieldsCapacity)
@@ -79,12 +84,32 @@ func (p *csvParser) ReleaseSource(sourceID string) {
 // MakeFieldsInto parses maprLine as a CSV data row into the caller's map.
 func (p *csvParser) MakeFieldsInto(dst map[string]string, maprLine, sourceID string) error {
 	clear(dst)
-	header, installed := p.ensureHeader(sourceID, maprLine)
+	if strings.ContainsAny(maprLine, "\r\n") {
+		return errors.New("multiline CSV fields are unsupported")
+	}
+	header, installed, err := p.ensureHeader(sourceID, maprLine)
+	if err != nil {
+		return err
+	}
 	if installed {
 		return ErrIgnoreFields
 	}
 
 	p.base.addDefaultFields(dst, maprLine)
+	if strings.ContainsRune(maprLine, '"') {
+		values, err := parseCSVRecord(maprLine)
+		if err != nil {
+			return err
+		}
+		if len(values) > len(header) {
+			return fmt.Errorf("CSV file seems corrupted, more fields than header values?")
+		}
+		for column, value := range values {
+			p.base.addDynamicField(dst, header[column], value)
+		}
+		return nil
+	}
+	// Keep the common, unquoted path allocation-free.
 	start := 0
 	column := 0
 	delimiter := protocol.CSVDelimiter[0]
@@ -114,40 +139,39 @@ func (p *csvParser) MakeFieldsInto(dst map[string]string, maprLine, sourceID str
 // header. The previous implementation split the check (RLock) from the
 // install (Lock), so two goroutines could both observe "missing" and both
 // report ErrIgnoreFields, silently dropping the loser's data row.
-func (p *csvParser) ensureHeader(sourceID, maprLine string) ([]string, bool) {
+func (p *csvParser) ensureHeader(sourceID, maprLine string) ([]string, bool, error) {
 	p.mu.RLock()
 	if header, ok := p.headers[sourceID]; ok {
 		p.mu.RUnlock()
-		return header, false
+		return header, false, nil
 	}
 	p.mu.RUnlock()
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if header, ok := p.headers[sourceID]; ok {
-		return header, false
+		return header, false, nil
 	}
-	header := parseHeaderLine(maprLine)
+	header, err := parseCSVRecord(maprLine)
+	if err != nil {
+		return nil, false, fmt.Errorf("CSV header: %w", err)
+	}
 	p.headers[sourceID] = header
-	return header, true
+	return header, true, nil
 }
 
-// parseHeaderLine copies every column name out of maprLine. The header is kept
-// for the whole session while maprLine is only borrowed for the duration of
-// the parse call (see Parser.MakeFields), so storing sub-slices of it would
-// leave the header pointing at whatever the caller writes into that buffer
-// next.
-func parseHeaderLine(maprLine string) []string {
-	var header []string
-	start := 0
-	delimiter := protocol.CSVDelimiter[0]
-	for {
-		field, next, done := scanDelimitedField(maprLine, start, delimiter)
-		header = append(header, strings.Clone(field))
-		if done {
-			break
-		}
-		start = next
+// parseCSVRecord returns owned strings: headers outlive the borrowed input
+// buffer, and encoding/csv copies the decoded record into its own storage.
+func parseCSVRecord(maprLine string) ([]string, error) {
+	if maprLine == "" {
+		return []string{""}, nil
 	}
-	return header
+	r := csv.NewReader(strings.NewReader(maprLine))
+	r.Comma = rune(protocol.CSVDelimiter[0])
+	r.FieldsPerRecord = -1
+	fields, err := r.Read()
+	if err != nil {
+		return nil, fmt.Errorf("invalid CSV record (multiline fields are unsupported): %w", err)
+	}
+	return fields, nil
 }

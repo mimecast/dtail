@@ -3,8 +3,11 @@ package protocol
 const (
 	// ProtocolCompat -ibility version
 	ProtocolCompat string = "4.1"
-	// MessageDelimiter delimits separate messages.
-	MessageDelimiter byte = '¬'
+	// MessageDelimiter terminates each message (frame) of the server-to-
+	// client stream. It is the single byte 0xAC (the rune '¬' truncated to a
+	// byte), which is also a UTF-8 continuation byte; sessions that
+	// negotiated EscapedFraming escape it in frame bodies (see Framing).
+	MessageDelimiter byte = 0xAC
 	// fieldDelimiter delimits message fields.
 	fieldDelimiter string = "|"
 	// AggregateMessageID is the leading field of a mapreduce aggregate-data

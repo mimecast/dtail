@@ -716,7 +716,7 @@ func writeTurboFileServerConfig(t *testing.T, readableFile string) string {
 			"CacheDir": filepath.Base(cacheDirAbs),
 		},
 		"Server": map[string]any{
-			"HostKeyFile": filepath.Join(tmpDir, "ssh_host_key"),
+			"HostKeyFile": suiteHostKeyPath(t),
 			"Permissions": map[string]any{
 				"Default": []string{permissionForPath(readableFile)},
 			},

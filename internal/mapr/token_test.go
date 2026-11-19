@@ -1,6 +1,27 @@
 package mapr
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestTokensConsumeEmptyLiterals(t *testing.T) {
+	want := []token{{str: "foo", isBareword: true}, {str: "eq", isBareword: true}, {str: "", isBareword: false}}
+	tokens := tokenize(`foo eq "" select bar`)
+	if len(tokens) != 5 {
+		t.Fatalf("tokenize returned %d tokens, want 5: %#v", len(tokens), tokens)
+	}
+	if !reflect.DeepEqual(tokens[:3], want) {
+		t.Fatalf("tokenize lost literal metadata: got %#v, want %#v", tokens, want)
+	}
+	remaining, got := tokensConsume(tokens)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("tokensConsume = %#v, want %#v", got, want)
+	}
+	if !reflect.DeepEqual(remaining, tokens[3:]) {
+		t.Errorf("remaining tokens = %#v, want %#v", remaining, tokens[3:])
+	}
+}
 
 // TestTokensConsumeBacktickStripping covers the backtick-stripping path in
 // tokensConsume, including the regression for a lone backtick token which
@@ -18,6 +39,11 @@ func TestTokensConsumeBacktickStripping(t *testing.T) {
 		{
 			name:  "empty string",
 			input: "",
+			want:  nil,
+		},
+		{
+			name:  "whitespace only",
+			input: " \t\n ",
 			want:  nil,
 		},
 		{

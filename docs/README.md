@@ -18,10 +18,13 @@ Layout:
   * [Turboboost optimization](dev/turboboost_optimization.md) (design of the
     channel-less read/output path — now the single, default path)
   * [Integration tests refactoring guide](dev/refactoring_guide.md)
+  * [Wire framing](dev/wire_framing.md) (server-to-client frames, the 0xAC
+    delimiter, the negotiated escaped framing and marked control frames)
 * `benchmarks/` — raw evidence bundles (scripts, CSV results, logs) backing
   the dated benchmark reports
 * `archive/` — outdated documents kept for historical reference only
 * Top level — dated, point-in-time reports such as
   [code-quality-audit-2026-09-06.md](code-quality-audit-2026-09-06.md),
   [performance-plan-2026-09-15.md](performance-plan-2026-09-15.md) and
-  [upstream-benchmark-2026-09-23.md](upstream-benchmark-2026-09-23.md)
+  [upstream-benchmark-2026-09-23.md](upstream-benchmark-2026-09-23.md) and
+  [upstream-benchmark-2026-11-11.md](upstream-benchmark-2026-11-11.md)

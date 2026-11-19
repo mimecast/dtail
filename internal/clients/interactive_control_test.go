@@ -1,15 +1,19 @@
 package clients
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients/connectors"
 	"github.com/mimecast/dtail/internal/clients/handlers"
 	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/lcontext"
 	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/protocol"
@@ -57,6 +61,10 @@ func TestParseInteractiveCommandForMapReloadDerivesRegex(t *testing.T) {
 		Mode:     omode.MapClient,
 		What:     "/var/log/app.log",
 		QueryStr: "select count(status) from stats group by status",
+		// A stale filter of the previous query and an --invert, which a
+		// query ignores, must not survive the reload.
+		RegexStr:    "\\|MAPREDUCE:STATS\\|",
+		RegexInvert: true,
 	}
 
 	command, err := parseInteractiveCommand(current,
@@ -75,6 +83,41 @@ func TestParseInteractiveCommandForMapReloadDerivesRegex(t *testing.T) {
 	if command.spec.Regex != "\\|MAPREDUCE:WARNINGS\\|" {
 		t.Fatalf("session spec regex = %q, want WARNINGS table regex", command.spec.Regex)
 	}
+	// The reloaded args carry the same filter as the spec, never inverted,
+	// as applyInteractiveReload stores them for reconnects and :show.
+	if command.next.RegexStr != command.spec.Regex || command.next.RegexInvert || command.spec.RegexInvert {
+		t.Fatalf("reloaded args = regex %q invert %v (spec invert %v), want %q not inverted",
+			command.next.RegexStr, command.next.RegexInvert, command.spec.RegexInvert, command.spec.Regex)
+	}
+}
+
+// TestParseInteractiveReloadRejectsQueryInvert pins that a :reload of a query
+// session (dmap, and dtail started with --query) tells why it does not take
+// --invert instead of dropping it or failing with the flag package's generic
+// "flag provided but not defined", while --invert=false, which changes
+// nothing, is accepted.
+func TestParseInteractiveReloadRejectsQueryInvert(t *testing.T) {
+	for _, mode := range []omode.Mode{omode.MapClient, omode.TailClient} {
+		current := config.Args{
+			Mode:     mode,
+			What:     "/var/log/app.log",
+			QueryStr: "select count(status) from stats group by status",
+			RegexStr: "\\|MAPREDUCE:STATS\\|",
+		}
+		for _, line := range []string{":reload --invert --files /tmp/new.log", ":reload --invert=true --plain"} {
+			_, err := parseInteractiveCommand(current, line, logging.NopLogger{})
+			if !errors.Is(err, errReloadQueryInvert) {
+				t.Errorf("%s %q: error = %v, want %v", mode, line, err, errReloadQueryInvert)
+			}
+		}
+		command, err := parseInteractiveCommand(current, ":reload --invert=false --plain", logging.NopLogger{})
+		if err != nil {
+			t.Fatalf("%s: --invert=false error = %v", mode, err)
+		}
+		if command.next.RegexInvert || command.spec.RegexInvert {
+			t.Fatalf("%s: --invert=false reload inverts the query filter", mode)
+		}
+	}
 }
 
 func TestParseInteractiveCommandRejectsUnterminatedQuotes(t *testing.T) {
@@ -86,6 +129,293 @@ func TestParseInteractiveCommandRejectsUnterminatedQuotes(t *testing.T) {
 	if _, err := parseInteractiveCommand(current,
 		`:reload --query "select count(status) from stats`, logging.NopLogger{}); err == nil {
 		t.Fatalf("expected parseInteractiveCommand() to reject unterminated quoted input")
+	}
+}
+
+func TestSplitInteractiveArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want []string
+	}{
+		{name: "plain words", raw: `--grep WARN --max 4`, want: []string{"--grep", "WARN", "--max", "4"}},
+		{name: "spaces and tabs", raw: "  --grep \t WARN  ", want: []string{"--grep", "WARN"}},
+		{name: "single quotes keep backslash", raw: `--regex '\d+'`, want: []string{"--regex", `\d+`}},
+		{name: "single quotes keep double quote", raw: `--regex 'say "hi"'`, want: []string{"--regex", `say "hi"`}},
+		{name: "single quotes end at quote after backslash", raw: `--regex 'a\'`, want: []string{"--regex", `a\`}},
+		{name: "double quotes keep other backslashes", raw: `--regex "a\.b\d"`, want: []string{"--regex", `a\.b\d`}},
+		{name: "double quotes escape backslash", raw: `--regex "a\\b"`, want: []string{"--regex", `a\b`}},
+		{name: "double quotes escape double quote", raw: `--regex "say \"hi\""`, want: []string{"--regex", `say "hi"`}},
+		{name: "double quotes keep single quote", raw: `--regex "it's"`, want: []string{"--regex", "it's"}},
+		{name: "double quotes keep dollar", raw: `--query "select count($line)"`, want: []string{"--query", "select count($line)"}},
+		{name: "double quotes escape dollar", raw: `--regex "\$x\$"`, want: []string{"--regex", "$x$"}},
+		{name: "double quotes escape backtick", raw: "--regex \"a\\`b\"", want: []string{"--regex", "a`b"}},
+		{name: "single quotes keep escaped dollar", raw: `--regex '\$x'`, want: []string{"--regex", `\$x`}},
+		// The tokenizer keeps invalid UTF-8; parseInteractiveReload rejects
+		// such a line before it gets here.
+		{name: "invalid utf-8 is kept", raw: "--regex \xff'\xfe' \"\xfd\"", want: []string{"--regex", "\xff\xfe", "\xfd"}},
+		{name: "unquoted backslash before multibyte", raw: `--files /tmp/\é.log`, want: []string{"--files", "/tmp/é.log"}},
+		{name: "double-quoted backslash before multibyte", raw: `--regex "\é"`, want: []string{"--regex", `\é`}},
+		{name: "unquoted backslash before invalid byte", raw: "--regex \\\xff", want: []string{"--regex", "\xff"}},
+		{name: "unquoted backslash escapes space", raw: `--files /a\ b`, want: []string{"--files", "/a b"}},
+		{name: "unquoted backslash escapes quote", raw: `--regex it\'s`, want: []string{"--regex", "it's"}},
+		{name: "escaped trailing space", raw: `--regex foo\ `, want: []string{"--regex", "foo "}},
+		{name: "escaped trailing tab", raw: "--regex foo\\\t", want: []string{"--regex", "foo\t"}},
+		{name: "unquoted backslash escapes backslash", raw: `--regex a\\d`, want: []string{"--regex", `a\d`}},
+		{name: "empty single quotes", raw: `--regex ''`, want: []string{"--regex", ""}},
+		{name: "empty double quotes", raw: `--regex ""`, want: []string{"--regex", ""}},
+		{name: "empty value before flag", raw: `--regex '' --max 1`, want: []string{"--regex", "", "--max", "1"}},
+		{name: "empty value after equals", raw: `--regex=''`, want: []string{"--regex="}},
+		{name: "adjacent parts join", raw: `--files=/a' 'b"c"d`, want: []string{"--files=/a bcd"}},
+		{name: "adjacent empty quotes join", raw: `foo''bar`, want: []string{"foobar"}},
+		{name: "empty input", raw: "", want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := splitInteractiveArgs(tt.raw)
+			if err != nil {
+				t.Fatalf("splitInteractiveArgs(%q) error = %v", tt.raw, err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("splitInteractiveArgs(%q) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSplitInteractiveArgsRejectsUnterminatedInput(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{name: "open single quote", raw: `--regex 'abc`, wantErr: "unterminated quoted string"},
+		{name: "open double quote", raw: `--regex "abc`, wantErr: "unterminated quoted string"},
+		{name: "lone single quote", raw: `'`, wantErr: "unterminated quoted string"},
+		{name: "escaped closing double quote", raw: `--regex "abc\"`, wantErr: "unterminated quoted string"},
+		{name: "backslash at end of double quote", raw: `--regex "abc\`, wantErr: "unterminated quoted string"},
+		{name: "trailing backslash", raw: `--regex abc\`, wantErr: "unterminated escape sequence"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := splitInteractiveArgs(tt.raw)
+			if err == nil {
+				t.Fatalf("splitInteractiveArgs(%q) = %q, want error %q", tt.raw, got, tt.wantErr)
+			}
+			if err.Error() != tt.wantErr {
+				t.Fatalf("splitInteractiveArgs(%q) error = %q, want %q", tt.raw, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseInteractiveCommandReloadRegexQuoting(t *testing.T) {
+	current := config.Args{
+		Mode:     omode.GrepClient,
+		What:     "/var/log/app.log",
+		RegexStr: "ERROR",
+		LContext: lcontext.LContext{MaxCount: 7},
+	}
+
+	tests := []struct {
+		name      string
+		line      string
+		wantRegex string
+		wantMax   int
+	}{
+		{name: "single-quoted backslash regex", line: `:reload --regex '\d+'`, wantRegex: `\d+`, wantMax: 7},
+		{name: "double-quoted backslash regex", line: `:reload --regex "a\.b"`, wantRegex: `a\.b`, wantMax: 7},
+		{name: "empty regex clears it", line: `:reload --regex ''`, wantRegex: "", wantMax: 7},
+		{name: "empty regex keeps following flag", line: `:reload --regex '' --max 1`, wantRegex: "", wantMax: 1},
+		// --grep follows the dgrep/dtail command lines: a non-empty --grep
+		// wins whatever the order (an empty one is rejected, see
+		// TestParseInteractiveCommandRejectsBlankValues).
+		{name: "grep wins when given first", line: `:reload --grep WARN --regex INFO`, wantRegex: "WARN", wantMax: 7},
+		{name: "grep wins when given last", line: `:reload --regex INFO --grep WARN`, wantRegex: "WARN", wantMax: 7},
+		// Only the command is trimmed: an escaped trailing blank is kept.
+		{name: "escaped trailing space", line: `:reload --regex foo\ `, wantRegex: "foo ", wantMax: 7},
+		{name: "escaped trailing tab", line: ":reload --regex foo\\\t", wantRegex: "foo\t", wantMax: 7},
+		{name: "escaped trailing space before line ending", line: ":reload --regex foo\\ \r\n", wantRegex: "foo ", wantMax: 7},
+		{name: "leading blanks and trailing blanks", line: " \t:reload --regex foo  \t", wantRegex: "foo", wantMax: 7},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			command, err := parseInteractiveCommand(current, tt.line, logging.NopLogger{})
+			if err != nil {
+				t.Fatalf("parseInteractiveCommand(%q) error = %v", tt.line, err)
+			}
+			if command.next.RegexStr != tt.wantRegex || command.spec.Regex != tt.wantRegex {
+				t.Fatalf("regex = %q, spec regex = %q, want %q",
+					command.next.RegexStr, command.spec.Regex, tt.wantRegex)
+			}
+			if command.next.MaxCount != tt.wantMax {
+				t.Fatalf("max = %d, want %d", command.next.MaxCount, tt.wantMax)
+			}
+		})
+	}
+}
+
+func TestParseInteractiveCommandRejectsBlankValues(t *testing.T) {
+	grep := config.Args{Mode: omode.GrepClient, What: "/var/log/app.log", RegexStr: "ERROR"}
+	cat := config.Args{Mode: omode.CatClient, What: "/var/log/app.log"}
+	mapr := config.Args{
+		Mode:     omode.MapClient,
+		What:     "/var/log/app.log",
+		QueryStr: "select count(status) from stats group by status",
+	}
+	tailQuery := mapr
+	tailQuery.Mode = omode.TailClient
+
+	tests := []struct {
+		name    string
+		current config.Args
+		line    string
+		wantErr string
+	}{
+		{name: "empty files", current: grep, line: `:reload --files ''`, wantErr: "--files needs at least one non-blank file"},
+		{name: "blank files", current: cat, line: `:reload --files ' '`, wantErr: "--files needs at least one non-blank file"},
+		{name: "comma files", current: cat, line: `:reload --files ,`, wantErr: "--files needs at least one non-blank file"},
+		{name: "blank comma files", current: mapr, line: `:reload --files ' , '`, wantErr: "--files needs at least one non-blank file"},
+		{name: "empty files after equals", current: grep, line: `:reload --files=`, wantErr: "--files needs at least one non-blank file"},
+		{name: "empty dmap query", current: mapr, line: `:reload --query ''`, wantErr: "--query must not be blank"},
+		{name: "blank dmap query", current: mapr, line: `:reload --query '  '`, wantErr: "--query must not be blank"},
+		{name: "empty dtail query", current: tailQuery, line: `:reload --query ""`, wantErr: "--query must not be blank"},
+		{name: "empty extra argument", current: grep, line: `:reload --plain ''`, wantErr: `unexpected arguments: ""`},
+		{name: "extra arguments quoted", current: cat, line: `:reload --plain foo ' '`, wantErr: `unexpected arguments: "foo" " "`},
+		{name: "empty grep", current: grep, line: `:reload --grep ""`, wantErr: "--grep '' is ignored; use --regex '' to clear the regex"},
+		{name: "empty grep with regex", current: grep, line: `:reload --regex INFO --grep ''`, wantErr: "--grep '' is ignored"},
+		{name: "empty grep with empty regex", current: grep, line: `:reload --grep '' --regex ''`, wantErr: "--grep '' is ignored"},
+		{name: "empty grep after equals", current: grep, line: `:reload --grep=`, wantErr: "--grep '' is ignored"},
+		{name: "invalid utf-8 regex", current: grep, line: ":reload --regex '\xff'", wantErr: "reload line is not valid UTF-8"},
+		{name: "invalid utf-8 files", current: cat, line: ":reload --files /tmp/\xfe.log", wantErr: "reload line is not valid UTF-8"},
+		{name: "blank reload", current: cat, line: ":reload \t ", wantErr: "reload requires flags to change"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			command, err := parseInteractiveCommand(tt.current, tt.line, logging.NopLogger{})
+			if err == nil {
+				t.Fatalf("parseInteractiveCommand(%q) = %#v, want error %q", tt.line, command.next, tt.wantErr)
+			}
+			if !strings.HasPrefix(err.Error(), tt.wantErr) {
+				t.Fatalf("parseInteractiveCommand(%q) error = %q, want prefix %q", tt.line, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseInteractiveCommandKeepsUnsetBlankFiles(t *testing.T) {
+	// A session without files (e.g. serverless stdin) can still reload other
+	// flags: only an explicitly given --files value is validated.
+	current := config.Args{Mode: omode.GrepClient, RegexStr: "ERROR"}
+	command, err := parseInteractiveCommand(current, `:reload --regex WARN`, logging.NopLogger{})
+	if err != nil {
+		t.Fatalf("parseInteractiveCommand() error = %v", err)
+	}
+	if command.next.RegexStr != "WARN" || command.next.What != "" {
+		t.Fatalf("regex = %q, files = %q, want WARN and no files", command.next.RegexStr, command.next.What)
+	}
+	command, err = parseInteractiveCommand(current, `:reload --files 'a.log, ,b.log'`, logging.NopLogger{})
+	if err != nil {
+		t.Fatalf("parseInteractiveCommand() error = %v", err)
+	}
+	if !reflect.DeepEqual(command.spec.Files, []string{"a.log", "b.log"}) {
+		t.Fatalf("spec files = %q, want [a.log b.log]", command.spec.Files)
+	}
+}
+
+func TestInteractiveHelpTextMatchesMode(t *testing.T) {
+	query := "select count(status) from stats group by status"
+	tests := []struct {
+		name        string
+		args        config.Args
+		wantExample string
+	}{
+		{name: "dgrep", args: config.Args{Mode: omode.GrepClient}, wantExample: `--regex '\d+'`},
+		{name: "dtail", args: config.Args{Mode: omode.TailClient}, wantExample: `--regex '\d+'`},
+		{name: "dtail query", args: config.Args{Mode: omode.TailClient, QueryStr: query}, wantExample: "--query"},
+		{name: "dmap", args: config.Args{Mode: omode.MapClient, QueryStr: query}, wantExample: "--query"},
+		{name: "dcat", args: config.Args{Mode: omode.CatClient}, wantExample: "--files /var/log/a.log,/var/log/b.log"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			help := interactiveHelpText(tt.args)
+			if !strings.Contains(help, ":reload <flags>, :show, :help, :quit") {
+				t.Fatalf("help %q lacks the command list", help)
+			}
+			if !strings.Contains(help, tt.wantExample) {
+				t.Fatalf("help %q lacks example %q", help, tt.wantExample)
+			}
+			// A path with a space needs servers advertising
+			// encoded-read-path-v1, so the generic examples avoid one.
+			if strings.Contains(help, "my app") || strings.Contains(help, `\ `) {
+				t.Fatalf("help %q suggests a file path with a space", help)
+			}
+			// Only the grep-driven modes accept --regex.
+			grepMode := tt.wantExample == `--regex '\d+'`
+			if strings.Contains(help, "--regex") != grepMode {
+				t.Fatalf("help %q: mentions --regex = %v, want %v", help, !grepMode, grepMode)
+			}
+		})
+	}
+}
+
+// TestParseInteractiveCommandToleratesSurroundingBlanks checks that the
+// commands without flags are recognised with surrounding spaces, tabs and a
+// trailing carriage return, as the control loop passes lines on untrimmed.
+func TestParseInteractiveCommandToleratesSurroundingBlanks(t *testing.T) {
+	current := config.Args{Mode: omode.GrepClient, What: "/var/log/app.log"}
+	for _, kind := range []string{"show", "help", "quit"} {
+		for _, line := range []string{
+			":" + kind,
+			"  :" + kind + "  ",
+			"\t:" + kind + "\t",
+			":" + kind + "\r",
+			" \t:" + kind + " \t\r",
+		} {
+			command, err := parseInteractiveCommand(current, line, logging.NopLogger{})
+			if err != nil {
+				t.Fatalf("parseInteractiveCommand(%q) error = %v", line, err)
+			}
+			if command.kind != kind {
+				t.Fatalf("parseInteractiveCommand(%q) kind = %q, want %q", line, command.kind, kind)
+			}
+		}
+	}
+}
+
+// TestParseInteractiveCommandRequiresExactReload checks that only ":reload"
+// alone or followed by a space or tab is the reload command.
+func TestParseInteractiveCommandRequiresExactReload(t *testing.T) {
+	current := config.Args{Mode: omode.GrepClient, What: "/var/log/app.log", RegexStr: "ERROR"}
+
+	for _, line := range []string{":reload --regex WARN", ":reload\t--regex WARN", "\t:reload --regex WARN\r"} {
+		command, err := parseInteractiveCommand(current, line, logging.NopLogger{})
+		if err != nil {
+			t.Fatalf("parseInteractiveCommand(%q) error = %v", line, err)
+		}
+		if command.kind != "reload" || command.next.RegexStr != "WARN" {
+			t.Fatalf("parseInteractiveCommand(%q) = kind %q regex %q, want reload WARN",
+				line, command.kind, command.next.RegexStr)
+		}
+	}
+
+	for _, line := range []string{":reload", " :reload\r", ":reload \t"} {
+		_, err := parseInteractiveCommand(current, line, logging.NopLogger{})
+		if err == nil || !strings.Contains(err.Error(), "reload requires flags") {
+			t.Fatalf("parseInteractiveCommand(%q) error = %v, want reload requires flags", line, err)
+		}
+	}
+
+	for _, line := range []string{":reloadx", ":reload--regex=x", ":reloads --regex x", ":reload,--regex x"} {
+		_, err := parseInteractiveCommand(current, line, logging.NopLogger{})
+		if err == nil || !strings.Contains(err.Error(), "unknown command") {
+			t.Fatalf("parseInteractiveCommand(%q) error = %v, want unknown command", line, err)
+		}
 	}
 }
 
@@ -327,6 +657,63 @@ func TestApplyInteractiveReloadRollsBackLateAckFailureWithRealServerConnection(t
 	}
 }
 
+// TestApplyInteractiveReloadChecksReadCapabilitiesUpFront covers a mixed
+// fleet: server srv1 reads encoded (spaced) paths, srv2 supports reloads but
+// not encoded paths. A :reload to a spaced path is rejected before any
+// SESSION UPDATE is sent, naming srv2, so srv1 neither switches nor has to be
+// rolled back (which would repeat the previous workload's output), and
+// nothing is reported to the user, so the exit status stays 0.
+func TestApplyInteractiveReloadChecksReadCapabilitiesUpFront(t *testing.T) {
+	oldArgs := config.Args{Mode: omode.TailClient, What: "/var/log/app.log"}
+	oldSpec := SessionSpec{Mode: omode.TailClient, Files: []string{"/var/log/app.log"}}
+	nextArgs := config.Args{Mode: omode.TailClient, What: "/x/my app.log"}
+	nextSpec := SessionSpec{Mode: omode.TailClient, Files: []string{"/x/my app.log"}}
+
+	handlerA := newInteractiveReloadSessionHandler(handlers.SessionAck{Action: "update", Generation: 5})
+	handlerA.capabilities[protocol.CapabilityEncodedReadPathV1] = true
+	handlerB := newInteractiveReloadSessionHandler(handlers.SessionAck{Action: "update", Generation: 5})
+	connA := newInteractiveReloadServerConnection(t, "srv1", handlerA, oldSpec)
+	connB := newInteractiveReloadServerConnection(t, "srv2", handlerB, oldSpec)
+	client := &baseClient{
+		mu:          newBaseClientMu(),
+		Args:        oldArgs,
+		sessionSpec: oldSpec,
+		connections: []connectors.Connector{connA, connB},
+	}
+
+	err := client.applyInteractiveReload(nextArgs, nextSpec)
+	if !errors.Is(err, connectors.ErrEncodedReadPathUnsupported) {
+		t.Fatalf("expected ErrEncodedReadPathUnsupported, got %v", err)
+	}
+	if !strings.HasSuffix(err.Error(), ": srv2") {
+		t.Fatalf("error %q should name srv2 only", err)
+	}
+	for _, handler := range []*interactiveReloadSessionHandler{handlerA, handlerB} {
+		if len(handler.commands) != 0 || len(handler.reported) != 0 {
+			t.Fatalf("rejected reload sent %#v and reported %#v", handler.commands, handler.reported)
+		}
+	}
+	for _, conn := range []*connectors.ServerConnection{connA, connB} {
+		if spec, generation, ok := conn.CommittedSession(); !ok || generation != 4 || !reflect.DeepEqual(spec, oldSpec) {
+			t.Fatalf("%s committed session changed: spec=%#v generation=%d ok=%v", conn.Server(), spec, generation, ok)
+		}
+	}
+	if !reflect.DeepEqual(client.Args, oldArgs) || !reflect.DeepEqual(client.sessionSpec, oldSpec) {
+		t.Fatalf("client state changed: args=%#v spec=%#v", client.Args, client.sessionSpec)
+	}
+
+	// Once srv2 can read encoded paths too, the same reload applies on both.
+	handlerB.capabilities[protocol.CapabilityEncodedReadPathV1] = true
+	if err := client.applyInteractiveReload(nextArgs, nextSpec); err != nil {
+		t.Fatalf("reload with capable servers: %v", err)
+	}
+	for _, conn := range []*connectors.ServerConnection{connA, connB} {
+		if spec, generation, ok := conn.CommittedSession(); !ok || generation != 5 || !reflect.DeepEqual(spec, nextSpec) {
+			t.Fatalf("%s not switched: spec=%#v generation=%d ok=%v", conn.Server(), spec, generation, ok)
+		}
+	}
+}
+
 func TestApplyInteractiveReloadCommitsSharedState(t *testing.T) {
 	oldSpec := SessionSpec{
 		Mode:  omode.MapClient,
@@ -425,66 +812,6 @@ func TestApplyInteractiveReloadRollsBackProfileCommitError(t *testing.T) {
 	}
 }
 
-func TestApplyInteractiveReloadRejectsMismatchedCommittedGenerations(t *testing.T) {
-	oldSpec := SessionSpec{
-		Mode:  omode.GrepClient,
-		Files: []string{"/var/log/app.log"},
-		Regex: "ERROR",
-	}
-	connA := &interactiveReloadConnector{server: "srv1", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, generation: 4}
-	connB := &interactiveReloadConnector{server: "srv2", supported: true, committedSpec: oldSpec, liveSpec: oldSpec, generation: 5}
-	recorder := &interactiveReloadRecorder{}
-
-	client := &baseClient{
-		mu: newBaseClientMu(),
-		Args: config.Args{
-			Mode:     omode.GrepClient,
-			What:     "/var/log/app.log",
-			RegexStr: "ERROR",
-		},
-		sessionSpec: SessionSpec{
-			Mode:  omode.GrepClient,
-			Files: []string{"/var/log/app.log"},
-			Regex: "ERROR",
-		},
-		connections: []connectors.Connector{connA, connB},
-		profile: clientProfile{
-			commit: recorder.commitSessionSpec,
-		},
-	}
-
-	nextArgs := config.Args{
-		Mode:     omode.GrepClient,
-		What:     "/tmp/new.log",
-		RegexStr: "WARN",
-	}
-	nextSpec := SessionSpec{
-		Mode:  omode.GrepClient,
-		Files: []string{"/tmp/new.log"},
-		Regex: "WARN",
-	}
-
-	err := client.applyInteractiveReload(nextArgs, nextSpec)
-	if err == nil || err.Error() != "mismatched committed generations: got 5 and 6" {
-		t.Fatalf("expected mismatched generation error, got %v", err)
-	}
-	if client.What != "/var/log/app.log" || client.sessionSpec.Regex != "ERROR" {
-		t.Fatalf("client state changed on mismatched generations: args=%#v spec=%#v", client.Args, client.sessionSpec)
-	}
-	if len(recorder.commits) != 0 {
-		t.Fatalf("expected no committed shared state, got %#v", recorder.commits)
-	}
-	if connA.generation != 6 || connB.generation != 7 {
-		t.Fatalf("expected rollback to replay the previous spec remotely, got %d and %d", connA.generation, connB.generation)
-	}
-	if connA.applyCount != 2 || connB.applyCount != 2 {
-		t.Fatalf("expected rollback to reapply the previous spec on both connections, got %d and %d", connA.applyCount, connB.applyCount)
-	}
-	if !reflect.DeepEqual(connA.committedSpec, oldSpec) || !reflect.DeepEqual(connB.committedSpec, oldSpec) {
-		t.Fatalf("expected rollback to restore committed specs, got %#v %#v", connA.committedSpec, connB.committedSpec)
-	}
-}
-
 type interactiveReloadConnector struct {
 	committedSpec            sessionspec.Spec
 	liveSpec                 sessionspec.Spec
@@ -499,6 +826,7 @@ type interactiveReloadConnector struct {
 
 type interactiveReloadSessionHandler struct {
 	commands            []string
+	reported            []string
 	capabilities        map[string]bool
 	sessionAcks         []handlers.SessionAck
 	waitForCapabilities bool
@@ -533,7 +861,9 @@ func (h *interactiveReloadSessionHandler) HasCapability(name string) bool {
 	return h.capabilities[name]
 }
 
-func (*interactiveReloadSessionHandler) ReportServerError(string) {}
+func (h *interactiveReloadSessionHandler) ReportServerError(message string) {
+	h.reported = append(h.reported, message)
+}
 
 func (*interactiveReloadSessionHandler) Server() string { return "mock" }
 
@@ -670,4 +1000,85 @@ func (r *interactiveReloadRecorder) commitSessionSpec(spec SessionSpec, generati
 		spec:       spec,
 	})
 	return nil
+}
+
+// TestRunInteractiveCommand covers the dispatch of one parsed control
+// command: every kind writes its answer line to the TTY, :quit reports quit,
+// a failed reload is answered on the TTY without an error, and only a failed
+// TTY write is returned as an error (which ends the control loop).
+func TestRunInteractiveCommand(t *testing.T) {
+	spec := SessionSpec{Mode: omode.GrepClient, Files: []string{"/var/log/app.log"}, Regex: "ERROR"}
+	args := config.Args{Mode: omode.GrepClient, What: "/var/log/app.log", RegexStr: "ERROR"}
+	nextSpec := SessionSpec{Mode: omode.GrepClient, Files: []string{"/var/log/app.log"}, Regex: "WARN"}
+	nextArgs := config.Args{Mode: omode.GrepClient, What: "/var/log/app.log", RegexStr: "WARN"}
+	writeErr := errors.New("tty gone")
+
+	tests := []struct {
+		name        string
+		command     interactiveCommand
+		connections func() []connectors.Connector
+		failWrite   bool
+		wantQuit    bool
+		wantOutput  string // exact output; empty when wantPrefix is used
+		wantPrefix  string
+		wantErr     error
+		wantRegex   string // client regex after the command
+	}{
+		{name: "quit", command: interactiveCommand{kind: "quit"},
+			wantQuit: true, wantOutput: "quitting interactive session\n", wantRegex: "ERROR"},
+		{name: "reload failure is answered, not returned",
+			command:    interactiveCommand{kind: "reload", next: nextArgs, spec: nextSpec},
+			wantOutput: "reload failed: no active connections\n", wantRegex: "ERROR"},
+		{name: "reload success",
+			command: interactiveCommand{kind: "reload", next: nextArgs, spec: nextSpec},
+			connections: func() []connectors.Connector {
+				return []connectors.Connector{&interactiveReloadConnector{
+					server: "srv1", supported: true, committedSpec: spec, liveSpec: spec, generation: 1}}
+			},
+			wantOutput: "reload applied successfully\n", wantRegex: "WARN"},
+		{name: "show", command: interactiveCommand{kind: "show"},
+			wantPrefix: "mode=", wantRegex: "ERROR"},
+		{name: "help", command: interactiveCommand{kind: "help"},
+			wantOutput: interactiveHelpText(args) + "\n", wantRegex: "ERROR"},
+		{name: "unsupported", command: interactiveCommand{kind: "bogus"},
+			wantOutput: "unsupported command\n", wantRegex: "ERROR"},
+		{name: "quit write error", command: interactiveCommand{kind: "quit"},
+			failWrite: true, wantQuit: true, wantErr: writeErr, wantRegex: "ERROR"},
+		{name: "reload failure write error",
+			command:   interactiveCommand{kind: "reload", next: nextArgs, spec: nextSpec},
+			failWrite: true, wantErr: writeErr, wantRegex: "ERROR"},
+		{name: "help write error", command: interactiveCommand{kind: "help"},
+			failWrite: true, wantErr: writeErr, wantRegex: "ERROR"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &baseClient{mu: newBaseClientMu(), Args: args, sessionSpec: spec}
+			if tt.connections != nil {
+				client.connections = tt.connections()
+			}
+			var out bytes.Buffer
+			var tty io.Writer = &out
+			if tt.failWrite {
+				tty = failedPayloadWriter{err: writeErr}
+			}
+
+			quit, err := client.runInteractiveCommand(tty, tt.command)
+			if quit != tt.wantQuit {
+				t.Fatalf("quit = %v, want %v", quit, tt.wantQuit)
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantOutput != "" && out.String() != tt.wantOutput {
+				t.Fatalf("output = %q, want %q", out.String(), tt.wantOutput)
+			}
+			if tt.wantPrefix != "" && !strings.HasPrefix(out.String(), tt.wantPrefix) {
+				t.Fatalf("output = %q, want prefix %q", out.String(), tt.wantPrefix)
+			}
+			if got, _ := client.snapshotConnectionState(); got.RegexStr != tt.wantRegex {
+				t.Fatalf("client regex = %q, want %q", got.RegexStr, tt.wantRegex)
+			}
+		})
+	}
 }

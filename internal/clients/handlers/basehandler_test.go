@@ -87,6 +87,27 @@ func TestHandleCapabilitiesMessage(t *testing.T) {
 	}
 }
 
+// TestWaitForCapabilitiesPrefersArrivedCapabilities checks that capabilities
+// that already arrived are reported even when the session is done and the
+// timer would expire at once: a plain select would pick among those ready
+// cases at random.
+func TestWaitForCapabilitiesPrefersArrivedCapabilities(t *testing.T) {
+	handler := baseHandler{
+		done:           internal.NewDone(),
+		capabilities:   make(map[string]struct{}),
+		capabilitiesCh: make(chan struct{}),
+		sessionAcks:    make(chan SessionAck, 1),
+	}
+	handler.handleHiddenMessage(".syn capabilities query-update-v1")
+	handler.done.Shutdown()
+
+	for i := 0; i < 100; i++ {
+		if !handler.WaitForCapabilities(time.Nanosecond) {
+			t.Fatalf("attempt %d: expected arrived capabilities to win", i)
+		}
+	}
+}
+
 func TestWaitForCapabilitiesTimeout(t *testing.T) {
 	handler := baseHandler{
 		done:           internal.NewDone(),
@@ -181,6 +202,32 @@ func TestHandleSessionAckMessage(t *testing.T) {
 	}
 	if ack.Action != "update" || ack.Generation != 4 {
 		t.Fatalf("unexpected session ack: %#v", ack)
+	}
+}
+
+// TestWaitForSessionAckPrefersQueuedAck checks that queued session
+// acknowledgements are returned even when the session is done and the timer
+// would expire at once: a plain select would pick among those ready cases at
+// random.
+func TestWaitForSessionAckPrefersQueuedAck(t *testing.T) {
+	const attempts = 100
+	handler := baseHandler{
+		done:        internal.NewDone(),
+		sessionAcks: make(chan SessionAck, attempts),
+	}
+	for i := 0; i < attempts; i++ {
+		handler.handleHiddenMessage(fmt.Sprintf(".syn session update ok %d", i+1))
+	}
+	handler.done.Shutdown()
+
+	for i := 0; i < attempts; i++ {
+		ack, ok := handler.WaitForSessionAck(time.Nanosecond)
+		if !ok {
+			t.Fatalf("attempt %d: expected the queued session ack to win", i)
+		}
+		if ack.Generation != uint64(i+1) {
+			t.Fatalf("attempt %d: ack generation = %d, want %d", i, ack.Generation, i+1)
+		}
 	}
 }
 

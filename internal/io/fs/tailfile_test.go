@@ -294,8 +294,10 @@ func TestTailFileCopytruncateResetsLongLineWarning(t *testing.T) {
 	}()
 	defer stopObservedTail(t, cancel, done, fd)
 
+	// One byte above the limit: the first 4 bytes are cut off, the rest
+	// stays pending (and is dropped at the truncation).
 	appendTestPath(t, path, "abcde")
-	assertTailLine(t, processor.lines, "abcde")
+	assertTailLine(t, processor.lines, "abcd")
 	assertLongLineWarning(t, warnings)
 	select {
 	case <-cycleComplete:
@@ -306,7 +308,7 @@ func TestTailFileCopytruncateResetsLongLineWarning(t *testing.T) {
 	// Neither generation has a newline. The copytruncate boundary itself must
 	// end the old long-line sequence so the new generation warns independently.
 	writeTestPath(t, path, "vwxyz")
-	assertTailLine(t, processor.lines, "vwxyz")
+	assertTailLine(t, processor.lines, "vwxy")
 	assertLongLineWarning(t, warnings)
 }
 

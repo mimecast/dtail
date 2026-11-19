@@ -29,8 +29,15 @@ const (
 	// clamping it prevents a full output buffer from reintroducing millisecond
 	// polling while still releasing a stale writer eventually.
 	minimumOutputGenerationSafetyInterval = 100 * time.Millisecond
-	defaultOutputEOFAckQuietPeriod        = 50 * time.Millisecond
-	defaultOutputEOFAckTimeout            = 2 * time.Second
+	// defaultOutputEOFAckQuietPeriod is how long the output buffer must have
+	// stayed empty after the EOF signal before the reader acknowledges it.
+	// The signal only comes once the buffer was flushed, and a command that
+	// joins meanwhile is told apart by the output epoch (see signalEOF), so
+	// the period is only a short debounce. It used to be 50 ms, which every
+	// dcat, dgrep and dmap session waited out at its end: about half the
+	// duration of a short read (110 ms against 55 ms for a one-line dcat).
+	defaultOutputEOFAckQuietPeriod = time.Millisecond
+	defaultOutputEOFAckTimeout     = 2 * time.Second
 )
 
 type outputManagerConfig struct {
@@ -59,10 +66,11 @@ var errOutputFlushTimeout = errors.New("timed out flushing output")
 // tryRead). These run concurrently, so all mutable state is guarded by mu:
 // mode, queue, buffer, eof, eofAck, eofEmptySince and epoch must only be
 // accessed while holding mu. The configuration fields (bufferMaxBytes,
-// flushTimeout, ...) are
-// deliberately not guarded: configure() runs exactly once from the handler
-// constructor before any goroutine can touch the manager, so goroutine
-// creation establishes the necessary happens-before edge.
+// flushTimeout, ...) are set without locking: configure() runs exactly once
+// from the handler constructor before any goroutine can touch the manager,
+// so goroutine creation establishes the necessary happens-before edge. The
+// one exception is bufferMaxBytes, which raiseBufferMaxBytes may raise later
+// and which is therefore only read and written under mu after configure.
 type outputManager struct {
 	logger logging.Logger
 	mu     sync.Mutex
@@ -91,6 +99,25 @@ type outputManager struct {
 	eofAckQuietPeriod time.Duration
 
 	eofEmptySince time.Time
+
+	// clientSlow, if set, reports whether the session reader is still
+	// delivering bytes it already took to the client (see
+	// outputCoordinator.clientSlow). flush then goes on waiting instead of
+	// timing out. Set once by the handler constructor, like the
+	// configuration fields.
+	clientSlow func() bool
+}
+
+// raiseBufferMaxBytes raises the session's buffer cap to minimum when it is
+// lower; it never lowers the cap. A session switching to escaped framing
+// calls it (see escapedOutputBufferMaxBytes). bufferMaxBytes is only read
+// under mu once the manager is in use, so raising it under mu is safe.
+func (t *outputManager) raiseBufferMaxBytes(minimum int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if minimum > t.resolvedBufferMaxBytes() {
+		t.bufferMaxBytes = minimum
+	}
 }
 
 // configure sets the tunables. It must be called before the manager is used
@@ -619,7 +646,8 @@ func (t *outputManager) releaseOutputLocked(payloadBytes, retainedBytes int, ent
 	}
 }
 
-// flush waits for the reader to consume all buffered output. The drain channel
+// flush waits for the reader to consume all buffered output, for as long as
+// the reader makes progress within each flush timeout. The drain channel
 // belongs to one nonempty interval and is closed exactly on its transition back
 // to empty, which avoids both polling and lost wakeups.
 func (t *outputManager) flush(ctx context.Context, user *user.User) error {
@@ -640,21 +668,48 @@ func (t *outputManager) flush(ctx context.Context, user *user.User) error {
 		return nil
 	}
 
-	timer := time.NewTimer(t.resolvedFlushTimeout())
+	// The flush timeout bounds how long a reader may make no progress that
+	// is not held up by its client, not the whole drain. A client that keeps
+	// reading, only slowly (a slow link needing longer than the timeout for
+	// the up to OutputBufferMaxBytes still queued), or that paused reading
+	// (a pager, a stopped pipeline) while the reader is blocked writing to
+	// it, is waited for: it only slows the session down through
+	// backpressure, as it does while the file is still being read, and the
+	// connection's idle timeout bounds a client that never comes back (it
+	// closes the connection, which cancels ctx). The session used to be
+	// torn down with output still queued after a few fixed timeouts, and the
+	// client got a flush error for output that then still arrived. A reader
+	// that takes nothing for a whole timeout without a pending delivery
+	// still fails the flush.
+	timeout := t.resolvedFlushTimeout()
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	select {
-	case <-drainDone:
-		t.log().Debug(user, "Output buffer drained successfully")
-		return nil
-	case <-ctx.Done():
-		return fmt.Errorf("flush output: %w", ctx.Err())
-	case <-timer.C:
-		remaining = t.bufferedLen()
-		if remaining == 0 {
+	warned := false
+	for {
+		select {
+		case <-drainDone:
+			t.log().Debug(user, "Output buffer drained successfully")
 			return nil
+		case <-ctx.Done():
+			return fmt.Errorf("flush output: %w", ctx.Err())
+		case <-timer.C:
+			previous := remaining
+			remaining = t.bufferedLen()
+			if remaining == 0 {
+				return nil
+			}
+			if remaining < previous || (t.clientSlow != nil && t.clientSlow()) {
+				if !warned {
+					warned = true
+					t.log().Info(user, "Client is slow to read the session output, still waiting",
+						"remainingBytes", remaining)
+				}
+				timer.Reset(timeout)
+				continue
+			}
+			return fmt.Errorf("%w after %s: %d bytes remain",
+				errOutputFlushTimeout, timeout, remaining)
 		}
-		return fmt.Errorf("%w after %s: %d bytes remain",
-			errOutputFlushTimeout, t.resolvedFlushTimeout(), remaining)
 	}
 }
 

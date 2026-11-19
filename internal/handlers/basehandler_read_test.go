@@ -24,7 +24,7 @@ func newReadTestHandler() *baseHandler {
 
 func encodeTestMessage(kind protocol.MessageKind, content string) bytes.Buffer {
 	var encoded bytes.Buffer
-	protocol.EncodeMessage(&encoded, protocol.Message{
+	protocol.RawFraming.EncodeMessage(&encoded, protocol.Message{
 		Kind:     kind,
 		Hostname: "testhost",
 		Content:  content,

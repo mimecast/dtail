@@ -31,6 +31,22 @@ func TestNewReturnsMalformedHostKeyError(t *testing.T) {
 	}
 }
 
+// TestNewRejectsOutputBufferTooSmallForMaxLineLength checks that dserver
+// refuses, at startup, an OutputBufferMaxBytes that leaves no room for a line
+// of MaxLineLength, instead of starting and refusing every session.
+func TestNewRejectsOutputBufferTooSmallForMaxLineLength(t *testing.T) {
+	serverConfig := config.NewDefaultServerConfigForTest()
+	serverConfig.MaxLineLength = 4 * 1024 * 1024
+	serverConfig.OutputBufferMaxBytes = 2 * 1024 * 1024
+	_, err := New(config.RuntimeConfig{
+		Server: serverConfig,
+		Common: &config.CommonConfig{SSHPort: 2222, CacheDir: t.TempDir()},
+	}, serverTestLoggers, nil)
+	if err == nil || !strings.Contains(err.Error(), "invalid server configuration: OutputBufferMaxBytes") {
+		t.Fatalf("New error = %v, want the output buffer configuration error", err)
+	}
+}
+
 func TestStartReturnsListenError(t *testing.T) {
 	server := &Server{cfg: config.RuntimeConfig{
 		Server: &config.ServerConfig{SSHBindAddress: "127.0.0.1"},

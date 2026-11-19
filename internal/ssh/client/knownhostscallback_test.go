@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -103,14 +104,24 @@ func (l *recordingLogger) lastErrorValue() error {
 	return l.lastError
 }
 
+// TestPromptAddHostsLogsAfterResume runs every kind of prompt answer for one
+// unknown host: it must get exactly the expected answer, the known_hosts file
+// must change only for a trusting answer, only "all" may switch to trust-all
+// mode, and the result must be logged once, after the prompt resumed logging.
+// An unrecognised input is asked again, and the end of the input answers "no".
 func TestPromptAddHostsLogsAfterResume(t *testing.T) {
 	tests := []struct {
 		name         string
 		answer       string
+		wantResp     response
 		wantTrustAll bool
 	}{
-		{name: "trust batch", answer: "yes\n"},
-		{name: "trust all", answer: "all\n", wantTrustAll: true},
+		{name: "trust batch", answer: "yes\n", wantResp: trustHost},
+		{name: "trust all", answer: "all\n", wantResp: trustHost, wantTrustAll: true},
+		{name: "reject", answer: "n\n", wantResp: dontTrustHost},
+		{name: "details then trust", answer: "d\ny\n", wantResp: trustHost},
+		{name: "unknown input then reject", answer: "foo\nno\n", wantResp: dontTrustHost},
+		{name: "end of input rejects", answer: "", wantResp: dontTrustHost},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -121,60 +132,73 @@ func TestPromptAddHostsLogsAfterResume(t *testing.T) {
 
 			logger := &recordingLogger{}
 			callback := testKnownHostsCallbackWithLogger(t, knownHostsPath, logger)
+			host := testPromptHost()
 			withPromptInput(t, test.answer, func() {
-				callback.promptAddHosts([]unknownHost{testUnknownHost("new.example:2222", "new")})
+				callback.promptAddHosts([]unknownHost{host})
 			})
 
+			assertAnsweredOnce(t, host, test.wantResp)
+			if test.wantResp == trustHost {
+				assertKnownHostsLines(t, knownHostsPath, []string{host.hostLine, host.ipLine})
+			} else {
+				assertKnownHostsEmpty(t, knownHostsPath)
+			}
 			if got := logger.infoCount.Load(); got != 1 {
 				t.Fatalf("Info calls = %d, want 1", got)
 			}
 			if got := logger.warnCount.Load(); got != 0 {
 				t.Fatalf("Warn calls = %d, want 0 for a locked update", got)
 			}
-			if logger.logWhilePaused.Load() {
-				t.Fatal("known-host callback logged before the prompt resumed logging")
-			}
-			if logger.paused.Load() {
-				t.Fatal("prompt left logging paused")
-			}
-			select {
-			case <-callback.trustAllHostsCh:
-				if !test.wantTrustAll {
-					t.Fatal("trust-all state set for a single-batch answer")
-				}
-			default:
-				if test.wantTrustAll {
-					t.Fatal("trust-all state not set for an all answer")
-				}
+			assertLoggedAfterResume(t, logger)
+			if got := callback.trustAll(); got != test.wantTrustAll {
+				t.Fatalf("trust-all mode = %v after answer %q, want %v", got, test.answer, test.wantTrustAll)
 			}
 		})
 	}
 }
 
+// TestPromptAddHostsFailureLogsAfterResume makes the known_hosts update of a
+// trusting answer fail: the host must then be rejected exactly once and the
+// failure logged once after the prompt resumed logging. An "all" answer must
+// leave trust-all mode off. With --trustAllHosts nobody is asked, and the
+// failed update must reject the host the same way.
 func TestPromptAddHostsFailureLogsAfterResume(t *testing.T) {
-	tmp := t.TempDir()
-	knownHostsPath := filepath.Join(tmp, "known_hosts")
-	if err := os.WriteFile(knownHostsPath, nil, 0o600); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
+	tests := []struct {
+		name     string
+		answer   string
+		trustAll bool
+	}{
+		{name: "yes", answer: "yes\n"},
+		{name: "all", answer: "all\n"},
+		{name: "trustAllHosts", trustAll: true},
 	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			knownHostsPath := filepath.Join(tmp, "known_hosts")
+			if err := os.WriteFile(knownHostsPath, nil, 0o600); err != nil {
+				t.Fatalf("WriteFile failed: %v", err)
+			}
 
-	logger := &recordingLogger{}
-	callback := testKnownHostsCallbackWithLogger(t, knownHostsPath, logger)
-	if err := os.RemoveAll(tmp); err != nil {
-		t.Fatalf("remove known-hosts directory: %v", err)
-	}
-	withPromptInput(t, "yes\n", func() {
-		callback.promptAddHosts([]unknownHost{testUnknownHost("new.example:2222", "new")})
-	})
+			logger := &recordingLogger{}
+			callback := newTestKnownHostsCallback(t, knownHostsPath, test.trustAll, logger)
+			if err := os.RemoveAll(tmp); err != nil {
+				t.Fatalf("remove known-hosts directory: %v", err)
+			}
+			host := testPromptHost()
+			withPromptInput(t, test.answer, func() {
+				callback.promptAddHosts([]unknownHost{host})
+			})
 
-	if got := logger.errorCount.Load(); got != 1 {
-		t.Fatalf("Error calls = %d, want 1", got)
-	}
-	if logger.logWhilePaused.Load() {
-		t.Fatal("known-host failure logged before the prompt resumed logging")
-	}
-	if logger.paused.Load() {
-		t.Fatal("prompt left logging paused after trust failure")
+			assertAnsweredOnce(t, host, dontTrustHost)
+			if !test.trustAll && callback.trustAll() {
+				t.Fatalf("trust-all mode is on after the known_hosts update for %q failed", test.answer)
+			}
+			if got := logger.errorCount.Load(); got != 1 {
+				t.Fatalf("Error calls = %d, want 1", got)
+			}
+			assertLoggedAfterResume(t, logger)
+		})
 	}
 }
 
@@ -189,25 +213,77 @@ func TestPromptAddHostsCleanupFailureIsReportedAfterResume(t *testing.T) {
 	callback := testKnownHostsCallbackWithLogger(t, knownHostsPath, logger)
 	cleanupErr := errors.New("forced cleanup failure")
 	callback.removeTempFile = func(*os.Root, string) error { return cleanupErr }
+	host := testPromptHost()
 	withPromptInput(t, "yes\n", func() {
-		callback.promptAddHosts([]unknownHost{testUnknownHost("new.example:2222", "new")})
+		callback.promptAddHosts([]unknownHost{host})
 	})
 
+	assertAnsweredOnce(t, host, dontTrustHost)
 	if got := logger.debugCount.Load(); got != 0 {
 		t.Fatalf("Debug calls = %d, want 0 from the paused callback", got)
 	}
 	if got := logger.errorCount.Load(); got != 1 {
 		t.Fatalf("Error calls = %d, want 1 after Resume", got)
 	}
-	if logger.logWhilePaused.Load() {
-		t.Fatal("temporary-file cleanup logged before the prompt resumed logging")
-	}
+	assertLoggedAfterResume(t, logger)
 	loggedErr := logger.lastErrorValue()
 	if !errors.Is(loggedErr, cleanupErr) {
 		t.Fatalf("logged error %v does not retain cleanup error %v", loggedErr, cleanupErr)
 	}
 	if !strings.Contains(loggedErr.Error(), "open known hosts file") {
 		t.Fatalf("logged error does not retain primary open failure: %v", loggedErr)
+	}
+}
+
+// testPromptHost returns an unknown host for the prompt tests. Its responseCh
+// has room for a second answer, so that answering the host twice is detected
+// by assertAnsweredOnce instead of blocking promptAddHosts forever.
+func testPromptHost() unknownHost {
+	host := testUnknownHost("new.example:2222", "new")
+	host.responseCh = make(chan response, 2)
+	return host
+}
+
+// assertAnsweredOnce checks that the handshake of host got exactly one
+// answer, want. promptAddHosts answers synchronously, so once it returned
+// every answer it sent is already in responseCh.
+func assertAnsweredOnce(t *testing.T, host unknownHost, want response) {
+	t.Helper()
+	select {
+	case got := <-host.responseCh:
+		if got != want {
+			t.Fatalf("host was answered %s, want %s", responseName(got), responseName(want))
+		}
+	default:
+		t.Fatalf("host was not answered, want %s", responseName(want))
+	}
+	select {
+	case got := <-host.responseCh:
+		t.Fatalf("host was answered twice, the second time %s", responseName(got))
+	default:
+	}
+}
+
+func responseName(resp response) string {
+	switch resp {
+	case trustHost:
+		return "trust"
+	case dontTrustHost:
+		return "don't trust"
+	default:
+		return fmt.Sprintf("response(%d)", int(resp))
+	}
+}
+
+// assertLoggedAfterResume checks that nothing was logged while the prompt
+// paused logging, and that the prompt resumed it.
+func assertLoggedAfterResume(t *testing.T, logger *recordingLogger) {
+	t.Helper()
+	if logger.logWhilePaused.Load() {
+		t.Fatal("known-host callback logged before the prompt resumed logging")
+	}
+	if logger.paused.Load() {
+		t.Fatal("prompt left logging paused")
 	}
 }
 
@@ -460,8 +536,16 @@ func testKnownHostsCallback(t *testing.T, knownHostsPath string) *KnownHostsCall
 func testKnownHostsCallbackWithLogger(t *testing.T, knownHostsPath string,
 	logger logging.Logger) *KnownHostsCallback {
 	t.Helper()
+	return newTestKnownHostsCallback(t, knownHostsPath, false, logger)
+}
 
-	callback, err := NewKnownHostsCallback(knownHostsPath, false, logger, logger)
+// newTestKnownHostsCallback builds a KnownHostsCallback for tests; trustAll
+// is the --trustAllHosts setting, logger serves as both of its loggers.
+func newTestKnownHostsCallback(t *testing.T, knownHostsPath string, trustAll bool,
+	logger logging.Logger) *KnownHostsCallback {
+	t.Helper()
+
+	callback, err := NewKnownHostsCallback(knownHostsPath, trustAll, logger, logger)
 	if err != nil {
 		t.Fatalf("NewKnownHostsCallback failed: %v", err)
 	}
@@ -523,4 +607,24 @@ func withPromptInput(t *testing.T, contents string, run func()) {
 		t.Fatalf("close prompt input: %v", err)
 	}
 	run()
+}
+
+func TestChangedServersListsOnlyHostsWithAnotherKnownKey(t *testing.T) {
+	unknown := testUnknownHost("new.example:2222", "a")
+	changed := testUnknownHost("changed.example:2222", "b")
+	changed.changed = true
+	got := changedServers([]unknownHost{unknown, changed})
+	if len(got) != 1 || got[0] != "changed.example:2222" {
+		t.Fatalf("changedServers = %v, want only changed.example:2222", got)
+	}
+}
+
+func TestEnsureKnownHostsFileCreatesMissingDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", ".ssh", "known_hosts")
+	if _, err := NewKnownHostsCallback(path, true, nil, nil); err != nil {
+		t.Fatalf("NewKnownHostsCallback failed: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("known_hosts was not created: %v", err)
+	}
 }

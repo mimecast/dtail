@@ -38,8 +38,9 @@ type Aggregate struct {
 	// parserFillsFields reports whether parser is a logformat.FieldsIntoParser
 	// and thus parses straight into a line scratch's own map. The map any
 	// other parser returns is copied, see parseLine.
-	parserFillsFields bool
-	serializer        *serializer
+	parserFillsFields  bool
+	preserveWhitespace bool
+	serializer         *serializer
 	// Stats
 	// linesProcessed counts the lines handed to the aggregation; lines an
 	// abort discards before they were parsed are not included.
@@ -69,7 +70,11 @@ type Aggregate struct {
 	// finalizationCtx is fixed when finalization wins the terminal-state
 	// transition. Start may subsequently be the goroutine that executes
 	// finalization, but it must use the graceful caller's output context.
-	finalizationCtx       context.Context
+	finalizationCtx context.Context
+	// finalResult is the outcome of the final serialization, a
+	// finalResultState set once by the finalizer (see
+	// FinalResultInterrupted).
+	finalResult           atomic.Uint32
 	finalizationOwnerHook func()
 	serializationLoopHook func()
 	serializationTickHook func()
@@ -81,6 +86,20 @@ const (
 	aggregateRunning aggregateTerminalState = iota
 	aggregateFinalizing
 	aggregateAborted
+)
+
+// finalResultState is the outcome of an aggregate's final serialization. It
+// tells a final result that was never produced (finalResultNone: Abort won
+// the terminal state, e.g. a canceled command or a replaced session
+// generation, or finalization did not end yet) from one that was produced
+// but cut off (finalResultInterrupted), so that only the latter is reported
+// to the client as an incomplete result.
+type finalResultState uint32
+
+const (
+	finalResultNone finalResultState = iota
+	finalResultComplete
+	finalResultInterrupted
 )
 
 // New returns an aggregator using dependencies resolved by the command layer.
@@ -103,6 +122,9 @@ func New(query *mapr.Query, parser logformat.Parser, hostname string,
 		shutdownDone:  make(chan struct{}),
 	}
 	_, a.parserFillsFields = parser.(logformat.FieldsIntoParser)
+	if p, ok := parser.(logformat.WhitespacePreservingParser); ok {
+		a.preserveWhitespace = p.PreserveWhitespace()
+	}
 	a.serializer = newSerializer(query, logger)
 	logger.Debug("Created MapReduce aggregate", "hostname", hostname)
 	return a, nil
@@ -142,10 +164,26 @@ func (a *Aggregate) countGroups() int {
 }
 
 // Shutdown finalizes the aggregation while output remains writable.
-// Canceling ctx abandons blocked final sends promptly; the unsent snapshot is
-// re-merged before shutdown completes so cancellation never corrupts state.
+// Canceling ctx abandons blocked final sends promptly; the groups not sent by
+// then are dropped, as no serialization follows the final one, and the
+// result counts as interrupted (see FinalResultInterrupted).
+// The final serialization has no deadline of its own: a slow consumer only
+// slows it down (output backpressure), and only the finalization context
+// (the session's) ends it early.
 func (a *Aggregate) Shutdown(ctx context.Context) {
 	a.shutdown(ctx, false)
+}
+
+// FinalResultInterrupted reports whether the final serialization ran but
+// ended before every group was handed to the output channel: the
+// finalization context ended while it waited for the processors or part way
+// through the sends. The unsent groups never reach the client, so a caller
+// about to end the session normally must report the result as incomplete
+// (see the handlers' reportIncompleteMapResult). It is false for an
+// aggregate that never finalized, e.g. one aborted by a canceled command or
+// a replaced session generation, which has no final result to report on.
+func (a *Aggregate) FinalResultInterrupted() bool {
+	return finalResultState(a.finalResult.Load()) == finalResultInterrupted
 }
 
 // shutdown finalizes the aggregate and waits for either completion or the
@@ -162,23 +200,7 @@ func (a *Aggregate) shutdown(ctx context.Context, retainOutput bool) {
 		if a.finalizationOwnerHook != nil {
 			a.finalizationOwnerHook()
 		}
-		func() {
-			defer close(a.shutdownDone)
-			processorsDone := a.sealProcessors()
-			a.done.Shutdown()
-			a.stopSerializeTicker()
-			finalizeCtx, cancel := context.WithTimeout(finalizationCtx, 10*time.Second)
-			defer cancel()
-			// Every processor drains its own batch in Close before it
-			// releases its registration, so once processorsDone is closed all
-			// accepted lines have reached the serializer.
-			select {
-			case <-processorsDone:
-			case <-finalizeCtx.Done():
-				return
-			}
-			a.doSerialize(finalizeCtx)
-		}()
+		a.finalize(finalizationCtx)
 	}
 	if retainOutput {
 		// The finalizer observes finalizationCtx itself. The Start goroutine must
@@ -190,6 +212,68 @@ func (a *Aggregate) shutdown(ctx context.Context, retainOutput bool) {
 	select {
 	case <-a.shutdownDone:
 	case <-ctx.Done():
+	}
+}
+
+// finalize stops background processing, waits for the processors and sends
+// the final result, then closes shutdownDone. It runs on the one goroutine
+// that won finalization ownership.
+//
+// Neither the processor join nor the final serialization has a deadline of
+// its own; ctx, the output lifetime claimFinalization bound (the session's
+// context in dserver), alone ends them early. A fixed 10 s deadline here used
+// to cut off the sends of a large result to a slow client, and the session
+// then still closed normally, so the client wrote an incomplete outfile and
+// exited 0. A client that stops reading is still bounded: the idle timeout
+// of its connection closes the session, which cancels ctx.
+func (a *Aggregate) finalize(ctx context.Context) {
+	defer close(a.shutdownDone)
+	processorsDone := a.sealProcessors()
+	a.done.Shutdown()
+	a.stopSerializeTicker()
+	if !waitProcessors(ctx, processorsDone) {
+		a.finalResult.Store(uint32(finalResultInterrupted))
+		a.logger.Warn("Aggregate finalization canceled before its input ended; final result incomplete")
+		return
+	}
+	// The count is of the groups the final serialization is about to send.
+	// It excludes the groups a periodic serialization still in flight took
+	// for its snapshot (the ticker is stopped, but a pass that already began
+	// runs on): those reach the client through that pass, or are re-merged
+	// and sent by the final one should that pass be interrupted.
+	a.logger.Info("Aggregate final serialization started", "groups", a.countGroups())
+	// Unlike a periodic serialization, the final one does not re-merge the
+	// groups it could not send: nothing would send them any more. Its single
+	// WARN below is the server's one log line for the cut-off result, next to
+	// the handler's report to the client.
+	if unsent, ok := a.serializer.serializeFinal(ctx); !ok {
+		a.finalResult.Store(uint32(finalResultInterrupted))
+		a.logger.Warn("Aggregate final serialization interrupted; final result incomplete",
+			"unsent", unsent)
+		return
+	}
+	a.finalResult.Store(uint32(finalResultComplete))
+}
+
+// waitProcessors waits until processorsDone is closed or ctx ends, and
+// reports whether the processors are done. Every processor drains its own
+// batch in Close before it releases its registration, so once processorsDone
+// is closed all accepted lines have reached the serializer. A processor join
+// that is complete wins over an ended ctx: a select picks among ready cases
+// at random, so after ctx ended processorsDone is checked once more, and the
+// result is not reported as cut off before its input ended when no input was
+// lost. The final serialization then observes the ended ctx itself.
+func waitProcessors(ctx context.Context, processorsDone <-chan struct{}) bool {
+	select {
+	case <-processorsDone:
+		return true
+	case <-ctx.Done():
+	}
+	select {
+	case <-processorsDone:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -449,7 +533,12 @@ func (a *Aggregate) processRawBatchWith(scratch *batchScratch, batch []rawLine) 
 func (a *Aggregate) parseLine(scratch *lineScratch, lineContent *bytes.Buffer,
 	sourceID string) (bool, error) {
 
-	maprLine := borrowedLine(lineContent)
+	var maprLine string
+	if a.preserveWhitespace {
+		maprLine = borrowedPhysicalLine(lineContent)
+	} else {
+		maprLine = borrowedLine(lineContent)
+	}
 	parsedFields, err := logformat.MakeFieldsInto(a.parser, scratch.fields, maprLine, sourceID)
 	if err == nil && !a.parserFillsFields {
 		// Any other parser returns a map of its own, which it may clear and
@@ -511,58 +600,14 @@ func (a *Aggregate) Serialize(ctx context.Context) {
 	a.serializer.request(ctx, a.done.Done())
 }
 
-// doSerialize performs the actual serialization.
+// doSerialize performs one serialization like the periodic one: groups it
+// cannot send before ctx ends are re-merged (see serializer.serialize). The
+// final serialization uses serializer.serializeFinal instead (see finalize).
 func (a *Aggregate) doSerialize(ctx context.Context) {
 	if ctx == nil {
 		panic("aggregate: nil serialization context")
 	}
 	a.serializer.serialize(ctx)
-}
-
-func mergeCancelledSnapshot(query *mapr.Query, live, snapshot *mapr.AggregateSet,
-	logger logging.Logger) {
-	live.Samples += snapshot.Samples
-	for _, sc := range query.Select {
-		storage := sc.FieldStorage
-		switch sc.Operation {
-		case mapr.Count, mapr.Sum, mapr.Avg, mapr.Percentage, mapr.Percentile:
-			live.FValues[storage] += snapshot.FValues[storage]
-		case mapr.Min:
-			liveValue, ok := live.FValues[storage]
-			if !ok {
-				live.FValues[storage] = snapshot.FValues[storage]
-				continue
-			}
-			if snapshotValue := snapshot.FValues[storage]; snapshotValue < liveValue {
-				live.FValues[storage] = snapshotValue
-			}
-		case mapr.Max:
-			liveValue, ok := live.FValues[storage]
-			if !ok {
-				live.FValues[storage] = snapshot.FValues[storage]
-				continue
-			}
-			if snapshotValue := snapshot.FValues[storage]; snapshotValue > liveValue {
-				live.FValues[storage] = snapshotValue
-			}
-		case mapr.Last:
-			if _, ok := live.SValues[storage]; !ok {
-				if snapshotValue, ok := snapshot.SValues[storage]; ok {
-					live.SValues[storage] = snapshotValue
-				}
-			}
-		case mapr.Len:
-			if _, ok := live.SValues[storage]; !ok {
-				if snapshotValue, ok := snapshot.SValues[storage]; ok {
-					live.SValues[storage] = snapshotValue
-					live.FValues[storage] = snapshot.FValues[storage]
-				}
-			}
-		default:
-			logger.Error("Aggregate re-merge encountered unsupported aggregation",
-				"operation", sc.Operation, "storage", storage)
-		}
-	}
 }
 
 // Processor implements the line processor interface for aggregation. Each
@@ -616,6 +661,10 @@ func NewProcessor(aggregate *Aggregate, globID string) *Processor {
 		registered: registered,
 	}
 }
+
+// PreserveLineTerminators lets whitespace-sensitive parsers distinguish CRLF
+// records from bare CR characters in unfinished or length-split follow lines.
+func (p *Processor) PreserveLineTerminators() bool { return p.aggregate.preserveWhitespace }
 
 // newSourceKey returns a parser source key no other processor or source
 // generation of this aggregate uses.

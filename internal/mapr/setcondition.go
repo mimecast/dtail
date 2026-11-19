@@ -36,6 +36,10 @@ func makeSetConditions(tokens []token) (set []setCondition, err error) {
 		if err := initSetConditions(&sc, tokens); err != nil {
 			return sc, nil, err
 		}
+		if !tokens[2].isBareword {
+			sc.rType = String
+			return sc, tokens[3:], nil
+		}
 
 		// Seems like a quoted string? E.g.: "set $foo = `count(bar)`"
 		// So don't interpret `count` as a function!

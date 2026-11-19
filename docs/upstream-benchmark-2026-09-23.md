@@ -6,6 +6,9 @@ observations succeeded: 11 scenarios, five observations per implementation.
 These are host-specific end-to-end results, not universal speedup claims or
 an attribution of the gains to the most recent changes alone.
 
+A later re-run on another host with newer revisions is in
+[upstream-benchmark-2026-11-11.md](upstream-benchmark-2026-11-11.md).
+
 ## Revisions and method
 
 - Upstream: `../dtail-upstream`, Mimecast DTail commit

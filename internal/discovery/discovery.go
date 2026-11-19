@@ -24,7 +24,11 @@ const (
 type Discovery struct {
 	// To plug in a custom server discovery module.
 	module string
-	// To specify optional server discovery module options.
+	// Optional module options, the part after the colon of "MODULE:options".
+	// They are only an extension point for modules a build adds; the built-in
+	// COMMA and FILE modules read the server value instead and take no
+	// options: New rejects "comma:a,b" or "file:/path" (see
+	// rejectBuiltInOptions), as such a value does not carry the server list.
 	options string
 	// To either filter a server list or to secify an exact list.
 	server string
@@ -36,18 +40,17 @@ type Discovery struct {
 	logger logging.Logger
 }
 
-// New returns a new discovery method.
+// New returns a new discovery method. The method is a module name, optionally
+// followed by ":options" (see the options field). For the built-in COMMA and
+// FILE modules, the server list (or FILE's list file) comes from server, and
+// options are rejected; only modules a build adds may read their options.
 func New(method, server string, order ServerOrder, logger logging.Logger) (*Discovery, error) {
-	module := method
-	options := ""
-
-	if strings.Contains(module, ":") {
-		s := strings.SplitN(module, ":", 2)
-		if len(s) != 2 || s[0] == "" || s[1] == "" {
-			return nil, fmt.Errorf("unable to parse discovery module %q", module)
-		}
-		module = s[0]
-		options = s[1]
+	module, options, err := parseMethod(method)
+	if err != nil {
+		return nil, err
+	}
+	if err := rejectBuiltInOptions(module, options); err != nil {
+		return nil, err
 	}
 
 	d := Discovery{
@@ -64,7 +67,11 @@ func New(method, server string, order ServerOrder, logger logging.Logger) (*Disc
 		}
 	}
 
-	if strings.HasPrefix(server, "/") && strings.HasSuffix(server, "/") {
+	// Whitespace around a /regex/ value is ignored like around every server
+	// entry (see trimServerEntry), so " /web/ " filters by the regex web and
+	// does not end up as the host "/web/".
+	if isRegexServer(server) {
+		d.server = strings.TrimSpace(server)
 		if err := d.initRegex(); err != nil {
 			return nil, err
 		}
@@ -73,6 +80,50 @@ func New(method, server string, order ServerOrder, logger logging.Logger) (*Disc
 	return &d, nil
 }
 
+// parseMethod splits a discovery method "MODULE[:options]" into its module
+// name and options. Options may contain further colons; a method with a colon
+// but an empty module name or empty options is rejected.
+func parseMethod(method string) (module, options string, err error) {
+	module, options, found := strings.Cut(method, ":")
+	if found && (module == "" || options == "") {
+		return "", "", fmt.Errorf("unable to parse discovery module %q", method)
+	}
+	return module, options, nil
+}
+
+// rejectBuiltInOptions rejects options for the built-in COMMA and FILE
+// modules, which read their servers from the server value and take no
+// options. Before they were rejected, an old documented form such
+// as "comma:server1,server2" with an empty server value was accepted
+// silently: a scheduled job then queried this dserver instead (see
+// jobs.jobServersStr), wrote a wrong outfile and was skipped for the rest of
+// its period. Now the client fails to configure its discovery, so the job
+// writes nothing and logs why.
+//
+// The module name is normalized with strings.ToUpper, as New does to look the
+// module up as a ServerListFrom method, so both always agree on which module a
+// name selects. strings.EqualFold would not: "fıle" (dotless ı) upper-cases
+// to FILE and selects the FILE module, but does not fold to "file", so its
+// options would slip through. The error keeps the name as it was given.
+func rejectBuiltInOptions(module, options string) error {
+	if options == "" {
+		return nil
+	}
+	if upper := strings.ToUpper(module); upper == "COMMA" || upper == "FILE" {
+		return fmt.Errorf("discovery module %q takes no options; put the servers in Servers/--servers", module)
+	}
+	return nil
+}
+
+// isRegexServer reports whether the server value, without surrounding
+// whitespace, is a /regex/ filter rather than a server list.
+func isRegexServer(server string) bool {
+	trimmed := strings.TrimSpace(server)
+	return strings.HasPrefix(trimmed, "/") && strings.HasSuffix(trimmed, "/")
+}
+
+// initRegex compiles the server value, already trimmed and enclosed in
+// slashes, as the server filter regex and clears the server value.
 func (d *Discovery) initRegex() error {
 	var runes []rune
 	last := len(d.server) - 1
@@ -94,7 +145,20 @@ func (d *Discovery) initRegex() error {
 	return nil
 }
 
-// ServerList to connect to via DTail client.
+// ServerList to connect to via DTail client. The FILE and COMMA modules
+// already trim their entries and skip empty ones, so the deduplication below
+// sees "host" and " host" as the same server. The regex filter only has
+// entries to filter from a custom discovery module, one that does not read
+// the server value: a /regex/ server value is no server list (initRegex
+// clears it), so the FILE and COMMA modules, explicit or implied, see an
+// empty server value. Without a module the result is then empty, the
+// explicit COMMA module yields only the serverless sentinel "" (which the
+// filter rarely keeps, and a client that is not serverless drops anyway) and
+// the explicit FILE module fails to open the file "".
+//
+// The list can be empty, e.g. a server list file with only comment lines or a
+// regex no server matches. ServerList returns it as it is; the client rejects
+// it (see baseClient.makeConnections).
 func (d *Discovery) ServerList() ([]string, error) {
 	servers, err := d.serverListFromModule()
 	if err != nil {
@@ -120,7 +184,7 @@ func (d *Discovery) serverListFromModule() ([]string, error) {
 	if d.server == "" && d.regex != nil {
 		return []string{}, nil
 	}
-	if _, err := os.Stat(d.server); err == nil {
+	if IsServerListFile(d.server) {
 		// Appears to be a file name, now try to read from that file.
 		return d.ServerListFromFILE()
 	}
@@ -129,8 +193,10 @@ func (d *Discovery) serverListFromModule() ([]string, error) {
 }
 
 // The aim of this is that everyone can plug in their own server discovery
-// method to DTail. Just add a method ServerListFrommMODULENAME to type
-// Discovery. Whereas MODULENAME must be a upeprcase string.
+// method to DTail. Just add a method ServerListFromMODULENAME to type
+// Discovery, where MODULENAME is an uppercase string. Such a module may read
+// the options of "MODULENAME:options" from d.options; the built-in COMMA and
+// FILE modules take none (see rejectBuiltInOptions).
 func (d *Discovery) serverListFromReflectedModule() ([]string, error) {
 	methodName := fmt.Sprintf("ServerListFrom%s", d.module)
 	// Now we are reflecting the serve discovery function by it's name.
@@ -158,6 +224,36 @@ func (d *Discovery) serverListFromReflectedModule() ([]string, error) {
 		panic(fmt.Sprintf("discovery method %s does not return error", methodName))
 	}
 	return nil, fmt.Errorf("run server discovery module %q: %w", d.module, err)
+}
+
+// IsServerListFile reports whether server names an existing file, which
+// ServerList then reads as a server list file when no discovery module is
+// given. Whitespace around the value is ignored like around every server
+// entry, so "servers.txt " is the file servers.txt and not the host
+// "servers.txt". The scheduler uses the same check to tell whether the server
+// list of a job can change between its waves.
+func IsServerListFile(server string) bool {
+	// A directory is no server list: "--servers web1" run from a directory
+	// with a subdirectory web1 (or log) means the host of that name. Pipes
+	// and devices (e.g. a process substitution) remain readable lists.
+	info, err := os.Stat(serverListFilePath(server))
+	return err == nil && !info.IsDir()
+}
+
+// serverListFilePath returns the path of the server list file server names:
+// server without surrounding whitespace.
+func serverListFilePath(server string) string {
+	return strings.TrimSpace(server)
+}
+
+// trimServerEntry trims surrounding whitespace from one raw entry of the FILE
+// or COMMA module and reports whether anything is left. Both modules use it
+// so that their entries are clean before ServerList filters them by regex and
+// deduplicates them: the client rejects an empty or whitespace-wrapped
+// address, and a single such entry would otherwise abort the whole client.
+func trimServerEntry(raw string) (string, bool) {
+	server := strings.TrimSpace(raw)
+	return server, server != ""
 }
 
 // Filter server list based on a regexp.

@@ -98,10 +98,10 @@ func TestContinuousRunJobsReleasesDayChangeWatcherAcrossRetries(t *testing.T) {
 			release: release,
 		}, nil
 	}
-	c.dayChangeWatcher = func(ctx context.Context) bool {
+	c.dayChangeWatcher = func(ctx context.Context, start time.Time) bool {
 		atomic.AddInt32(&watcherStarts, 1)
 		defer atomic.AddInt32(&watcherExits, 1)
-		return c.waitForDayChange(ctx)
+		return c.waitForDayChange(ctx, start)
 	}
 
 	job := config.Continuous{}
@@ -186,7 +186,7 @@ func TestContinuousWaitForDayChangeDetectsMonthBoundary(t *testing.T) {
 
 	result := make(chan bool, 1)
 	go func() {
-		result <- c.waitForDayChange(ctx)
+		result <- c.waitForDayChange(ctx, start)
 	}()
 
 	tickCh <- start
@@ -249,5 +249,19 @@ func waitForCounterAtLeast(t *testing.T, current func() int32, minimum int32) {
 			t.Fatalf("timed out waiting for counter to reach %d, got %d", minimum, current())
 		case <-ticker.C:
 		}
+	}
+}
+
+// The watcher compares with the day the job's files were filled in for:
+// midnight passing before it starts must be detected at once.
+func TestContinuousWaitForDayChangeDetectsChangeBeforeStart(t *testing.T) {
+	c := newContinuous(config.RuntimeConfig{}, jobTestLoggers)
+	c.now = func() time.Time { return time.Date(2026, time.November, 11, 0, 0, 0, 100, time.UTC) }
+	c.newTicker = func(time.Duration) (<-chan time.Time, func()) {
+		return make(chan time.Time), func() {}
+	}
+	filledAt := time.Date(2026, time.November, 10, 23, 59, 59, 0, time.UTC)
+	if !c.waitForDayChange(context.Background(), filledAt) {
+		t.Fatal("expected the day change that preceded the watcher to be detected")
 	}
 }

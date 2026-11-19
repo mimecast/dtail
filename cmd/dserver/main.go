@@ -98,6 +98,8 @@ func run() int {
 	flag.Parse()
 	args := &flags.args
 	args.NoColor = !flags.color
+	args.SSHPortSet = cli.FlagWasSet(flag.CommandLine, "port")
+	args.LogLevelSet = cli.FlagWasSet(flag.CommandLine, "logLevel")
 	displayVersion, pprof, shutdownAfter := flags.displayVersion, flags.pprof, flags.shutdownAfter
 	runtimeCfg, err := config.SetupRuntime(source.Server, args, flag.Args())
 	if err != nil {

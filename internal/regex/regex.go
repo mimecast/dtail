@@ -124,6 +124,12 @@ func literalPattern(pattern string) (string, bool) {
 	return literal.String(), true
 }
 
+// matchesEveryLine reports whether the pattern is one of DTail's spellings of
+// "every line", which New turns into a noop regex unless it inverts.
+func matchesEveryLine(regexStr string) bool {
+	return regexStr == "" || regexStr == "." || regexStr == ".*"
+}
+
 // NewNoop is a noop regex (doing nothing).
 func NewNoop() Regex {
 	return Regex{
@@ -133,8 +139,21 @@ func NewNoop() Regex {
 }
 
 // New returns a new regex object.
+//
+// The patterns "", "." and ".*" are how DTail spells "every line" (dtail and
+// dgrep default to "."), so with positive matching New returns a noop regex
+// for them, which matches every line, empty lines included, without running a
+// regexp. The shortcut only holds for positive matching: with Invert the
+// pattern is compiled like any other, so that --invert selects the lines the
+// pattern does not match, as grep -v does. Inverted, "" and ".*" therefore
+// match no line, and "." matches only the lines without a character other
+// than a newline, i.e. empty lines: Go's "." does not match "\n", so the
+// newline, if any, which ends a line handed to the filter does not count
+// (snapshot reads hand it over, follow reads may strip it), while the "\r"
+// of an empty CRLF line is a character wherever it reaches the filter, so
+// such a line is not matched (grep -v . does not print it either).
 func New(regexStr string, flag Flag) (Regex, error) {
-	if regexStr == "" || regexStr == "." || regexStr == ".*" {
+	if flag != Invert && matchesEveryLine(regexStr) {
 		return NewNoop(), nil
 	}
 	return newRegex(regexStr, []Flag{flag})
@@ -279,40 +298,57 @@ func (r Regex) Pattern() string {
 }
 
 // Deserialize the regex.
+//
+// The wire form is "regex:<flags> <pattern>", the flags and the pattern
+// separated by the first space. An empty string means no regex and is a noop
+// regex. A string without a space is read as flags with an empty pattern:
+// Serialize ends an empty pattern's regex in a space ("regex:invert,literal "
+// for an inverted empty pattern), and a receiver which splits a command into
+// words at runs of whitespace and joins them again loses that trailing space.
+// Taking the remaining "regex:invert,literal" for a noop would match every
+// line, where the inverted empty pattern matches none. Flags which do not
+// parse ("regex:bogus", or "regex:" without a flag) are an error, with or
+// without a pattern.
 func Deserialize(str string) (Regex, error) {
-	// Get regex string
-	s := strings.SplitN(str, " ", 2)
-	if len(s) < 2 {
+	if str == "" {
 		return NewNoop(), nil
 	}
-	flagsStr := s[0]
-	regexStr := s[1]
+	flagsStr, regexStr, _ := strings.Cut(str, " ")
 
 	if !strings.HasPrefix(flagsStr, "regex") {
 		return Regex{}, fmt.Errorf("unable to deserialize regex '%s': should start "+
 			"with string 'regex'", str)
 	}
 
-	// Parse regex flags, e.g. "regex:flag1,flag2,flag3..."
-	var flags []Flag
-	if strings.Contains(flagsStr, ":") {
-		s := strings.SplitN(flagsStr, ":", 2)
-		for _, flagStr := range strings.Split(s[1], ",") {
-			if flagStr == "literal" {
-				// An optimization hint of the sending side, not a flag. It is
-				// accepted for compatibility but never trusted: the literal is
-				// derived from the pattern below, and a pattern which cannot
-				// be proven to be a literal keeps the compiled regexp, which
-				// matches whatever the sender's regexp matched.
-				continue
-			}
-			flag, err := NewFlag(flagStr)
-			if err != nil {
-				return Regex{}, fmt.Errorf("unknown regex flag %q: %w", flagStr, err)
-			}
-			flags = append(flags, flag)
-		}
+	flags, err := deserializeFlags(flagsStr)
+	if err != nil {
+		return Regex{}, err
 	}
-
 	return newRegex(regexStr, flags)
+}
+
+// deserializeFlags parses the flags of "regex:flag1,flag2,flag3...". Flags
+// without a colon ("regex") are none, which newRegex turns into Default.
+func deserializeFlags(flagsStr string) ([]Flag, error) {
+	_, list, found := strings.Cut(flagsStr, ":")
+	if !found {
+		return nil, nil
+	}
+	var flags []Flag
+	for _, flagStr := range strings.Split(list, ",") {
+		if flagStr == "literal" {
+			// An optimization hint of the sending side, not a flag. It is
+			// accepted for compatibility but never trusted: newRegex derives
+			// the literal from the pattern, and a pattern which cannot be
+			// proven to be a literal keeps the compiled regexp, which matches
+			// whatever the sender's regexp matched.
+			continue
+		}
+		flag, err := NewFlag(flagStr)
+		if err != nil {
+			return nil, fmt.Errorf("unknown regex flag %q: %w", flagStr, err)
+		}
+		flags = append(flags, flag)
+	}
+	return flags, nil
 }

@@ -111,35 +111,8 @@ func TestFollowReadDrainsTheRotatedFile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "rotate.log")
-			rotated := path + ".1"
-			writeTestPath(t, path, "a\nb\n")
-			writer, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = writer.Close() }()
-
-			processor := &rotationProcessor{atEOF: func() {
-				writeTo(t, writer, tt.appendBefore)
-				if renameErr := os.Rename(path, rotated); renameErr != nil {
-					t.Error(renameErr)
-				}
-				if !tt.removeOnly {
-					writeTestPath(t, path, "new\n")
-				}
-			}}
-			reader := mustNewReadFile(ReadOptions{Mode: omode.TailClient, FilePath: path, GlobID: "glob"})
-			polls := 0
-			reader.rotationDrainPoll = func(context.Context) bool {
-				if polls < len(tt.polls) {
-					writeTo(t, writer, tt.polls[polls])
-				}
-				polls++
-				return true
-			}
-
-			err = startWithTimeout(t, reader, processor)
+			processor, rotated, polls, err := runRotationDrain(t, drainScenario{
+				appendBefore: tt.appendBefore, removeOnly: tt.removeOnly, polls: tt.polls})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("read ended with %v, want %v", err, tt.wantErr)
 			}
@@ -149,6 +122,93 @@ func TestFollowReadDrainsTheRotatedFile(t *testing.T) {
 			assertDrainedLines(t, processor, rotated, tt.wantLines)
 		})
 	}
+}
+
+// TestFollowReadDrainCutsLongLinesAtTheLimit checks lines longer than
+// MaxLineLength (4) while draining the rotated file: they are cut at exactly
+// the limit, the pieces end where they were cut, a pending line of exactly the
+// limit is fed whole once its newline is appended, and an unfinished one, of
+// exactly the limit or the rest of a cut line, is dropped like any unfinished
+// last line.
+func TestFollowReadDrainCutsLongLinesAtTheLimit(t *testing.T) {
+	tests := []struct {
+		name         string
+		appendBefore string
+		polls        []string
+		wantLines    []string
+		wantEnds     []int64
+	}{
+		{name: "unfinished line of exactly the limit is dropped", appendBefore: "abcd",
+			wantLines: []string{"a", "b"}, wantEnds: []int64{2, 4}},
+		{name: "line of exactly the limit finished while draining", appendBefore: "abcd", polls: []string{"\n"},
+			wantLines: []string{"a", "b", "abcd"}, wantEnds: []int64{2, 4, 9}},
+		{name: "rest of a cut line is dropped", appendBefore: "abcdef",
+			wantLines: []string{"a", "b", "abcd"}, wantEnds: []int64{2, 4, 8}},
+		{name: "cut line finished while draining", appendBefore: "abcd", polls: []string{"ef\n"},
+			wantLines: []string{"a", "b", "abcd", "ef"}, wantEnds: []int64{2, 4, 8, 11}},
+		{name: "long line in one read", appendBefore: "abcdefghij\nxy\n",
+			wantLines: []string{"a", "b", "abcd", "efgh", "ij", "xy"}, wantEnds: []int64{2, 4, 8, 12, 15, 18}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			processor, rotated, _, err := runRotationDrain(t, drainScenario{
+				appendBefore: tt.appendBefore, polls: tt.polls, maxLineLength: 4})
+			if !errors.Is(err, errFileRotated) {
+				t.Fatalf("read ended with %v, want %v", err, errFileRotated)
+			}
+			assertDrainedLineEnds(t, processor, rotated, tt.wantLines, tt.wantEnds)
+		})
+	}
+}
+
+// drainScenario is a follow read of "a\nb\n" whose file is rotated after the
+// reader's last read.
+type drainScenario struct {
+	// appendBefore is appended to the file right before the rotation,
+	// after the reader's last read.
+	appendBefore string
+	// removeOnly leaves the path missing after the rename.
+	removeOnly bool
+	// polls[i] is what the old file's writer appends at the i-th poll.
+	polls []string
+	// maxLineLength is the reader's MaxLineLength, 0 for the default.
+	maxLineLength int
+}
+
+// runRotationDrain runs sc and returns what the reader fed, the path of the
+// rotated file, how often the reader polled it and how the read ended.
+func runRotationDrain(t *testing.T, sc drainScenario) (*rotationProcessor, string, int, error) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "rotate.log")
+	rotated := path + ".1"
+	writeTestPath(t, path, "a\nb\n")
+	writer, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = writer.Close() }()
+
+	processor := &rotationProcessor{atEOF: func() {
+		writeTo(t, writer, sc.appendBefore)
+		if renameErr := os.Rename(path, rotated); renameErr != nil {
+			t.Error(renameErr)
+		}
+		if !sc.removeOnly {
+			writeTestPath(t, path, "new\n")
+		}
+	}}
+	reader := mustNewReadFile(ReadOptions{Mode: omode.TailClient, FilePath: path, GlobID: "glob",
+		MaxLineLength: sc.maxLineLength})
+	polls := 0
+	reader.rotationDrainPoll = func(context.Context) bool {
+		if polls < len(sc.polls) {
+			writeTo(t, writer, sc.polls[polls])
+		}
+		polls++
+		return true
+	}
+	err = startWithTimeout(t, reader, processor)
+	return processor, rotated, polls, err
 }
 
 // TestFollowReadDrainingRotatedFileEndsOnCancel checks that a read canceled
@@ -235,9 +295,24 @@ func startWithTimeout(t *testing.T, reader *ReadFile, processor *rotationProcess
 }
 
 // assertDrainedLines checks that the reader fed want, numbered from 1, each
-// with its end in the rotated-away file, and that ReadStarting and ReadUpTo
-// alternated.
+// line ending at its newline in the rotated-away file, and that ReadStarting
+// and ReadUpTo alternated.
 func assertDrainedLines(t *testing.T, processor *rotationProcessor, rotated string, want []string) {
+	t.Helper()
+	ends := make([]int64, len(want))
+	var end int64
+	for i, line := range want {
+		end += int64(len(line)) + 1
+		ends[i] = end
+	}
+	assertDrainedLineEnds(t, processor, rotated, want, ends)
+}
+
+// assertDrainedLineEnds checks that the reader fed want, numbered from 1, the
+// i-th line ending at wantEnds[i] in the rotated-away file, and that
+// ReadStarting and ReadUpTo alternated.
+func assertDrainedLineEnds(t *testing.T, processor *rotationProcessor, rotated string, want []string,
+	wantEnds []int64) {
 	t.Helper()
 	processor.mu.Lock()
 	defer processor.mu.Unlock()
@@ -248,15 +323,13 @@ func assertDrainedLines(t *testing.T, processor *rotationProcessor, rotated stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	var end int64
 	for i, line := range want {
-		end += int64(len(line)) + 1
 		if processor.numbers[i] != uint64(i+1) {
 			t.Errorf("line %q numbered %d, want %d", line, processor.numbers[i], i+1)
 		}
-		if processor.ends[i] != end || !os.SameFile(processor.files[i], oldFile) {
+		if processor.ends[i] != wantEnds[i] || !os.SameFile(processor.files[i], oldFile) {
 			t.Errorf("line %q ends at %d in %v, want %d in the rotated file",
-				line, processor.ends[i], processor.files[i].Name(), end)
+				line, processor.ends[i], processor.files[i].Name(), wantEnds[i])
 		}
 	}
 	// The first ReadUpTo is the start position, then every read is

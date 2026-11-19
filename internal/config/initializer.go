@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mimecast/dtail/internal/color"
+	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/source"
 )
 
@@ -226,11 +227,14 @@ func (in *initializer) setupConfig(sourceCb transformCb, args *Args,
 
 	// Copy args to config objects.
 	// NEXT: Maybe unify args and config structs?
-	if args.SSHPort != DefaultSSHPort {
+	// A flag given explicitly wins over the config file, also with its
+	// default value: "--port 2222" and "--logLevel info" used to be taken
+	// for unset flags and could not override a config file value.
+	if args.SSHPortSet || args.SSHPort != DefaultSSHPort {
 		in.Common.SSHPort = args.SSHPort
 	}
 	applyStringOverride(&args.HostnameOverride, &in.Common.HostnameOverride)
-	if args.LogLevel != DefaultLogLevel {
+	if args.LogLevelSet || args.LogLevel != DefaultLogLevel {
 		in.Common.LogLevel = args.LogLevel
 	}
 	if args.NoColor {
@@ -272,7 +276,9 @@ func (in *initializer) setupConfig(sourceCb transformCb, args *Args,
 	if args.LogPayload {
 		in.Client.LogPayload = true
 	}
-	if args.ConnectionsPerCPU == 0 {
+	// Also for a negative value: it is the capacity factor of the client's
+	// connection throttle channel, and "--cpc -1" panicked in make(chan).
+	if args.ConnectionsPerCPU <= 0 {
 		args.ConnectionsPerCPU = DefaultConnectionsPerCPU
 	}
 	if in.Common.SSHPort < 1 || in.Common.SSHPort > 65535 {
@@ -318,12 +324,20 @@ func setupPlainMode(in *initializer, args *Args) {
 	}
 }
 
+func takesPositionalQuery(mode omode.Mode) bool {
+	return mode == omode.MapClient || mode == omode.TailClient
+}
+
 func setupAdditionalArgs(args *Args, additionalArgs []string) {
 	// Interpret additional args as file list or as query.
 	if args.What == "" {
 		var files []string
 		for _, arg := range additionalArgs {
-			if args.QueryStr == "" && strings.Contains(strings.ToLower(arg), "select ") {
+			// Only dmap and dtail take a query as a positional argument. For
+			// dcat and dgrep (mode not set by their commands) it is always
+			// a file: a path such as "select me.log" is a valid one.
+			if args.QueryStr == "" && takesPositionalQuery(args.Mode) &&
+				strings.Contains(strings.ToLower(arg), "select ") {
 				args.QueryStr = arg
 				continue
 			}
@@ -336,15 +350,25 @@ func setupAdditionalArgs(args *Args, additionalArgs []string) {
 func transformClient(in *initializer, args *Args, additionalArgs []string) error {
 	applyStringOverride(&args.KnownHostsPath, &in.Client.KnownHostsPath)
 	// Serverless mode.
-	if args.Discovery == "" && (args.ServersStr == "" ||
-		strings.ToLower(args.ServersStr) == "serverless") {
+	if args.Discovery == "" && isServerlessServers(args.ServersStr) {
 		// We are not connecting to any servers.
 		args.Serverless = true
-		if args.LogLevel == DefaultLogLevel {
+		if args.LogLevel == DefaultLogLevel && !args.LogLevelSet {
 			in.Common.LogLevel = "warn"
 		}
 	}
 	return nil
+}
+
+// isServerlessServers reports whether the --servers value servers selects
+// serverless mode when no discovery module is given: the empty value, or the
+// word "serverless" in any case. Whitespace around "serverless" is ignored,
+// as around every server entry (see discovery.trimServerEntry); without that,
+// " serverless" was dialled as the host "serverless". A value of only
+// whitespace stays no serverless value: it names no server, so the client
+// fails with no server to connect to.
+func isServerlessServers(servers string) bool {
+	return servers == "" || strings.EqualFold(strings.TrimSpace(servers), "serverless")
 }
 
 func transformServer(in *initializer, args *Args, additionalArgs []string) error {
@@ -358,8 +382,7 @@ func transformServer(in *initializer, args *Args, additionalArgs []string) error
 
 func transformHealthCheck(in *initializer, args *Args, additionalArgs []string) error {
 	// Serverless mode.
-	if args.Discovery == "" && (args.ServersStr == "" ||
-		strings.ToLower(args.ServersStr) == "serverless") {
+	if args.Discovery == "" && isServerlessServers(args.ServersStr) {
 		// We are not connecting to any servers.
 		args.Serverless = true
 		in.Common.LogLevel = "warn"

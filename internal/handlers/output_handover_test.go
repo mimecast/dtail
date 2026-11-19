@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -29,7 +28,7 @@ type capturedBatch struct {
 func newCapturingNetworkWriter(t *testing.T) (*NetworkWriter, *[]capturedBatch) {
 	t.Helper()
 	var batches []capturedBatch
-	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
 		0, nil, handlerTestLogger)
 	writer.enqueueOutput = func(_ context.Context, _ uint64, data []byte, _ func() uint64) error {
 		batches = append(batches, capturedBatch{data: data, snapshot: append([]byte(nil), data...)})
@@ -222,7 +221,7 @@ func writerBacking(writer *NetworkWriter) []byte {
 // a 128 KiB backing for a batch of about 64 KiB.
 func TestNetworkWriterFirstBatchHasExactBatchCapacity(t *testing.T) {
 	manager := newHandoverTestManager(0)
-	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
 		0, nil, handlerTestLogger)
 	var handed [][]byte
 	writer.enqueueOutput = func(ctx context.Context, generation uint64, data []byte,
@@ -401,7 +400,7 @@ func TestOutputManagerAdoptionAccounting(t *testing.T) {
 		smallSize = outputAdoptMinBytes - 1
 	)
 	// The smallest cap the server handler accepts, for 1 KiB lines.
-	minimumCap := minimumOutputBufferMaxBytes(kib)
+	minimumCap := mustMinimumOutputBufferMaxBytes(t, kib)
 	tests := []struct {
 		name         string
 		maxBytes     int
@@ -598,7 +597,7 @@ var errTestBackpressure = errors.New("output queue full")
 // early with the queue far from full.
 func fillUntilBackpressure(t *testing.T, manager *outputManager, plain bool, lineLen int) (retained, buffered, entries int) {
 	t.Helper()
-	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
 	writer.enqueueOutput = func(_ context.Context, generation uint64, payload []byte, _ func() uint64) error {
 		manager.mu.Lock()
 		defer manager.mu.Unlock()
@@ -668,7 +667,7 @@ func TestOutputChargeBoundedForLongLines(t *testing.T) {
 // NetworkWriter into manager, whose cap must not be reached.
 func fillBytes(t *testing.T, manager *outputManager, plain bool, lineLen, total int) (retained, buffered, entries int) {
 	t.Helper()
-	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
 	writer.enqueueOutput = manager.enqueue
 	writeLinesN(t, writer, total/lineLen+1, lineLen, 'x')
 	return managerAccounting(manager)
@@ -681,7 +680,7 @@ func fillBytes(t *testing.T, manager *outputManager, plain bool, lineLen, total 
 func TestOutputQueueHoldsTwoBatchesAtMinimumCap(t *testing.T) {
 	const maxLineLength = 1024
 	for _, plain := range []bool{false, true} {
-		manager := newHandoverTestManager(minimumOutputBufferMaxBytes(maxLineLength))
+		manager := newHandoverTestManager(mustMinimumOutputBufferMaxBytes(t, maxLineLength))
 		retained, buffered, entries := fillUntilBackpressure(t, manager, plain, 99)
 		if entries != 2 || buffered < 2*networkWriterBufferSize {
 			t.Fatalf("plain=%v: queued %d entries with %d payload bytes (%d retained) at the minimum cap, want 2 full batches",
@@ -728,7 +727,7 @@ func TestNetworkWriterDropsRegrownBufferOnSmallFlush(t *testing.T) {
 func TestNetworkWriterHandoverRespectsCapEndToEnd(t *testing.T) {
 	const maxBytes = 3 * 72 * 1024
 	manager := newHandoverTestManager(maxBytes)
-	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
 		0, nil, handlerTestLogger)
 	writer.enqueueOutput = manager.enqueue
 
@@ -773,97 +772,200 @@ func TestNetworkWriterHandoverRespectsCapEndToEnd(t *testing.T) {
 	}
 }
 
+// concurrentReloadTimeout bounds TestStaleGenerationDroppedUnderConcurrentReload
+// as a whole. The test takes about a second; the bound only matters on a
+// loaded machine (several -race suites at once).
+const concurrentReloadTimeout = 2 * time.Minute
+
+// reloadTestLines is how many records the generation 2 writer writes.
+const reloadTestLines = 20000
+
+// reloadTest is the state shared by the writers and the reader of
+// TestStaleGenerationDroppedUnderConcurrentReload.
+type reloadTest struct {
+	t       *testing.T
+	state   *sessionCommandState
+	manager *outputManager
+	stop    chan struct{}
+	writers sync.WaitGroup
+	// staleAtReload is how many bytes of generation 1 the manager held when
+	// the reader reloaded. They leave the manager only through tryRead after
+	// the reload, so whatever of them is not in the output after the reload
+	// was dropped by the reader-side generation check.
+	staleAtReload int
+}
+
+// write runs a writer of generation that writes lines records tagged tag,
+// until it wrote them all, its generation became stale or the test stops.
+func (r *reloadTest) write(generation uint64, lines int, tag string) {
+	defer r.writers.Done()
+	w := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
+		generation, r.state.currentGeneration, handlerTestLogger)
+	w.enqueueOutput = r.manager.enqueue
+	for i := 0; i < lines && r.state.currentGeneration() == generation; i++ {
+		select {
+		case <-r.stop:
+			return
+		default:
+		}
+		if err := w.WriteLineData([]byte(fmt.Sprintf("%s-%06d-%s", tag, i, strings.Repeat("y", 100))),
+			uint64(i), "app.log"); err != nil {
+			r.t.Errorf("generation %d write: %v", generation, err)
+			return
+		}
+	}
+	if err := w.Flush(); err != nil {
+		r.t.Errorf("generation %d flush: %v", generation, err)
+	}
+}
+
+// shouldDrop is the session's stale generation check.
+func (r *reloadTest) shouldDrop(generation uint64) bool {
+	active := r.state.currentGeneration()
+	return generation != 0 && active != 0 && generation != active
+}
+
+// read reads like the session output goroutine does (outputCoordinator.next):
+// it waits for a state change whenever the manager has nothing to deliver,
+// instead of spinning on tryRead. When 512 KiB of generation 1 output were
+// read, it stops reading until the manager holds a backlog of generation 1
+// (see reloadWithBacklog), reloads to generation 2 and starts its writer; it
+// returns what it read before and after the reload once every generation 2
+// record arrived.
+func (r *reloadTest) read(deadline <-chan time.Time) (before, after []byte) {
+	buf := make([]byte, 5003)
+	g2Records, counted := 0, 0
+	for !r.reloaded() || g2Records < reloadTestLines {
+		changed, _ := r.manager.readWait()
+		reloaded := r.reloaded()
+		n, handled := r.manager.tryRead(buf, &userserver.User{Name: "reload-test"}, r.shouldDrop)
+		if reloaded {
+			after = append(after, buf[:n]...)
+			// Count only the new bytes, plus the two before them a record
+			// prefix split over two reads may start in.
+			from := max(counted-2, 0)
+			g2Records += bytes.Count(after[from:], []byte("g2-"))
+			counted = len(after)
+		} else {
+			before = append(before, buf[:n]...)
+		}
+		if !reloaded && len(before) > 512*1024 {
+			r.reloadWithBacklog(deadline)
+			continue
+		}
+		if !handled {
+			r.waitForChange(changed, deadline, func() string {
+				return fmt.Sprintf("%d bytes and %d of %d generation 2 records read after the reload",
+					len(after), g2Records, reloadTestLines)
+			})
+		}
+	}
+	return before, after
+}
+
+// waitForChange waits for a manager state change, or fails the test with the
+// progress describe returns once deadline passed.
+func (r *reloadTest) waitForChange(changed <-chan struct{}, deadline <-chan time.Time, describe func() string) {
+	select {
+	case <-changed:
+	case <-deadline:
+		close(r.stop)
+		r.t.Fatalf("timed out; %s", describe())
+	}
+}
+
+// reloadWithBacklog waits, without reading, until the manager holds at least
+// one full writer batch of generation 1 (the generation 1 writer then blocks
+// on the cap with its next batch), and only then reloads. Without the backlog
+// the reader usually drained the queue before the reload, the writer-side
+// check dropped the stale batch at enqueue, and the reader-side drop this test
+// is about never ran.
+func (r *reloadTest) reloadWithBacklog(deadline <-chan time.Time) {
+	for {
+		changed, _ := r.manager.readWait()
+		if r.manager.bufferedLen() >= networkWriterBufferSize {
+			break
+		}
+		r.waitForChange(changed, deadline, func() string {
+			return fmt.Sprintf("%d of %d generation 1 bytes buffered before the reload",
+				r.manager.bufferedLen(), networkWriterBufferSize)
+		})
+	}
+	// Nothing reads between this snapshot and the reload, and the generation
+	// 1 writer cannot add to the full queue, so the snapshot is exact or (when
+	// a racing enqueue slips in after the reader frees space) a lower bound.
+	r.staleAtReload = r.manager.bufferedLen()
+	r.reload()
+}
+
+func (r *reloadTest) reloaded() bool { return r.state.currentGeneration() == 2 }
+
+// reload makes generation 2 the active one and starts its writer.
+func (r *reloadTest) reload() {
+	r.state.mu.Lock()
+	r.state.generation.Store(2)
+	r.state.mu.Unlock()
+	r.writers.Add(1)
+	go r.write(2, reloadTestLines, "g2")
+}
+
 // After a reload, a reader that has observed the new generation must not
 // deliver records of the old one (except the rest of a record whose prefix was
-// already sent), while writers of both generations run concurrently.
+// already sent), while writers of both generations run concurrently. Every
+// record of the new generation arrives exactly once. The reload happens while
+// the manager holds a backlog of the old generation, so the reader-side drop
+// (tryRead's shouldDropGeneration) is what removes it: the test fails when that
+// check is disabled.
 func TestStaleGenerationDroppedUnderConcurrentReload(t *testing.T) {
 	var state sessionCommandState
 	state.mu.Lock()
 	state.active = true
 	state.generation.Store(1)
 	state.mu.Unlock()
+	r := &reloadTest{t: t, state: &state, manager: newHandoverTestManager(4 * 72 * 1024),
+		stop: make(chan struct{})}
 
-	manager := newHandoverTestManager(4 * 72 * 1024)
-	newWriter := func(generation uint64) *NetworkWriter {
-		w := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
-			generation, state.currentGeneration, handlerTestLogger)
-		w.enqueueOutput = manager.enqueue
-		return w
-	}
-
-	var flipped atomic.Bool
-	stop := make(chan struct{})
-	var writers sync.WaitGroup
-	writeGeneration := func(generation uint64, lines int, tag string) {
-		defer writers.Done()
-		w := newWriter(generation)
-		for i := 0; i < lines && state.currentGeneration() == generation; i++ {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			if err := w.WriteLineData([]byte(fmt.Sprintf("%s-%06d-%s", tag, i, strings.Repeat("y", 100))),
-				uint64(i), "app.log"); err != nil {
-				t.Errorf("generation %d write: %v", generation, err)
-				return
-			}
-		}
-		if err := w.Flush(); err != nil {
-			t.Errorf("generation %d flush: %v", generation, err)
-		}
-	}
-
-	writers.Add(1)
-	go writeGeneration(1, 1<<30, "g1") // Runs until it becomes stale.
-
-	shouldDrop := func(generation uint64) bool {
-		active := state.currentGeneration()
-		return generation != 0 && active != 0 && generation != active
-	}
+	r.writers.Add(1)
+	go r.write(1, 1<<30, "g1") // Runs until it becomes stale.
+	before, after := r.read(time.After(concurrentReloadTimeout))
+	close(r.stop)
+	r.writers.Wait()
 	buf := make([]byte, 5003)
-	var before, after []byte
-	const gen2Lines = 20000
-	gen2Started := false
-	deadline := time.After(20 * time.Second)
-	for {
-		select {
-		case <-deadline:
-			close(stop)
-			t.Fatalf("timed out; %d bytes read after the reload", len(after))
-		default:
-		}
-		observed := flipped.Load()
-		n, _ := manager.tryRead(buf, &userserver.User{Name: "reload-test"}, shouldDrop)
-		if observed {
-			after = append(after, buf[:n]...)
-		} else {
-			before = append(before, buf[:n]...)
-		}
-		if !gen2Started && len(before) > 512*1024 {
-			state.mu.Lock()
-			state.generation.Store(2)
-			state.mu.Unlock()
-			flipped.Store(true)
-			gen2Started = true
-			writers.Add(1)
-			go writeGeneration(2, gen2Lines, "g2")
-		}
-		if gen2Started && bytes.Count(after, []byte("g2-")) == gen2Lines {
-			break
-		}
-	}
-	close(stop)
-	writers.Wait()
-	for manager.bufferedLen() > 0 {
-		n, _ := manager.tryRead(buf, &userserver.User{Name: "reload-test"}, shouldDrop)
+	for r.manager.bufferedLen() > 0 {
+		n, _ := r.manager.tryRead(buf, &userserver.User{Name: "reload-test"}, r.shouldDrop)
 		after = append(after, buf[:n]...)
 	}
 
 	if !bytes.Contains(before, []byte("g1-")) {
 		t.Fatal("no generation 1 output before the reload")
 	}
-	// At most the unfinished record of generation 1 may be completed first.
+	assertOnlyGeneration2AfterReload(t, after)
+	if dropped := r.staleAtReload - staleBytesAfterReload(after); dropped <= 0 {
+		t.Fatalf("dropped %d of the %d generation 1 bytes buffered at the reload, want more than 0",
+			dropped, r.staleAtReload)
+	}
+	if retained, buffered, entries := managerAccounting(r.manager); buffered != 0 || entries != 0 || retained != 0 {
+		t.Fatalf("after drain retained/buffered/entries = %d/%d/%d, want 0/0/0", retained, buffered, entries)
+	}
+}
+
+// staleBytesAfterReload is how many bytes (delimiters included) of after
+// belong to records that are not of generation 2.
+func staleBytesAfterReload(after []byte) int {
+	stale := 0
+	for _, record := range bytes.SplitAfter(after, []byte{protocol.MessageDelimiter}) {
+		if !bytes.HasPrefix(record, []byte("g2-")) {
+			stale += len(record)
+		}
+	}
+	return stale
+}
+
+// assertOnlyGeneration2AfterReload fails unless after holds every generation
+// 2 record once and, apart from the completed rest of the generation 1 record
+// it may start with, nothing else.
+func assertOnlyGeneration2AfterReload(t *testing.T, after []byte) {
+	t.Helper()
 	records := bytes.Split(after, []byte{protocol.MessageDelimiter})
 	if len(records) > 0 && !bytes.HasPrefix(records[0], []byte("g2-")) {
 		records = records[1:]
@@ -873,8 +975,8 @@ func TestStaleGenerationDroppedUnderConcurrentReload(t *testing.T) {
 			t.Fatalf("record %d after the reload is stale: %.40q", i, record)
 		}
 	}
-	if retained, buffered, entries := managerAccounting(manager); buffered != 0 || entries != 0 || retained != 0 {
-		t.Fatalf("after drain retained/buffered/entries = %d/%d/%d, want 0/0/0", retained, buffered, entries)
+	if n := bytes.Count(after, []byte("g2-")); n != reloadTestLines {
+		t.Fatalf("read %d generation 2 records after the reload, want %d", n, reloadTestLines)
 	}
 }
 
@@ -935,7 +1037,7 @@ var errHandoverTestSentinel = errors.New("sentinel")
 // batch must get a fresh allocation.
 func TestNetworkWriterDoesNotReuseBatchAfterFailedEnqueue(t *testing.T) {
 	var handed [][]byte
-	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
 		0, nil, handlerTestLogger)
 	writer.enqueueOutput = func(_ context.Context, _ uint64, data []byte, _ func() uint64) error {
 		handed = append(handed, data)
@@ -965,7 +1067,7 @@ func BenchmarkNetworkWriterToOutputManager(b *testing.B) {
 	manager := &outputManager{}
 	manager.configure(outputManagerConfig{}, handlerTestLogger)
 	manager.enable()
-	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", true, false,
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", true, false,
 		1, state.currentGeneration, handlerTestLogger)
 	writer.enqueueOutput = manager.enqueue
 	shouldDrop := func(generation uint64) bool { return generation != state.currentGeneration() }
@@ -1003,7 +1105,7 @@ func backpressuredAdoption(t *testing.T, plain bool, maxBytes, lineLen, lines, r
 	user := &userserver.User{Name: "handover-test"}
 	readBuf := make([]byte, readSize)
 	var got []byte
-	writer := NewNetworkWriter(context.Background(), nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
+	writer := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
 	writer.enqueueOutput = func(_ context.Context, generation uint64, data []byte, _ func() uint64) error {
 		waited := false
 		for {
@@ -1034,7 +1136,7 @@ func backpressuredAdoption(t *testing.T, plain bool, maxBytes, lineLen, lines, r
 	}
 
 	var want bytes.Buffer
-	capture := NewNetworkWriter(context.Background(), nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
+	capture := NewNetworkWriter(context.Background(), protocol.RawFraming, nil, nil, "testhost", plain, false, 1, nil, handlerTestLogger)
 	capture.enqueueOutput = func(_ context.Context, _ uint64, data []byte, _ func() uint64) error {
 		want.Write(data)
 		return nil

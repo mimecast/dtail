@@ -8,6 +8,7 @@ import (
 	"os"
 	goUser "os/user"
 	"path/filepath"
+	"strings"
 
 	"github.com/mimecast/dtail/internal/authkey"
 	"github.com/mimecast/dtail/internal/config"
@@ -38,6 +39,15 @@ func NewPublicKeyCallback(authKeyEnabled bool, cacheDir, authorizedKeysPath stri
 func publicKeyCallback(c gossh.ConnMetadata, offeredPubKey gossh.PublicKey,
 	authKeyEnabled bool, cacheDir, authorizedKeysPath string, keyStore *authkey.Store,
 	logger logging.Logger) (*gossh.Permissions, error) {
+
+	// The user name becomes part of the authorized keys cache path
+	// (<CacheDir>/<name>.authorized_keys). A name such as "../../tmp/x" would
+	// make dserver trust a key file outside the cache directory, and such a
+	// user has no entry in Permissions.Users, so it would get the default
+	// permissions.
+	if !validUserName(c.User()) {
+		return nil, fmt.Errorf("invalid user name %q", c.User())
+	}
 
 	if config.IsPasswordOnlyUser(c.User()) {
 		return nil, fmt.Errorf("user %s does not support public key authentication", c.User())
@@ -71,6 +81,14 @@ func publicKeyCallback(c gossh.ConnMetadata, offeredPubKey gossh.PublicKey,
 	return verifyAuthorizedKeys(user, authorizedKeysBytes, offeredPubKey, logger)
 }
 
+// validUserName reports whether name can be used as a single path element.
+func validUserName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	return !strings.ContainsAny(name, "/\\\x00")
+}
+
 func verifyAuthorizedKeys(user *user.User, authorizedKeysBytes []byte,
 	offeredPubKey gossh.PublicKey, logger logging.Logger) (*gossh.Permissions, error) {
 	return verifyAuthorizedKeysWithParser(user, authorizedKeysBytes, offeredPubKey, gossh.ParseAuthorizedKey, logger)
@@ -80,20 +98,27 @@ func verifyAuthorizedKeysWithParser(user *user.User, authorizedKeysBytes []byte,
 	offeredPubKey gossh.PublicKey, parseAuthorizedKey authorizedKeyParser,
 	logger logging.Logger) (*gossh.Permissions, error) {
 
+	// Parse line by line. Handing the parser all remaining bytes made it skip
+	// to the next key itself and fail only at the end of the input, after
+	// which the rest was parsed again from the next line on: every trailing
+	// comment or blank line then cost one warning and one more pass over the
+	// rest (quadratic), before authentication and once per offered key.
 	authorizedKeysMap := map[string]bool{}
 	for len(authorizedKeysBytes) > 0 {
-		authorizedPubKey, _, _, restBytes, err := parseAuthorizedKey(authorizedKeysBytes)
+		line := authorizedKeysBytes
+		if lineEnd := bytes.IndexByte(authorizedKeysBytes, '\n'); lineEnd >= 0 {
+			line = authorizedKeysBytes[:lineEnd+1]
+		}
+		authorizedKeysBytes = authorizedKeysBytes[len(line):]
+		if !hasAuthorizedKeysContent(line) {
+			continue
+		}
+		authorizedPubKey, _, _, _, err := parseAuthorizedKey(line)
 		if err != nil {
 			logger.Warn(user, "Skipping unparseable authorized_keys line", err)
-			nextAuthorizedKeysBytes, ok := advanceToNextAuthorizedKeysLine(authorizedKeysBytes)
-			if !ok {
-				break
-			}
-			authorizedKeysBytes = nextAuthorizedKeysBytes
 			continue
 		}
 		authorizedKeysMap[string(authorizedPubKey.Marshal())] = true
-		authorizedKeysBytes = restBytes
 		logger.Debug(user, "Authorized public key fingerprint",
 			gossh.FingerprintSHA256(authorizedPubKey))
 	}
@@ -106,14 +131,18 @@ func verifyAuthorizedKeysWithParser(user *user.User, authorizedKeysBytes []byte,
 	return nil, fmt.Errorf("%s|public key of user not authorized", user)
 }
 
-func advanceToNextAuthorizedKeysLine(authorizedKeysBytes []byte) ([]byte, bool) {
-	lineEnd := bytes.IndexByte(authorizedKeysBytes, '\n')
-	if lineEnd == -1 {
-		return nil, false
+// hasAuthorizedKeysContent reports whether data has a line that is neither
+// blank nor a comment, i.e. one to read as a key.
+func hasAuthorizedKeysContent(data []byte) bool {
+	for len(data) > 0 {
+		var line []byte
+		line, data, _ = bytes.Cut(data, []byte{'\n'})
+		line = bytes.TrimSpace(line)
+		if len(line) > 0 && line[0] != '#' {
+			return true
+		}
 	}
-
-	nextBytes := authorizedKeysBytes[lineEnd+1:]
-	return nextBytes, true
+	return false
 }
 
 func authKeyStorePermissions(keyStore *authkey.Store, userName string,

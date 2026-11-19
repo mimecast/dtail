@@ -56,6 +56,8 @@ func run() int {
 	flag.StringVar(&args.LogLevel, "logLevel", "none", "Log level")
 	flag.StringVar(&args.ServersStr, "server", "", "Remote server to connect")
 	flag.BoolVar(&args.NoAuthKey, "no-auth-key", false, "Disable auth-key fast reconnect feature")
+	flag.BoolVar(&args.TrustChangedHostKeys, "trustChangedHostKeys", false,
+		"Also trust a server whose host key differs from the one in known_hosts and replace its entry (refused otherwise)")
 	flag.StringVar(&pprof, "pprof", "", "Start PProf server this address")
 	flag.Parse()
 

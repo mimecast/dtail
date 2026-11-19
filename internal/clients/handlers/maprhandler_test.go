@@ -39,8 +39,8 @@ func TestMaprHandlerShutdownFlushesPendingAggregateState(t *testing.T) {
 		countStorage + protocol.AggregateKVDelimiter + "2",
 		"",
 	}, protocol.AggregateDelimiter)
-	if err := handler.aggregate.Aggregate(message); err != nil {
-		t.Fatalf("Aggregate() error = %v", err)
+	if err := handler.aggregate.Add([]byte(message)); err != nil {
+		t.Fatalf("Add() error = %v", err)
 	}
 
 	handler.Shutdown()

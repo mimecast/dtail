@@ -72,6 +72,14 @@ type FieldsIntoParser interface {
 	MakeFieldsInto(dst map[string]string, maprLine, sourceID string) error
 }
 
+// WhitespacePreservingParser opts into receiving physical line contents without
+// trimming field whitespace. The aggregator removes only a terminal LF or CRLF;
+// parsers without this capability retain the historical TrimSpace behavior.
+type WhitespacePreservingParser interface {
+	Parser
+	PreserveWhitespace() bool
+}
+
 // MakeFieldsInto parses maprLine into dst when parser supports it and falls
 // back to Parser.MakeFields otherwise. It returns the map holding the parsed
 // fields: dst on the fast path, the map Parser.MakeFields returned (which the

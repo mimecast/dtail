@@ -3,13 +3,14 @@ package jobs
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/color/brush"
 	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/ctxutil"
 	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/omode"
 	gossh "golang.org/x/crypto/ssh"
@@ -23,7 +24,7 @@ type continuous struct {
 	cfg              config.RuntimeConfig
 	logger           logging.Logger
 	newMaprClient    func(config.Args, clients.MaprClientMode) (backgroundClient, error)
-	dayChangeWatcher func(context.Context) bool
+	dayChangeWatcher func(context.Context, time.Time) bool
 	retryInterval    time.Duration
 	now              func() time.Time
 	newTicker        func(time.Duration) (<-chan time.Time, func())
@@ -71,15 +72,18 @@ func (c *continuous) runJobs(ctx context.Context) {
 		workers.Add(1)
 		go func(job *config.Continuous) {
 			defer workers.Done()
-			c.runJob(ctx, job)
-			retryTicker := time.NewTicker(c.retryInterval)
-			defer retryTicker.Stop()
+			// A job restarted for a day change runs again at once: tail
+			// mode starts at the end of the new day's files, so every
+			// second waited is missing from the result. (The first such
+			// restart used to wait a whole retry interval, as the retry
+			// ticker only started after the first run.) Any other exit
+			// retries after the configured interval, unless the server
+			// shuts down.
 			for {
-				select {
-				// Retry after the configured interval.
-				case <-retryTicker.C:
-					c.runJob(ctx, job)
-				case <-ctx.Done():
+				if c.runJob(ctx, job) {
+					continue
+				}
+				if !ctxutil.Sleep(ctx, c.retryInterval) {
 					return
 				}
 			}
@@ -91,15 +95,15 @@ func (c *continuous) runJobs(ctx context.Context) {
 	workers.Wait()
 }
 
-func (c *continuous) runJob(ctx context.Context, job *config.Continuous) {
+// runJob runs job once and reports whether it ended because the day changed
+// (RestartOnDayChange), in which case the caller starts it again at once.
+func (c *continuous) runJob(ctx context.Context, job *config.Continuous) (dayChanged bool) {
 	c.log().Debug(job.Name, "Processing job")
 
-	files := fillDates(job.Files)
-	outfile := fillDates(job.Outfile)
-	servers := strings.Join(job.Servers, ",")
-	if servers == "" {
-		servers = c.cfg.Server.SSHBindAddress
-	}
+	now := c.now()
+	files := fillDatesAt(job.Files, now)
+	outfile := fillDatesAt(job.Outfile, now)
+	servers := jobServersStr(job.Servers, c.cfg.Server.SSHBindAddress)
 
 	args := config.Args{
 		ConnectionsPerCPU: config.DefaultConnectionsPerCPU,
@@ -115,24 +119,35 @@ func (c *continuous) runJob(ctx context.Context, job *config.Continuous) {
 
 	args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(job.Name))
 	args.QueryStr = fmt.Sprintf("%s outfile %s", job.Query, outfile)
+	// A client whose discovery yields no server fails here with
+	// clients.ErrNoServers, so the job writes no outfile (it used to
+	// overwrite it with empty results) and runs again at the next retry.
 	client, err := c.newMaprClient(args, clients.NonCumulativeMode)
 	if err != nil {
-		c.log().Error(fmt.Sprintf("Unable to create job %s", job.Name), err)
-		return
+		logCreateFailure(c.log(), job.Name, err)
+		return false
 	}
 
 	jobCtx, cancel := context.WithCancel(ctx)
 	var watcher sync.WaitGroup
+	var restart atomic.Bool
 	defer func() {
 		cancel()
 		watcher.Wait()
+		dayChanged = restart.Load() && ctx.Err() == nil
 	}()
 	if job.RestartOnDayChange {
 		watcher.Add(1)
 		go func() {
 			defer watcher.Done()
-			if c.dayChangeWatcher(jobCtx) {
+			// The watcher compares with the day the files and the outfile
+			// were filled in for (now), not with the time it starts at:
+			// should midnight pass while the client is created (discovery,
+			// DNS), the job would otherwise follow the old day's files for
+			// the whole new day.
+			if c.dayChangeWatcher(jobCtx, now) {
 				c.log().Info(fmt.Sprintf("Canceling job %s due to day change", job.Name))
+				restart.Store(true)
 				cancel()
 			}
 		}()
@@ -146,10 +161,15 @@ func (c *continuous) runJob(ctx context.Context, job *config.Continuous) {
 		return
 	}
 	c.log().Info(logMessage)
+	return
 }
 
-func (c *continuous) waitForDayChange(ctx context.Context) bool {
-	startTime := c.now()
+// waitForDayChange returns true once the calendar day differs from that of
+// startTime, and false when ctx ends first.
+func (c *continuous) waitForDayChange(ctx context.Context, startTime time.Time) bool {
+	if !sameCalendarDay(c.now(), startTime) {
+		return true
+	}
 	tickCh, stop := c.newTicker(time.Second)
 	defer stop()
 	for {

@@ -44,7 +44,10 @@ The channel-less implementation replaces the channel pipeline with direct functi
    - Direct callbacks instead of channel sends
    - Inline regex filtering without goroutines
    - Uses buffered line reading instead of byte-by-byte
-   - Custom scanner with a pooled buffer and 1 MiB token limit
+   - Custom scanner starting in a pooled 1 MiB + 1 byte buffer, with a token
+     limit of max(MaxLineLength + 1, 1 MiB + 1 byte)
+   - Lines longer than MaxLineLength are cut at exactly MaxLineLength, in
+     follow reads as in snapshot reads
    - Efficient handling of long lines
    - Special optimization for tail mode
 
@@ -109,6 +112,7 @@ schema validation flags them as stale, while dtail itself still ignores them.
 
 The path provides:
 - Channel-less processing for read operations
-- A 1 MiB scanner token limit for non-follow reads
+- A scanner token limit of max(MaxLineLength + 1, 1 MiB + 1 byte) for
+  non-follow reads, starting in a pooled buffer of 1 MiB + 1 byte
 - A pooled 64 KiB buffer for follow reads
 - Buffer pooling to reduce memory allocations

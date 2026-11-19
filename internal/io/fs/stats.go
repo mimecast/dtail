@@ -17,11 +17,6 @@ func (f *stats) totalLineCount() uint64 {
 	return f.lineCount
 }
 
-// Calculate the percentage of log lines transmitted to the client.
-func (f *stats) transmittedPerc() int {
-	return int(percentOf(float64(f.matchCount), float64(f.transmitCount)))
-}
-
 // Update bucket position. We only take into consideration the last 100
 // lines for stats.
 func (f *stats) updatePosition() {
@@ -82,11 +77,4 @@ func (f *stats) updateLineNotTransmitted() {
 		f.transmitCount--
 		f.transmitted[f.pos] = false
 	}
-}
-
-func percentOf(total float64, value float64) float64 {
-	if total == 0 || total == value {
-		return 100
-	}
-	return value / (total / 100.0)
 }

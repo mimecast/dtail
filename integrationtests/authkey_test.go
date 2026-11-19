@@ -31,6 +31,8 @@ type suiteAuthKey struct {
 	tempDir        string
 }
 
+// TestMain prepares the suite's client key pair and dserver host key once,
+// before any test starts a server.
 func TestMain(m *testing.M) {
 	var authKey suiteAuthKey
 	if config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
@@ -38,6 +40,11 @@ func TestMain(m *testing.M) {
 		authKey, err = prepareSuiteAuthKey(generateAuthKeyPair)
 		if err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Unable to prepare integration SSH key pair: %v\n", err)
+			os.Exit(1)
+		}
+		if err := prepareSuiteHostKey(); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Unable to prepare integration host key: %v\n", err)
+			_ = authKey.cleanup()
 			os.Exit(1)
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mimecast/dtail/internal/omode"
 	"github.com/mimecast/dtail/internal/source"
 )
 
@@ -600,8 +601,22 @@ func TestDefaultAuthKeyPathWithHome(t *testing.T) {
 	}
 }
 
-func TestSetupAdditionalArgsUsesProvidedArguments(t *testing.T) {
+// dcat and dgrep (mode not set at setup time) take no positional query: a
+// path containing "select " is a file.
+func TestSetupAdditionalArgsKeepsSelectPathForReadClients(t *testing.T) {
 	args := &Args{}
+	setupAdditionalArgs(args, []string{"select me.log", "second.log"})
+
+	if got, want := args.What, "select me.log,second.log"; got != want {
+		t.Fatalf("What = %q, want %q", got, want)
+	}
+	if args.QueryStr != "" {
+		t.Fatalf("QueryStr = %q, want none", args.QueryStr)
+	}
+}
+
+func TestSetupAdditionalArgsUsesProvidedArguments(t *testing.T) {
+	args := &Args{Mode: omode.MapClient}
 	setupAdditionalArgs(args, []string{"first.log", "select count($time)", "second.log"})
 
 	if got, want := args.What, "first.log,second.log"; got != want {
@@ -678,5 +693,80 @@ func TestSetupLoggingPrecedence(t *testing.T) {
 				t.Errorf("Common.LogDir = %q, want %q", cfg.Common.LogDir, tt.wantLogDir)
 			}
 		})
+	}
+}
+
+// TestTransformSelectsServerlessModeIgnoringWhitespace checks the serverless
+// detection of the clients and of dtailhealth: the empty --servers value and
+// "serverless" in any case select serverless mode, whitespace around
+// "serverless" included (it used to dial the host "serverless"), while a
+// value of only whitespace or with a discovery module does not.
+func TestTransformSelectsServerlessModeIgnoringWhitespace(t *testing.T) {
+	tests := []struct {
+		servers   string
+		discovery string
+		want      bool
+	}{
+		{servers: "", want: true},
+		{servers: "serverless", want: true},
+		{servers: "SERVERLESS", want: true},
+		{servers: " serverless", want: true},
+		{servers: "\tServerless \n", want: true},
+		{servers: " ", want: false},
+		{servers: "alpha", want: false},
+		{servers: "serverless,alpha", want: false},
+		{servers: "", discovery: "comma", want: false},
+		{servers: " serverless ", discovery: "comma", want: false},
+	}
+
+	transforms := map[string]func(*initializer, *Args, []string) error{
+		"client": transformClient, "healthcheck": transformHealthCheck,
+	}
+	for name, transform := range transforms {
+		for _, tt := range tests {
+			in := initializer{Common: newDefaultCommonConfig(), Server: newDefaultServerConfig(),
+				Client: newDefaultClientConfig()}
+			args := Args{ServersStr: tt.servers, Discovery: tt.discovery}
+			if err := transform(&in, &args, nil); err != nil {
+				t.Fatalf("%s transform(%q) error = %v", name, tt.servers, err)
+			}
+			if args.Serverless != tt.want {
+				t.Errorf("%s transform(servers %q, discovery %q) Serverless = %v, want %v",
+					name, tt.servers, tt.discovery, args.Serverless, tt.want)
+			}
+		}
+	}
+}
+
+// An explicitly given flag overrides the config file also when it names the
+// flag's default value.
+func TestSetupConfigExplicitDefaultFlagsOverrideConfig(t *testing.T) {
+	newInitializer := func() *initializer {
+		in := &initializer{Common: newDefaultCommonConfig(), Server: newDefaultServerConfig(),
+			Client: newDefaultClientConfig()}
+		in.Common.SSHPort = 3333
+		in.Common.LogLevel = "debug"
+		return in
+	}
+	noop := func(*initializer, *Args, []string) error { return nil }
+
+	in := newInitializer()
+	args := &Args{}
+	args.SSHPort, args.LogLevel = DefaultSSHPort, DefaultLogLevel
+	if err := in.setupConfig(noop, args, nil); err != nil {
+		t.Fatal(err)
+	}
+	if in.Common.SSHPort != 3333 || in.Common.LogLevel != "debug" {
+		t.Fatalf("unset flags changed the config: port %d, level %q", in.Common.SSHPort, in.Common.LogLevel)
+	}
+
+	in = newInitializer()
+	args.SSHPortSet, args.LogLevelSet = true, true
+	if err := in.setupConfig(noop, args, nil); err != nil {
+		t.Fatal(err)
+	}
+	if in.Common.SSHPort != DefaultSSHPort || in.Common.LogLevel != DefaultLogLevel {
+		t.Fatalf("explicit flags did not override the config: port %d, level %q",
+			in.Common.SSHPort, in.Common.LogLevel)
 	}
 }

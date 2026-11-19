@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/mapr"
@@ -19,8 +20,10 @@ type SessionSnapshot struct {
 // SessionState keeps the mutable mapreduce query state shared by the client
 // reporter and per-server handlers.
 type SessionState struct {
-	mu         sync.RWMutex
-	generation uint64
+	mu sync.RWMutex
+	// generation is only changed under mu, together with query and global,
+	// but may be read without it (Generation).
+	generation atomic.Uint64
 	query      *mapr.Query
 	global     *mapr.GlobalGroupSet
 	lastResult string
@@ -45,7 +48,7 @@ func (s *SessionState) Snapshot() SessionSnapshot {
 	defer s.mu.RUnlock()
 
 	return SessionSnapshot{
-		Generation:  s.generation,
+		Generation:  s.generation.Load(),
 		Query:       s.query,
 		GlobalGroup: s.global,
 		LastResult:  s.lastResult,
@@ -59,10 +62,18 @@ func (s *SessionState) WithCurrentSnapshot(snapshot SessionSnapshot, fn func() e
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.generation != snapshot.Generation || s.query != snapshot.Query || s.global != snapshot.GlobalGroup {
+	if s.generation.Load() != snapshot.Generation || s.query != snapshot.Query || s.global != snapshot.GlobalGroup {
 		return false, nil
 	}
 	return true, fn()
+}
+
+// Generation returns the current query generation without taking the lock,
+// so that a per-message caller (Aggregate.Add) does not contend for it with
+// every other server connection. The query and global group set of that
+// generation must still be taken from a Snapshot.
+func (s *SessionState) Generation() uint64 {
+	return s.generation.Load()
 }
 
 // Changes returns a channel that is signaled whenever a new generation is committed.
@@ -78,7 +89,7 @@ func (s *SessionState) CommitQuery(rawQuery string, generation uint64) (*mapr.Qu
 	}
 
 	s.mu.Lock()
-	s.generation = generation
+	s.generation.Store(generation)
 	s.query = query
 	s.global = mapr.NewGlobalGroupSet(s.logger)
 	s.lastResult = ""
@@ -93,7 +104,7 @@ func (s *SessionState) CommitRenderedResult(generation uint64, result string) (c
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.generation != generation {
+	if s.generation.Load() != generation {
 		return false, false
 	}
 	if s.lastResult == result {

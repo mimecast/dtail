@@ -287,37 +287,33 @@ func (f *ReadFile) Retry() bool {
 	return f.retry
 }
 
+// lineLimit returns the length a line is cut at (see LineLimit).
 func (f *ReadFile) lineLimit() int {
-	if f.maxLineLength <= 0 {
-		return defaultMaxLineLength
-	}
-	return f.maxLineLength
+	return LineLimit(f.maxLineLength)
 }
 
 // LongLineWarning formats the message a reader sends to the client, through
 // its ServerMessages channel, when it splits a line of filePath because the
-// line is longer than the maximum line length.
+// line is longer than the maximum line length. It logs the warning through
+// logger and words it for the client whatever the logger's level (see
+// logging.WarnMessage), so the client gets it even from a dserver at
+// --logLevel error.
 func LongLineWarning(logger logging.Logger, filePath string) string {
-	return logging.OrNop(logger).Warn(filePath, "Long log line, splitting into multiple lines") + "\n"
+	return logging.WarnMessage(logger, filePath, "Long log line, splitting into multiple lines") + "\n"
 }
 
+// warnAboutLongLine warns the client about a long line, unless it did so
+// already for the current sequence of cut pieces. It returns false when ctx
+// is done before the warning could be sent.
 func (f *ReadFile) warnAboutLongLine(ctx context.Context) bool {
 	if f.warnedAboutLongLine {
 		return true
 	}
-
-	if f.serverMessages == nil {
-		f.warnedAboutLongLine = true
-		return true
-	}
-
-	select {
-	case f.serverMessages <- LongLineWarning(f.logger, f.filePath):
-		f.warnedAboutLongLine = true
-		return true
-	case <-ctx.Done():
+	if !SendLongLineWarning(ctx, f.logger, f.filePath, f.serverMessages) {
 		return false
 	}
+	f.warnedAboutLongLine = true
+	return true
 }
 
 func (f *ReadFile) makeReader(ctx context.Context) (*bufio.Reader, *os.File, io.Closer, error) {
@@ -474,11 +470,7 @@ func (f *ReadFile) makeCompressedFileReader(fd *os.File) (reader *bufio.Reader, 
 	switch CompressionFormat(f.FilePath()) {
 	case "gzip":
 		f.logger.Info(f.FilePath(), "Detected gzip compression format")
-		var gzipReader *gzip.Reader
-		gzipReader, err = gzip.NewReader(fd)
-		if err != nil {
-			return
-		}
+		gzipReader := &lazyGzipReader{source: fd}
 		decompressor = gzipReader
 		reader = bufio.NewReader(gzipReader)
 	case "zstd":
@@ -555,4 +547,47 @@ func (f *ReadFile) pathInfo() (os.FileInfo, error) {
 			target.resolvedPath)
 	}
 	return info, nil
+}
+
+// lazyGzipReader decompresses a gzip file, reading the header of a gzip
+// member only once data is asked for. gzip.NewReader reads the header at
+// once and fails with a bare io.EOF where there is none yet: a follow read
+// (dtail), which starts at the end of the file, could therefore never open a
+// .gz file and reported "EOF" at every retry. Started lazily, such a read
+// waits at the end of the file like one of a plain file and decompresses the
+// gzip members appended from then on (a writer must append whole members).
+// At the end of the data the member reader is dropped, so that a later Read
+// starts with the next appended member instead of repeating the end.
+type lazyGzipReader struct {
+	source io.Reader
+	member *gzip.Reader
+}
+
+func (r *lazyGzipReader) Read(p []byte) (int, error) {
+	if r.member == nil {
+		member, err := gzip.NewReader(r.source)
+		if err != nil {
+			// io.EOF: no (further) member yet.
+			return 0, err
+		}
+		r.member = member
+	}
+	n, err := r.member.Read(p)
+	if errors.Is(err, io.EOF) {
+		// Members that directly follow each other were read as one stream;
+		// this is the end of the file as it is now.
+		_ = r.member.Close()
+		r.member = nil
+	}
+	return n, err
+}
+
+// Close releases the current member reader, if any.
+func (r *lazyGzipReader) Close() error {
+	if r.member == nil {
+		return nil
+	}
+	member := r.member
+	r.member = nil
+	return member.Close()
 }

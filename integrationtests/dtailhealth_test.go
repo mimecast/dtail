@@ -126,7 +126,7 @@ func testDTailHealth2Serverless(t *testing.T, logger *TestLogger) {
 		"../dtailhealth", "--server", "example:1")
 
 	if exitCode != 2 {
-		t.Error(fmt.Sprintf("Expected exit code '2' but got '%d': %v", exitCode, err))
+		t.Errorf("Expected exit code '2' but got '%d': %v", exitCode, err)
 		return
 	}
 
@@ -171,7 +171,7 @@ func testDTailHealth2WithServer(t *testing.T, logger *TestLogger) {
 		"../dtailhealth", "--server", "example:1")
 
 	if exitCode != 2 {
-		t.Error(fmt.Sprintf("Expected exit code '2' but got '%d': %v", exitCode, err))
+		t.Errorf("Expected exit code '2' but got '%d': %v", exitCode, err)
 		return
 	}
 
@@ -241,7 +241,8 @@ func testDTailHealthCheck3WithServer(t *testing.T, logger *TestLogger) {
 // fix checks the error and exits 2 (Nagios CRITICAL). This test ensures that
 // no invocation of dtailhealth leaks a Go panic/runtime-error trace to stderr
 // and that the exit code stays in the expected Nagios range (1 WARNING or
-// 2 CRITICAL) rather than becoming 2 from a runtime panic accident.
+// 2 CRITICAL) rather than becoming 2 from a runtime panic accident. A server
+// value naming no server (task 9e3) must fail construction as CRITICAL too.
 func TestDTailHealthNoPanicOnClientConstruction(t *testing.T) {
 	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
 		t.Log("Skipping")
@@ -257,6 +258,9 @@ func TestDTailHealthNoPanicOnClientConstruction(t *testing.T) {
 		name         string
 		args         []string
 		wantExitCode int
+		// wantOutput, if set, must appear in the combined output, which
+		// must then start with "CRITICAL:".
+		wantOutput string
 	}{
 		{
 			name:         "Serverless",
@@ -268,10 +272,17 @@ func TestDTailHealthNoPanicOnClientConstruction(t *testing.T) {
 			args:         []string{"--server", "example:1"},
 			wantExitCode: 2,
 		},
+		{
+			// A server value naming no server must be CRITICAL, not
+			// "OK: All fine" for a check that ran nowhere.
+			name:         "BlankServer",
+			args:         []string{"--server", " "},
+			wantExitCode: 2,
+			wantOutput:   "discover servers: no server to connect to",
+		},
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			outFile := fmt.Sprintf("dtailhealth_nopanic_%s.stdout.tmp", tc.name)
 			exitCode, _ := runCommand(ctx, t, outFile, "../dtailhealth", tc.args...)
@@ -284,6 +295,10 @@ func TestDTailHealthNoPanicOnClientConstruction(t *testing.T) {
 				t.Fatalf("failed to read %s: %v", outFile, err)
 			}
 			combined := string(data)
+			if tc.wantOutput != "" && (!strings.HasPrefix(combined, "CRITICAL:") ||
+				!strings.Contains(combined, tc.wantOutput)) {
+				t.Errorf("combined output does not contain %q:\n%s", tc.wantOutput, combined)
+			}
 			for _, needle := range []string{"panic:", "runtime error:"} {
 				if strings.Contains(combined, needle) {
 					t.Errorf("combined output contained %q (regression, dtailhealth should not panic):\n%s",

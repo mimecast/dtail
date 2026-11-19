@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/mimecast/dtail/internal/clients"
@@ -129,10 +128,7 @@ func (s *scheduler) prepare(job *config.Scheduled, now time.Time) (dueJob, strin
 		return dueJob{}, "Not running job as outfile already exists: " + outfile
 	}
 
-	servers := strings.Join(job.Servers, ",")
-	if servers == "" {
-		servers = s.cfg.Server.SSHBindAddress
-	}
+	servers := jobServersStr(job.Servers, s.cfg.Server.SSHBindAddress)
 	args := config.Args{
 		ConnectionsPerCPU: config.DefaultConnectionsPerCPU,
 		Discovery:         job.Discovery,
@@ -198,7 +194,7 @@ func (s *scheduler) runDueJob(ctx context.Context, due dueJob) {
 	}
 	client, err := s.newMaprClient(due.args, mode)
 	if err != nil {
-		s.log().Error(fmt.Sprintf("Unable to create job %s", job.Name), err)
+		logCreateFailure(s.log(), job.Name, err)
 		now := s.now()
 		s.logFailure(due, s.backoff.fail(due, due.final, now, now, due.rangeEnd))
 		return

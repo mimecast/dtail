@@ -119,6 +119,12 @@ func TestJoinAfterARotationStartsAtTheEndOfTheNewFile(t *testing.T) {
 			if made := late.recorder.processors(); made != 1 {
 				t.Errorf("late session made %d processors, want 1", made)
 			}
+			// The rotation predates the late session's join: the failed read
+			// of the old file is not its failure, as a private read opened
+			// at the join would never have seen it.
+			if failures := late.failures.Load(); failures != 0 {
+				t.Errorf("late session was told about %d failed reads that predate its join", failures)
+			}
 			lines := first.recorder.lines()
 			if want := append(append([]string{"old 1"}, pre...), "post 1"); !reflect.DeepEqual(lines[len(lines)-len(want):], want) {
 				t.Errorf("first session did not read the old line, the whole new file and the new line: %q", lines)
@@ -278,7 +284,7 @@ func TestJoinWhileTheLastSessionIsEvicted(t *testing.T) {
 	file.appendRaw(strings.Join(burst("only"), "\n") + "\n")
 	select {
 	case <-joined:
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("the only session was not evicted")
 	}
 	waitFor(t, "the joiner's shared read", func() bool { return subscriberCount(hub, file.path) == 1 })
@@ -364,11 +370,11 @@ func TestEvictedSessionGetsTheReaderPanicThatDidNotFit(t *testing.T) {
 
 	select {
 	case err := <-slow.done:
-		slow.done <- err
+		slow.done <- nil // checked here; see checkSessionEnd
 		if !errors.Is(err, ErrReaderFailed) || !errors.Is(err, fs.ErrReaderWorkerPanic) {
 			t.Errorf("Follow() = %v, want an error wrapping ErrReaderFailed and fs.ErrReaderWorkerPanic", err)
 		}
-	case <-time.After(waitTimeout):
+	case <-time.After(waitBound(t, waitTimeout)):
 		t.Fatal("Follow did not return after the shared reader panicked")
 	}
 	if got, want := slow.recorder.lines(), []string{"a", "b"}; !reflect.DeepEqual(got, want) {
@@ -463,7 +469,9 @@ func TestPrivateReadInASplitLineDoesNotWarnAgain(t *testing.T) {
 			// session joined there.
 			read.atLineEnd = atLineEnd
 
-			readPrivatelyUntil(t, read, rec, strings.Repeat("b", 2*maxLineLength))
+			// The rest of the line is longer than the limit, so the read cuts
+			// its first maxLineLength bytes off (and keeps the others pending).
+			readPrivatelyUntil(t, read, rec, strings.Repeat("b", maxLineLength))
 			want := 0
 			if !atLineEnd {
 				want = 1

@@ -521,9 +521,9 @@ func TestRequireJournalCapability(t *testing.T) {
 				capabilities:        tc.capabilities,
 			}
 
-			err := requireJournalCapability("srv1", handler, tc.spec, 10*time.Millisecond)
+			err := requireSpecCapabilities("srv1", handler, tc.spec, 10*time.Millisecond, true)
 			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("requireJournalCapability() error = %v, want %v", err, tc.wantErr)
+				t.Fatalf("requireSpecCapabilities() error = %v, want %v", err, tc.wantErr)
 			}
 			if got := handler.serverError != ""; got != tc.wantServerError {
 				t.Fatalf("server error recorded = %v, want %v", got, tc.wantServerError)

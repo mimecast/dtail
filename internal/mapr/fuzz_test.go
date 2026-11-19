@@ -2,6 +2,7 @@ package mapr
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/mimecast/dtail/internal/logging"
@@ -54,6 +55,8 @@ func FuzzNewQuery(f *testing.F) {
 		`select message from logs where level eq "error" outfile append "errors.csv"`,
 		"select foo logformat csv",
 		"select from",
+		`select avg(lat),"avg(lat)` + avgCountSuffix + `" from stats group by host`,
+		"select avg(lat),`avg(lat)" + avgCountSuffix + "` from stats group by host",
 		"",
 	} {
 		f.Add(seed)
@@ -75,6 +78,14 @@ func FuzzNewQuery(f *testing.F) {
 		}
 		if len(query.Select) == 0 || len(query.GroupBy) == 0 {
 			t.Fatalf("successful query has incomplete plan: %#v", query)
+		}
+		// AvgCountKey relies on no storage key containing the first byte of
+		// avgCountSuffix, so a value count never collides with a field.
+		for _, sc := range query.Select {
+			if strings.Contains(sc.FieldStorage, avgCountSuffix[:1]) {
+				t.Fatalf("select storage %q contains %q, so it can collide with an avg() value count",
+					sc.FieldStorage, avgCountSuffix[:1])
+			}
 		}
 		_ = query.String()
 		_ = query.HasOutfile()

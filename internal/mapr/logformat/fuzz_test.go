@@ -1,7 +1,9 @@
 package logformat
 
 import (
+	"encoding/csv"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -57,7 +59,10 @@ func FuzzGenericKVParse(f *testing.F) {
 }
 
 func FuzzCSVParse(f *testing.F) {
-	f.Add("name;value", "alpha;1")
+	f.Add("name,value", "alpha,1")
+	f.Add(`"last,name",value`, `"Smith, Jane",1`)
+	f.Add(`"a""b",value`, `"quoted ""value""",1`)
+	f.Add(`"unterminated`, `value`)
 	f.Add("single", "value")
 	f.Add("empty;", ";")
 	f.Add("\x00;\xff", "\xff;\x00")
@@ -68,7 +73,15 @@ func FuzzCSVParse(f *testing.F) {
 		if err != nil {
 			t.Fatalf("newCSVParser() error = %v", err)
 		}
-		if fields, headerErr := parser.MakeFields(header, "fuzz-source"); !errors.Is(headerErr, ErrIgnoreFields) || fields != nil {
+		fields, headerErr := parser.MakeFields(header, "fuzz-source")
+		_, standardErr := csv.NewReader(strings.NewReader(header)).Read()
+		if strings.ContainsAny(header, "\r\n") || (header != "" && standardErr != nil) {
+			if headerErr == nil || errors.Is(headerErr, ErrIgnoreFields) {
+				t.Fatalf("malformed header %q accepted: %v", header, headerErr)
+			}
+			return
+		}
+		if !errors.Is(headerErr, ErrIgnoreFields) || fields != nil {
 			t.Fatalf("header parse = fields:%#v error:%v, want ErrIgnoreFields", fields, headerErr)
 		}
 		fields, parseErr := parser.MakeFields(line, "fuzz-source")

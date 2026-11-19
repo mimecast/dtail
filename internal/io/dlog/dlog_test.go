@@ -3,6 +3,8 @@ package dlog
 import (
 	"strings"
 	"testing"
+
+	"github.com/mimecast/dtail/internal/logging"
 )
 
 func TestNewLevelReturnsErrorForUnknownLevel(t *testing.T) {
@@ -60,5 +62,33 @@ func TestTraceEnabledNilSafe(t *testing.T) {
 	var d *DLog
 	if d.TraceEnabled() {
 		t.Fatal("nil *DLog.TraceEnabled() must be false")
+	}
+}
+
+// TestDebugEnabled verifies that DebugEnabled mirrors Debug's maxLevel >=
+// Debug gate, is nil-safe like TraceEnabled, and is what logging.DebugEnabled
+// sees through the logging.Logger interface (a typed nil *DLog included).
+func TestDebugEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		dlog *DLog
+		want bool
+	}{
+		{name: "nil", dlog: nil, want: false},
+		{name: "info", dlog: &DLog{maxLevel: Info}, want: false},
+		{name: "verbose", dlog: &DLog{maxLevel: Verbose}, want: false},
+		{name: "debug", dlog: &DLog{maxLevel: Debug}, want: true},
+		{name: "trace", dlog: &DLog{maxLevel: Trace}, want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.dlog.DebugEnabled(); got != tc.want {
+				t.Fatalf("DebugEnabled() = %v, want %v", got, tc.want)
+			}
+			var logger logging.Logger = tc.dlog
+			if got := logging.DebugEnabled(logger); got != tc.want {
+				t.Fatalf("logging.DebugEnabled() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

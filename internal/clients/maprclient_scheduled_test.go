@@ -69,6 +69,12 @@ func TestMaprClientFinishWritesScheduledResultOnlyWhenComplete(t *testing.T) {
 	failedReadAndQuery := handlers.SessionOutcome{Completed: true, Failures: []string{
 		protocol.CommandFailureNoFile, protocol.CommandFailureRejected}}
 	failedReadCutShort := handlers.SessionOutcome{Failures: []string{protocol.CommandFailureNoFile}}
+	// Output dropped as too large for the session output buffer is no file
+	// read failure: the file was read, its lines were lost on the way.
+	outputTooLarge := handlers.SessionOutcome{Completed: true, Failures: []string{
+		protocol.CommandFailureOutputTooLarge}}
+	failedReadAndTooLarge := handlers.SessionOutcome{Completed: true, Failures: []string{
+		protocol.CommandFailureNoFile, protocol.CommandFailureOutputTooLarge}}
 	tests := []struct {
 		name       string
 		mode       MaprClientMode
@@ -112,6 +118,8 @@ func TestMaprClientFinishWritesScheduledResultOnlyWhenComplete(t *testing.T) {
 			wantStatus: 1},
 		{name: "scheduled failed read keeps earlier outfile", mode: ScheduledMode,
 			outcomes: []handlers.SessionOutcome{failedRead}, existing: true, wantStatus: 1},
+		{name: "scheduled output too large", mode: ScheduledMode,
+			outcomes: []handlers.SessionOutcome{outputTooLarge}, existing: true, wantStatus: 1},
 
 		// After the job's TimeRange ended: file read failures write the
 		// partial result, everything else still writes nothing.
@@ -146,6 +154,14 @@ func TestMaprClientFinishWritesScheduledResultOnlyWhenComplete(t *testing.T) {
 			outcomes: []handlers.SessionOutcome{failedQuery}, wantStatus: 1},
 		{name: "partial failed read and rejected command", mode: ScheduledPartialMode,
 			outcomes: []handlers.SessionOutcome{failedReadAndQuery}, wantStatus: 1},
+		{name: "partial output too large", mode: ScheduledPartialMode,
+			outcomes: []handlers.SessionOutcome{outputTooLarge}, existing: true, wantStatus: 1,
+			wantLog: "Not writing the mapreduce result as the query did not complete|srv1 reported a failed command: " +
+				protocol.CommandFailureOutputTooLarge},
+		{name: "partial failed read and output too large", mode: ScheduledPartialMode,
+			outcomes: []handlers.SessionOutcome{failedReadAndTooLarge}, wantStatus: 1},
+		{name: "partial failed read and output too large on another server", mode: ScheduledPartialMode,
+			outcomes: []handlers.SessionOutcome{failedRead, outputTooLarge}, wantStatus: 1},
 		{name: "partial without servers", mode: ScheduledPartialMode, outcomes: []handlers.SessionOutcome{},
 			wantStatus: 1},
 		{name: "partial write error", mode: ScheduledPartialMode, outcomes: []handlers.SessionOutcome{failedRead},
@@ -208,6 +224,75 @@ func TestMaprClientFinishWritesScheduledResultOnlyWhenComplete(t *testing.T) {
 			assertScheduledTestFile(t, outfile+".query.tmp", "")
 			if tt.wantLog != "" && !slices.Contains(logger.warnings(), tt.wantLog) {
 				t.Fatalf("warnings = %q, want %q", logger.warnings(), tt.wantLog)
+			}
+		})
+	}
+}
+
+// TestMaprClientFinishWarnsOnReportedFailures covers interactive dmap, which
+// keeps its exit status and writes its result whatever failed commands the
+// servers reported and however its sessions ended: it warns about every
+// failed command that is no file read failure, e.g. a final result dserver
+// could not send in full, and about every session cut short (e.g. by the idle
+// timeout, a dserver SIGTERM or a lost connection during the final result)
+// unless the client ended that session itself (endedByClient, recorded per
+// connection by baseClient.runSession), and not about file read failures or
+// a clean run.
+func TestMaprClientFinishWarnsOnReportedFailures(t *testing.T) {
+	t.Parallel()
+
+	incompleteResult := handlers.SessionOutcome{Completed: true, Failures: []string{
+		protocol.CommandFailureNoFile, protocol.CommandFailureMapIncomplete}}
+	cutShort := handlers.SessionOutcome{}
+	cutShortWarning := "The mapreduce result may be incomplete|srv2: the session ended before the server completed it"
+	tests := []struct {
+		name     string
+		outcomes []handlers.SessionOutcome
+		// endedByClient[i] is whether the client ended session i itself.
+		endedByClient []bool
+		want          []string
+	}{
+		{name: "complete", outcomes: []handlers.SessionOutcome{{Completed: true}}},
+		{name: "file read failure", outcomes: []handlers.SessionOutcome{
+			{Completed: true, Failures: []string{protocol.CommandFailureNoFile}}}},
+		{name: "incomplete result on the second server", outcomes: []handlers.SessionOutcome{
+			{Completed: true}, incompleteResult},
+			want: []string{"The mapreduce result may be incomplete|srv2: " + protocol.CommandFailureMapIncomplete}},
+		{name: "session cut short on the second server", outcomes: []handlers.SessionOutcome{
+			{Completed: true}, cutShort}, want: []string{cutShortWarning}},
+		{name: "session ended by the client", endedByClient: []bool{true, true},
+			outcomes: []handlers.SessionOutcome{{Completed: true}, cutShort}},
+		// A server that went away before the client ended the other session.
+		{name: "session cut short before the client ended another", endedByClient: []bool{true, false},
+			outcomes: []handlers.SessionOutcome{cutShort, cutShort},
+			want:     []string{cutShortWarning}},
+		{name: "session cut short with a failed command", outcomes: []handlers.SessionOutcome{
+			{Completed: true}, {Failures: []string{protocol.CommandFailureMapIncomplete}}},
+			want: []string{cutShortWarning + "; srv2: " + protocol.CommandFailureMapIncomplete}},
+		{name: "failed command in a session ended by the client", endedByClient: []bool{true, true},
+			outcomes: []handlers.SessionOutcome{{Completed: true}, incompleteResult},
+			want:     []string{"The mapreduce result may be incomplete|srv2: " + protocol.CommandFailureMapIncomplete}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			outfile := filepath.Join(t.TempDir(), "result.csv")
+			client := newOutfileTestClient(outfileTestQuery(t, outfile, false), DefaultMode)
+			logger := &warnRecorder{}
+			client.loggers.Client = logger
+			mergeOutfileTestRow(t, client.session.Snapshot(), 7)
+			for i, outcome := range tt.outcomes {
+				client.connections = append(client.connections, &retryTestConnector{
+					server: fmt.Sprintf("srv%d", i+1), handler: &statusTestHandler{outcome: outcome}})
+			}
+
+			client.endedByClient = tt.endedByClient
+			if got := client.finish(nil, 0); got != 0 {
+				t.Fatalf("finish() status = %d, want 0", got)
+			}
+			assertScheduledTestFile(t, outfile, "count(foo)\n7\n")
+			if got := logger.warnings(); !slices.Equal(got, tt.want) {
+				t.Fatalf("warnings = %q, want %q", got, tt.want)
 			}
 		})
 	}

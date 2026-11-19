@@ -24,7 +24,7 @@ func NewCatClient(args config.Args, cfg config.RuntimeConfig, loggers LoggerDepe
 	loggers = loggers.normalized()
 
 	base, err := newBaseClient(args, cfg, loggers, firstColorizer(colorizers),
-		clientHandlerProfile(loggers.Client, false))
+		readClientProfile(loggers.Client))
 	if err != nil {
 		return nil, fmt.Errorf("initialize cat client: %w", err)
 	}

@@ -53,7 +53,7 @@ func (g *eofGate) awaitHeld(t *testing.T, what string) {
 	t.Helper()
 	select {
 	case <-g.reached:
-	case <-time.After(3 * waitTimeout):
+	case <-time.After(waitBound(t, 3*waitTimeout)):
 		t.Fatalf("timed out waiting for %s to reach the end of the file", what)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/mapr"
@@ -40,8 +41,12 @@ func newMapCommand(serverHandler *ServerHandler, args []string) (mapCommand, *ma
 		defaultLogFormat = serverHandler.serverCfg.MapreduceLogFormat
 	}
 
+	factory := serverHandler.mapParserFactory
+	if factory == nil {
+		factory = logformat.NewParserWithHostname
+	}
 	parser, err := resolveMapParser(query, defaultLogFormat, serverHandler.hostname,
-		logger, logformat.NewParserWithHostname)
+		logger, factory)
 	if err != nil {
 		return m, nil, err
 	}
@@ -53,6 +58,50 @@ func newMapCommand(serverHandler *ServerHandler, args []string) (mapCommand, *ma
 	}
 	m.aggregate = aggregate
 	return m, aggregate, nil
+}
+
+// preparedMapCommand is the map command of a SESSION START/UPDATE, built
+// before the request changes the session (see prepareSessionMapCommand), so
+// that a map command that can not be built rejects the request while the
+// running generation keeps running. handleMapCommand takes it from the
+// dispatch context instead of building the command again.
+type preparedMapCommand struct {
+	taken   atomic.Bool
+	command mapCommand
+}
+
+type preparedMapCommandKeyType struct{}
+
+var preparedMapCommandKey preparedMapCommandKeyType
+
+// prepareSessionMapCommand builds the map command among commands, the
+// commands of a SESSION START/UPDATE spec (see session.Spec.Commands), and
+// returns ctx carrying it for dispatchSessionCommands. A spec without a query
+// has no map command, and ctx is returned as it is.
+func (h *ServerHandler) prepareSessionMapCommand(ctx context.Context, commands []string) (context.Context, error) {
+	for _, command := range commands {
+		args := strings.Split(command, " ")
+		if name, _, _ := strings.Cut(args[0], ":"); name != "map" {
+			continue
+		}
+		prepared, _, err := newMapCommand(h, args)
+		if err != nil {
+			return ctx, err
+		}
+		holder := &preparedMapCommand{command: prepared}
+		return context.WithValue(ctx, preparedMapCommandKey, holder), nil
+	}
+	return ctx, nil
+}
+
+// mapCommandFor returns the map command prepared for ctx's SESSION
+// START/UPDATE, once, or else builds it from args.
+func (h *ServerHandler) mapCommandFor(ctx context.Context, args []string) (mapCommand, *mapaggregate.Aggregate, error) {
+	if holder, ok := ctx.Value(preparedMapCommandKey).(*preparedMapCommand); ok &&
+		holder.taken.CompareAndSwap(false, true) {
+		return holder.command, holder.command.aggregate, nil
+	}
+	return newMapCommand(h, args)
 }
 
 func resolveMapParser(query *mapr.Query, defaultLogFormat, hostname string,

@@ -18,6 +18,7 @@ import (
 	"github.com/mimecast/dtail/internal/logging"
 	mapaggregate "github.com/mimecast/dtail/internal/mapr/aggregate"
 	"github.com/mimecast/dtail/internal/omode"
+	"github.com/mimecast/dtail/internal/protocol"
 	"github.com/mimecast/dtail/internal/session"
 )
 
@@ -74,7 +75,7 @@ func (s *journalReadTestServer) readCommandDependencies() readCommandDependencie
 			maxGlobTargets:            1000,
 		},
 		newLineWriter: func(ctx context.Context, generation uint64) LineWriter {
-			return NewNetworkWriter(ctx, s.outputLines, s.serverMessage, "testhost", false, false,
+			return NewNetworkWriter(ctx, protocol.RawFraming, s.outputLines, s.serverMessage, "testhost", false, false,
 				generation, func() uint64 { return 0 }, s.Logger())
 		},
 	}

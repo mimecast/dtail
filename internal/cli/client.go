@@ -85,6 +85,8 @@ func BindCommonClientFlags(fs *flag.FlagSet, args *config.Args) *ClientRunner {
 	fs.BoolVar(&args.InteractiveQuery, "interactive-query", false, "Enable interactive in-flight query control over supported sessions")
 	fs.BoolVar(&args.Plain, "plain", false, "Plain output mode")
 	fs.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Trust all unknown host keys")
+	fs.BoolVar(&args.TrustChangedHostKeys, "trustChangedHostKeys", false,
+		"Also trust hosts whose key differs from the one in known_hosts and replace their entries (refused otherwise)")
 	fs.BoolVar(&runner.displayVersion, "version", false, "Display version")
 	fs.IntVar(&args.ConnectionsPerCPU, "cpc", config.DefaultConnectionsPerCPU,
 		"How many connections established per CPU core concurrently")
@@ -233,6 +235,8 @@ func (r *ClientRunner) prepareClient(name string, deps clientRunDependencies) (c
 		FlagWasSet(r.fs, "auth-key-path")); warning != "" {
 		_, _ = fmt.Fprintln(deps.stderr, warning)
 	}
+	r.args.SSHPortSet = FlagWasSet(r.fs, "port")
+	r.args.LogLevelSet = FlagWasSet(r.fs, "logLevel")
 	if r.beforeSetup != nil {
 		r.beforeSetup(r.args)
 	}

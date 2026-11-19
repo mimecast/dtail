@@ -122,6 +122,12 @@ func TestSerializeRoundTripAllFlags(t *testing.T) {
 			wantWire: "regex:noop ", matchInput: "anything", wantMatch: true},
 		{name: "New empty pattern with undefined flag is noop", re: mustNew("", Undefined),
 			wantWire: "regex:noop ", matchInput: "anything", wantMatch: true},
+		{name: "New inverted empty pattern", re: mustNew("", Invert),
+			wantWire: "regex:invert,literal ", matchInput: "anything", wantMatch: false},
+		{name: "New inverted dot", re: mustNew(".", Invert),
+			wantWire: "regex:invert .", matchInput: "\n", wantMatch: true},
+		{name: "New inverted match all", re: mustNew(".*", Invert),
+			wantWire: "regex:invert .*", matchInput: "", wantMatch: false},
 		{name: "out of range flag", re: mustNew("hel+o", Flag(42)),
 			wantErr: `flag "undefined"`},
 		{name: "initialized without flags",
@@ -224,5 +230,107 @@ func TestNewFlagWireNames(t *testing.T) {
 	}
 	if Undefined.serializable() {
 		t.Error("Undefined must not be serializable")
+	}
+}
+
+// TestNewMatchAllPatterns pins DTail's spellings of "every line": with
+// positive matching (and the flags which are no inversion) they are a noop,
+// matching every line including empty ones, while Invert compiles them like
+// any other pattern, so that inverted "" and ".*" match no line and inverted
+// "." only lines without a character besides the newline, as grep -v does.
+func TestNewMatchAllPatterns(t *testing.T) {
+	t.Parallel()
+
+	lines := []string{"a\n", "\n", "", "\r\n", "a"}
+	tests := []struct {
+		pattern string
+		flag    Flag
+		// want holds the expected match for each of lines.
+		want []bool
+	}{
+		{"", Default, []bool{true, true, true, true, true}},
+		{".", Default, []bool{true, true, true, true, true}},
+		{".*", Default, []bool{true, true, true, true, true}},
+		{".", Noop, []bool{true, true, true, true, true}},
+		{".", Undefined, []bool{true, true, true, true, true}},
+		{"", Invert, []bool{false, false, false, false, false}},
+		{".*", Invert, []bool{false, false, false, false, false}},
+		{".", Invert, []bool{false, true, true, false, false}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.flag.String()+" "+tt.pattern, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := New(tt.pattern, tt.flag)
+			if err != nil {
+				t.Fatalf("New(%q, %v) error = %v", tt.pattern, tt.flag, err)
+			}
+			wire, err := r.Serialize()
+			if err != nil {
+				t.Fatalf("Serialize() error = %v", err)
+			}
+			received, err := Deserialize(wire)
+			if err != nil {
+				t.Fatalf("Deserialize(%q) error = %v", wire, err)
+			}
+			for i, line := range lines {
+				for name, re := range map[string]Regex{"sent": r, "received": received} {
+					if got := re.MatchString(line); got != tt.want[i] {
+						t.Errorf("%s MatchString(%q) = %t, want %t", name, line, got, tt.want[i])
+					}
+					if got := re.Match([]byte(line)); got != tt.want[i] {
+						t.Errorf("%s Match(%q) = %t, want %t", name, line, got, tt.want[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestDeserializeFlagsWithoutPattern pins that a regex whose empty pattern
+// lost its separating space, as it would if a receiver split a command at
+// runs of whitespace (DTail's dispatchers split at single spaces, so this is
+// a defensive tolerance), keeps its flags instead of turning into a noop,
+// while an empty string still means no regex and anything else must still
+// start with "regex".
+func TestDeserializeFlagsWithoutPattern(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		wire      string
+		wantFlag  Flag
+		wantMatch bool
+		wantErr   bool
+	}{
+		{wire: "", wantFlag: Noop, wantMatch: true},
+		{wire: "regex:invert,literal", wantFlag: Invert, wantMatch: false},
+		{wire: "regex:invert", wantFlag: Invert, wantMatch: false},
+		{wire: "regex:noop", wantFlag: Noop, wantMatch: true},
+		{wire: "regex:default", wantFlag: Default, wantMatch: true},
+		{wire: "regex", wantFlag: Default, wantMatch: true},
+		{wire: ".", wantErr: true},
+		{wire: "regex:bogus", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.wire, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := Deserialize(tt.wire)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Deserialize(%q) = %v, want an error", tt.wire, r)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Deserialize(%q) error = %v", tt.wire, err)
+			}
+			if r.Pattern() != "" || len(r.flags) != 1 || r.flags[0] != tt.wantFlag {
+				t.Fatalf("Deserialize(%q) = %v, want flag %v with an empty pattern", tt.wire, r, tt.wantFlag)
+			}
+			if got := r.MatchString("some line\n"); got != tt.wantMatch {
+				t.Fatalf("Deserialize(%q).MatchString() = %t, want %t", tt.wire, got, tt.wantMatch)
+			}
+		})
 	}
 }

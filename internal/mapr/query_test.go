@@ -267,11 +267,15 @@ func TestParseQueryDeep(t *testing.T) {
 }
 
 func TestQuotedSelectCondition(t *testing.T) {
-	queryStr := "select `count($foo)`, foo, $foo, count($foo) logformat csv"
+	// The quoted `count($foo)` is the field literally named so, the unquoted
+	// count(foo) an aggregation. Selecting `count($foo)` together with
+	// count($foo) is rejected, as both would share one storage key (see
+	// TestParseQueryRejectsDuplicateSelect).
+	queryStr := "select `count($foo)`, foo, $foo, count(foo) logformat csv"
 
 	q, err := NewQuery(queryStr, logging.NopLogger{})
 	if err != nil {
-		t.Errorf("Query parse error: %s\n%v: %v", queryStr, q, err)
+		t.Fatalf("Query parse error: %s\n%v: %v", queryStr, q, err)
 	}
 	if len(q.Select) != 4 {
 		t.Errorf("Expected three elements in 'select' clause but got '%v': %s\n%v",
@@ -296,8 +300,8 @@ func TestQuotedSelectCondition(t *testing.T) {
 			q.Select[2].Field, queryStr, q)
 	}
 
-	if q.Select[3].Field != "$foo" {
-		t.Errorf("Expected '$foo' as first element in 'select' clause but got '%v': %s\n%v",
+	if q.Select[3].Field != "foo" {
+		t.Errorf("Expected 'foo' as field of the fourth element in 'select' clause but got '%v': %s\n%v",
 			q.Select[3].Field, queryStr, q)
 	}
 	if q.Select[3].Operation != Count {

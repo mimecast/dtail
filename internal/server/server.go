@@ -13,6 +13,7 @@ import (
 	"github.com/mimecast/dtail/internal/authkey"
 	"github.com/mimecast/dtail/internal/color/brush"
 	"github.com/mimecast/dtail/internal/config"
+	"github.com/mimecast/dtail/internal/ctxutil"
 	"github.com/mimecast/dtail/internal/handlers"
 	"github.com/mimecast/dtail/internal/io/fs/readhub"
 	"github.com/mimecast/dtail/internal/logging"
@@ -97,6 +98,12 @@ func New(cfg config.RuntimeConfig, loggers handlers.HandlerLoggers, backgroundJo
 			fatalLogger.FatalPanic("Missing runtime server/common configuration")
 		}
 		panic("Missing runtime server/common configuration")
+	}
+
+	// Fail fast on an output buffer configuration every session would be
+	// refused for (NewServerHandler checks it again per session).
+	if err := handlers.ValidateOutputBufferConfig(cfg.Server); err != nil {
+		return nil, fmt.Errorf("invalid server configuration: %w", err)
 	}
 
 	logger.Info("Starting server", version.String())
@@ -193,8 +200,22 @@ func (s *Server) listenContext(ctx context.Context, network, address string) (ne
 	return listenConfig.Listen(ctx, network, address)
 }
 
+// nextAcceptDelay doubles the pause after a failed accept, from 5 ms up to
+// one second.
+func nextAcceptDelay(current time.Duration) time.Duration {
+	const initial, maximum = 5 * time.Millisecond, time.Second
+	if current == 0 {
+		return initial
+	}
+	if current *= 2; current > maximum {
+		return maximum
+	}
+	return current
+}
+
 func (s *Server) listenerLoop(ctx context.Context, listener net.Listener) {
 	s.log().Debug("Starting listener loop")
+	var acceptDelay time.Duration
 	for {
 		conn, err := listener.Accept() // Blocking
 		if err != nil {
@@ -204,8 +225,16 @@ func (s *Server) listenerLoop(ctx context.Context, listener net.Listener) {
 			default:
 			}
 			s.log().Error("Failed to accept incoming connection", err)
+			// A persistent accept error (e.g. EMFILE) returns at once:
+			// without a pause this loop spun on a CPU and wrote an error
+			// line per iteration. Back off like net/http does.
+			acceptDelay = nextAcceptDelay(acceptDelay)
+			if !ctxutil.Sleep(ctx, acceptDelay) {
+				return
+			}
 			continue
 		}
+		acceptDelay = 0
 		if ctx.Err() != nil {
 			_ = conn.Close()
 			return
@@ -294,7 +323,23 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		defer s.recoverGoroutinePanic("SSH global request", sshConn.RemoteAddr(), func() { _ = sshConn.Close() })
 		gossh.DiscardRequests(reqs)
 	}()
+	// A client opens one session channel per connection. Every channel gets
+	// a session handler with goroutines and an output buffer of its own, so
+	// without this bound MaxConnections did not bound the sessions of an
+	// authenticated user.
+	sessionOpened := false
 	for newChannel := range chans {
+		if newChannel.ChannelType() == "session" {
+			if sessionOpened {
+				s.log().Warn(sshConn.RemoteAddr(), "Rejecting another session channel of the connection")
+				if rejectErr := newChannel.Reject(gossh.ResourceShortage,
+					"only one session channel per connection"); rejectErr != nil {
+					s.log().Debug(rejectErr)
+				}
+				continue
+			}
+			sessionOpened = true
+		}
 		go s.handleChannel(connCtx, sshConn, newChannel)
 	}
 }
@@ -338,14 +383,29 @@ func (s *Server) handleRequests(ctx context.Context, sshConn gossh.Conn,
 	in <-chan *gossh.Request, channel gossh.Channel, user *user.User) error {
 
 	s.log().Info(user, "Invoking request handler")
+	shellStarted := false
 	for req := range in {
+		// A shell request has an empty payload: unmarshalling it logged an
+		// ERROR ("ssh: parse error in message type 0") for every session.
 		var payload = struct{ Value string }{}
-		if err := gossh.Unmarshal(req.Payload, &payload); err != nil {
-			s.log().Error(user, err)
+		if len(req.Payload) > 0 {
+			if err := gossh.Unmarshal(req.Payload, &payload); err != nil {
+				s.log().Debug(user, "Unable to parse request payload", req.Type, err)
+			}
 		}
 
 		switch req.Type {
 		case "shell":
+			// One shell per channel: a second handler on the same channel
+			// would split the channel's input with the first at random,
+			// and be one more unbounded session (see handleConnection).
+			if shellStarted {
+				if err := req.Reply(false, nil); err != nil {
+					s.log().Trace(user, fmt.Errorf("reply(false): %w", err))
+				}
+				return errors.New("closing SSH connection as a second shell request was received")
+			}
+			shellStarted = true
 			s.handleShellRequest(ctx, sshConn, channel, user, req)
 		default:
 			if err := req.Reply(false, nil); err != nil {

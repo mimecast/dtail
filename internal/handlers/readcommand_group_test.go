@@ -108,8 +108,11 @@ type groupReadCase struct {
 	regex string
 }
 
-// drained returns all output the server received once every line written so
-// far went through its output collector.
+// drained returns all output the server received once every line and every
+// server message written so far went through its output collector. Both
+// channels need a barrier: the collector selects between them at random, so
+// it can take a marker from the output channel before a message, such as a
+// failure report, that was queued earlier in the message channel.
 func drained(t *testing.T, server *sharedReadTestServer) string {
 	t.Helper()
 	const marker = "\x00drained\x00"
@@ -117,6 +120,7 @@ func drained(t *testing.T, server *sharedReadTestServer) string {
 	waitForShared(t, "the output to drain", func() bool {
 		return strings.HasSuffix(server.received(), marker)
 	})
+	server.drainMessages(t)
 	return strings.TrimSuffix(server.received(), marker)
 }
 

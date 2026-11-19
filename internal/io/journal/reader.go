@@ -22,13 +22,19 @@ import (
 	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/lcontext"
+	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/regex"
 )
 
 const (
-	defaultSourceID       = "journal"
-	journalctlCommand     = "journalctl"
-	maxScannerTokenSize   = 1024 * 1024
+	defaultSourceID   = "journal"
+	journalctlCommand = "journalctl"
+	// maxStderrTokenSize is the longest part of a journalctl stderr line the
+	// reader forwards: a longer line is forwarded cut to this length, with a
+	// note, and its rest is dropped (see stderrLineSplitter), so it neither
+	// fails nor cancels the journalctl run. stdout entries follow
+	// MaxLineLength instead (see scanStdout).
+	maxStderrTokenSize    = 1024 * 1024
 	processTerminateGrace = 200 * time.Millisecond
 )
 
@@ -37,6 +43,29 @@ var errStopReading = errors.New("stop journal reading")
 // ErrJournalctlNotFound reports that journalctl could not be found on PATH.
 var ErrJournalctlNotFound = errors.New("journalctl not found")
 
+// ReaderOptions configures a journalctl-backed reader.
+type ReaderOptions struct {
+	// Args are the journalctl arguments selecting the entries, e.g. "-u",
+	// "ssh.service".
+	Args []string
+	// SourceID names the source of the lines and of the long-line warning;
+	// "journal" when empty.
+	SourceID string
+	// Follow keeps reading new entries (journalctl -f -n 0); Retry then asks
+	// for journalctl to be restarted whenever it exits.
+	Follow bool
+	// ServerMessages receives journalctl's stderr lines and the long-line
+	// warning for the client; nil drops them.
+	ServerMessages chan<- string
+	// MaxLineLength is the longest entry, in bytes without its "\n", passed on
+	// whole (Server.MaxLineLength); a longer one is cut into pieces of exactly
+	// this length, as file reads cut their lines (see fs.SplitLine). 0 or
+	// less uses the 1 MiB default.
+	MaxLineLength int
+	// Logger logs the long-line warning; nil logs nothing.
+	Logger logging.Logger
+}
+
 // Reader reads journal entries by executing journalctl.
 type Reader struct {
 	journalctlPath    string
@@ -44,6 +73,8 @@ type Reader struct {
 	sourceID          string
 	serverMessages    chan<- string
 	follow            bool
+	maxLineLength     int
+	logger            logging.Logger
 	forwardStderrHook func(context.Context, io.Reader) error
 	waitCommandHook   func(*exec.Cmd) error
 }
@@ -136,22 +167,24 @@ func (q *journalStderrQueue) signal() {
 var _ fs.FileReader = (*Reader)(nil)
 
 // NewReader returns a journalctl-backed file reader.
-func NewReader(args []string, sourceID string, follow bool, serverMessages chan<- string) (*Reader, error) {
+func NewReader(options ReaderOptions) (*Reader, error) {
 	journalctlPath, err := exec.LookPath(journalctlCommand)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrJournalctlNotFound, err)
 	}
+	sourceID := options.SourceID
 	if sourceID == "" {
 		sourceID = defaultSourceID
 	}
 
-	copiedArgs := append([]string(nil), args...)
 	return &Reader{
 		journalctlPath: journalctlPath,
-		args:           copiedArgs,
+		args:           append([]string(nil), options.Args...),
 		sourceID:       sourceID,
-		serverMessages: serverMessages,
-		follow:         follow,
+		serverMessages: options.ServerMessages,
+		follow:         options.Follow,
+		maxLineLength:  options.MaxLineLength,
+		logger:         options.Logger,
 	}, nil
 }
 
@@ -404,6 +437,14 @@ func runJournalChild(scope string, child func() error) (err error) {
 	return child()
 }
 
+// scanStdout feeds the entries journalctl writes to stdout, one line each
+// with its newline, to filter. Like a snapshot file read, it cuts an entry
+// longer than the line limit into pieces of exactly that length and warns the
+// client about it (see journalLineSplitter), so a long entry never ends the
+// read. The scanner starts in the pooled buffer (1 MiB + 1 byte) and only
+// grows, up to fs.ScannerTokenLimit, for an entry longer than that, which
+// needs a MaxLineLength above 1 MiB. Each journalctl run (a follow read
+// restarts it) scans with a splitter of its own: no entry spans two runs.
 func (r *Reader) scanStdout(ctx context.Context, stdout io.Reader, filter *journalFilter,
 	flushLine func() error) error {
 
@@ -411,8 +452,11 @@ func (r *Reader) scanStdout(ctx context.Context, stdout io.Reader, filter *journ
 	bufPtr := pool.GetScannerBuffer()
 	defer pool.PutScannerBuffer(bufPtr)
 
-	scanner.Buffer(*bufPtr, maxScannerTokenSize)
-	scanner.Split(scanLinesPreserveEndings)
+	splitter := r.newLineSplitter()
+	scanner.Buffer(*bufPtr, fs.ScannerTokenLimit(splitter.limit))
+	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		return splitter.split(ctx, data, atEOF)
+	})
 
 	for scanner.Scan() {
 		select {
@@ -443,19 +487,30 @@ func (r *Reader) scanStdout(ctx context.Context, stdout io.Reader, filter *journ
 	return nil
 }
 
+// scanJournalStderr emits journalctl's stderr lines as server messages until
+// stderr ends. It holds a pooled scanner buffer (1 MiB + 1 byte) for the whole
+// journalctl run, as scanStdout does. A line longer than maxStderrTokenSize is
+// emitted cut to that length with a note and the rest of it is dropped,
+// instead of failing the scan with bufio.ErrTooLong, which would cancel the
+// run.
 func scanJournalStderr(ctx context.Context, stderr io.Reader, emit func(string)) error {
 	scanner := bufio.NewScanner(stderr)
 	bufPtr := pool.GetScannerBuffer()
 	defer pool.PutScannerBuffer(bufPtr)
 
-	scanner.Buffer(*bufPtr, maxScannerTokenSize)
+	splitter := &stderrLineSplitter{limit: maxStderrTokenSize}
+	// limit+1 (the size of the pooled buffer) lets a line of exactly
+	// maxStderrTokenSize bytes reach split together with its newline, so it
+	// is forwarded whole, not marked truncated (see stderrLineSplitter.split).
+	scanner.Buffer(*bufPtr, maxStderrTokenSize+1)
+	scanner.Split(splitter.split)
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
 			return nil
 		default:
 		}
-		emit(fmt.Sprintf("journalctl stderr: %s\n", scanner.Text()))
+		emit(stderrMessage(scanner.Bytes(), splitter.truncated))
 	}
 	if err := scanner.Err(); err != nil {
 		if errors.Is(err, os.ErrClosed) {
@@ -490,15 +545,49 @@ func (r *Reader) sendServerMessage(ctx context.Context, message string) bool {
 	}
 }
 
-func scanLinesPreserveEndings(data []byte, atEOF bool) (int, []byte, error) {
-	if atEOF && len(data) == 0 {
-		return 0, nil, nil
+// newLineSplitter returns the splitter of one scan of journalctl's stdout,
+// which warns the client through the reader's server messages.
+func (r *Reader) newLineSplitter() *journalLineSplitter {
+	return &journalLineSplitter{
+		limit: fs.LineLimit(r.maxLineLength),
+		warn: func(ctx context.Context) bool {
+			return fs.SendLongLineWarning(ctx, r.logger, r.sourceID, r.serverMessages)
+		},
 	}
-	if i := bytes.IndexByte(data, '\n'); i >= 0 {
-		return i + 1, data[:i+1], nil
+}
+
+// journalLineSplitter splits journalctl's stdout into entries for
+// bufio.Scanner, preserving their line endings, with fs.SplitLine: an entry
+// of up to limit bytes before its newline is one token, a longer one is cut
+// into tokens of exactly limit bytes, after a long-line warning (once per
+// sequence of cut pieces, as in file reads).
+type journalLineSplitter struct {
+	limit  int
+	warned bool
+	warn   func(context.Context) bool
+}
+
+// split is the bufio.SplitFunc of the splitter. It drops an unterminated last
+// entry, which only a journalctl stopped in the middle of writing it leaves
+// (journalctl ends every entry with a newline), as the reader always did; the
+// pieces cut off a long one before are passed on. It returns the context's
+// error when the reader is canceled during a long-line warning.
+func (s *journalLineSplitter) split(ctx context.Context, data []byte, atEOF bool) (int, []byte, error) {
+	advance, token, end := fs.SplitLine(data, atEOF, s.limit)
+	switch end {
+	case fs.LineEndCut:
+		if !s.warned {
+			if !s.warn(ctx) {
+				return 0, nil, ctx.Err()
+			}
+			s.warned = true
+		}
+	case fs.LineEndNewline:
+		// A whole entry within the limit ends a sequence of cut pieces, so
+		// the next long entry warns again.
+		s.warned = false
+	case fs.LineEndEOF:
+		return advance, nil, nil
 	}
-	if atEOF {
-		return len(data), nil, nil
-	}
-	return 0, nil, nil
+	return advance, token, nil
 }

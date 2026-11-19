@@ -365,7 +365,7 @@ func TestBaseHandlerWriteReleasesLargeLineBuffer(t *testing.T) {
 // newline handling after it switched to the byte-slice message path.
 func TestMaprHandlerWritePrintsNonAggregatePayload(t *testing.T) {
 	recorder := &payloadRecorder{}
-	handler := &MaprHandler{baseHandler: baseHandler{server: "srv1", logger: recorder}}
+	handler := NewMaprHandler("srv1", nil, recorder)
 
 	if _, err := handler.Write(frame("SERVER|srv1|hello\n", "plain", "a\nb", "AUTHKEY OK")); err != nil {
 		t.Fatalf("Write() error = %v", err)

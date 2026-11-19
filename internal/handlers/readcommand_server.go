@@ -287,12 +287,12 @@ func (h *ServerHandler) PendingAndActive() (pending int32, activeCommands int32)
 	return pending, activeCommands
 }
 
-// TriggerShutdown starts the handler shutdown sequence.
+// TriggerShutdown runs the idle shutdown on the calling goroutine if the
+// session is idle and nothing claimed that shutdown yet (claimIdleShutdown).
 func (h *ServerHandler) TriggerShutdown(ctx context.Context) {
-	if h.sessionState.keepAlive() || h.isStopping() {
-		return
+	if h.claimIdleShutdown(h.PendingAndActive()) {
+		h.shutdown(ctx)
 	}
-	h.triggerIdleShutdown(ctx)
 }
 
 // DebugReadLifecycle records shutdown-coordination diagnostics without exposing
@@ -325,11 +325,22 @@ func (h *ServerHandler) newReadLineWriter(ctx context.Context, generation uint64
 		h.SendReadMessage(ctx, generation, ".output wake")
 	}
 	if h.serverless {
-		return NewGeneratedDirectWriterWithColorizer(h.ServerlessOutput(), h.hostname, h.plain, true,
+		return NewGeneratedDirectWriterWithColorizer(h.ServerlessOutput(), h.hostname, h.plainMode(), true,
 			generation, h.sessionState.currentGeneration, h.colorizer)
 	}
 
-	writer := NewNetworkWriter(ctx, nil, h.serverMessages, h.hostname, h.plain, false,
+	// The session framing is final for the line frames this writer
+	// encodes: only the session's first two commands can switch it
+	// (handleEscapedFramingRequest, handleControlFramesRequest), and both are
+	// handled before any read command. A read command that is itself the
+	// first or second command is no framing request, so the framing it sees
+	// is final already; the session settled it before that command was
+	// handled (sessionFramer.settleFramingBeforeCommand). A framing request
+	// with a timeout prefix is ignored (commandDispatcher.dispatchCommand).
+	// The second switch changes control frames only; the payload bytes of a
+	// line frame are the same under EscapedFraming and
+	// EscapedControlFraming.
+	writer := NewNetworkWriter(ctx, h.framing(), nil, h.serverMessages, h.hostname, h.plainMode(), false,
 		generation, h.sessionState.currentGeneration, h.Logger())
 	writer.enqueueOutput = h.EnqueueOutput
 	return writer

@@ -14,13 +14,11 @@ func TestSessionStateCommitQueryResetsGenerationAndResults(t *testing.T) {
 	state := NewSessionState(query, logging.NopLogger{})
 
 	initial := state.Snapshot()
-	group := mapr.NewGroupSet(logging.NopLogger{})
-	set := group.GetSet("ERROR")
-	set.Samples = 1
-	set.FValues[query.Select[0].FieldStorage] = 1
-	if err := initial.GlobalGroup.Merge(query, group); err != nil {
-		t.Fatalf("Merge() error = %v", err)
-	}
+	initial.GlobalGroup.Update(func(group *mapr.GroupSet) {
+		set := group.GetSet("ERROR")
+		set.Samples = 1
+		set.FValues[query.Select[0].FieldStorage] = 1
+	})
 	if changed, ok := state.CommitRenderedResult(initial.Generation, "old-result"); !ok || !changed {
 		t.Fatalf("CommitRenderedResult() = changed:%v ok:%v, want changed and ok", changed, ok)
 	}

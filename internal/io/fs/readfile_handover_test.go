@@ -77,7 +77,9 @@ func TestFollowReadHandsOverAtTheEndOfTheFile(t *testing.T) {
 		{name: "starts at the end of an unfinished line", content: "abc", start: 3, lateAppend: "\nd\n",
 			wantLines: []string{"d"}, wantAsked: []int64{6}},
 		{name: "split long line", content: "abcdefgh", maxLineLength: 4, lateAppend: "ij\n",
-			wantLines: []string{"abcdefgh", "ij"}, wantAsked: []int64{11}},
+			// Cut at exactly the limit; never asked while "efgh" is pending,
+			// although it is a full piece, as its line may still end there.
+			wantLines: []string{"abcd", "efgh", "ij"}, wantAsked: []int64{11}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

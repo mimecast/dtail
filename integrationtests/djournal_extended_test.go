@@ -3,19 +3,14 @@
 package integrationtests
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	osuser "os/user"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -61,6 +56,9 @@ func TestDJournalExtendedWithServer(t *testing.T) {
 	})
 	t.Run("DMapJournal", func(t *testing.T) {
 		testDJournalExtendedDMap(t, testLogger)
+	})
+	t.Run("LongEntryCutAtMaxLineLength", func(t *testing.T) {
+		testDJournalExtendedLongEntry(t, testLogger)
 	})
 }
 
@@ -141,9 +139,10 @@ func testDJournalExtendedPermissions(t *testing.T, logger *TestLogger) {
 	}, nil)
 	denyServer := startDJournalExtendedServer(t, logger, denyEnv.configFile, denyEnv.mock.Env(), "debug", false)
 	denyOut := "djournal_extended_permission_deny.stdout.tmp"
-	// A permission-denied dcat exits cleanly after receiving the server WARN, so
-	// its error is not meaningful here; the assertion is on the server logs.
-	_, _ = runCommand(denyServer.ctx, t, denyOut, "../dcat",
+	// A permission-denied dcat exits with status 2 after receiving the server
+	// WARN and its failed command report (the server advertises
+	// command-failure-v1); the other assertions are on the server logs.
+	denyExit, denyErr := runCommand(denyServer.ctx, t, denyOut, "../dcat",
 		"--cfg", "none",
 		"--logLevel", "error",
 		"--servers", denyServer.address,
@@ -152,6 +151,10 @@ func testDJournalExtendedPermissions(t *testing.T, logger *TestLogger) {
 		"--noColor",
 	)
 	denyOutput := readTestFile(t, denyOut)
+	if denyExit != 2 {
+		t.Fatalf("permission-denied dcat exit status = %d (%v), want 2; output:\n%s",
+			denyExit, denyErr, denyOutput)
+	}
 	// Poll the server logs rather than reading them synchronously: the server
 	// runs with the (buffered) stdout logger, so the "No permission" diagnostic
 	// can lag the client's exit by up to the logger's idle-flush interval.
@@ -479,6 +482,89 @@ func testDJournalExtendedDMapForMode(t *testing.T, logger *TestLogger,
 	return got
 }
 
+// testDJournalExtendedLongEntry reads a journal entry longer than 2 MiB,
+// which used to end the journal read with "bufio.Scanner: token too long",
+// and one of exactly 1 MiB. The journal read must cut its entries like a file
+// read cuts its lines, so dcat prints the journal exactly like a file of the
+// same content, and the client gets the long-line warning about the journal.
+// It runs with the default MaxLineLength (1 MiB: only the long entry is cut,
+// one warning) and with 4096, which proves that Server.MaxLineLength reaches
+// the journal reader: the 1 MiB entry, whole by default, is cut too and warned
+// about again.
+func testDJournalExtendedLongEntry(t *testing.T, logger *TestLogger) {
+	cases := []struct {
+		name         string
+		serverFields map[string]any
+		wantWarnings int
+	}{
+		{name: "DefaultLimit", wantWarnings: 1},
+		{name: "Limit4096", serverFields: map[string]any{"MaxLineLength": 4096}, wantWarnings: 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			testDJournalExtendedLongEntryWith(t, logger, tc.name, tc.serverFields, tc.wantWarnings)
+		})
+	}
+}
+
+func testDJournalExtendedLongEntryWith(t *testing.T, logger *TestLogger, name string,
+	serverFields map[string]any, wantWarnings int) {
+
+	entries := []string{
+		"journal long before",
+		strings.Repeat("z", 2*1024*1024+100),
+		strings.Repeat("w", 1024*1024),
+		"journal long after",
+	}
+	regularFile := filepath.Join(t.TempDir(), "long.log")
+	if err := os.WriteFile(regularFile, []byte(strings.Join(entries, "\n")+"\n"), 0o600); err != nil {
+		t.Fatalf("write long regular file: %v", err)
+	}
+	env := newDJournalExtendedEnv(t, journaltest.Scenario{
+		Units: map[string]journaltest.Invocation{"extended.service": {Lines: entries}},
+	}, []string{permissionForPath(regularFile), "readfiles:^journal:extended\\.service$"}, serverFields)
+	// Not in integration mode, which forces a MaxLineLength of 1024.
+	server := startDJournalExtendedServerForMode(t, logger, env, "info", dJournalExtendedServerModes()[0])
+
+	dcat := func(source, files string) string {
+		t.Helper()
+		outFile := fmt.Sprintf("djournal_extended_long_%s_%s.stdout.tmp", name, source)
+		if _, err := runCommand(server.ctx, t, outFile, "../dcat", "--plain", "--cfg", "none",
+			"--logLevel", "error", "--servers", server.address, "--files", files,
+			"--trustAllHosts", "--noColor"); err != nil {
+			t.Fatalf("dcat %s failed: %v\nserver logs:\n%s", source, err, server.logs.String())
+		}
+		return readTestFile(t, outFile)
+	}
+	journalOutput, journalWarnings := splitLongLineWarnings(dcat("journal", journalExtendedSpec))
+	fileOutput, _ := splitLongLineWarnings(dcat("file", regularFile))
+	if !strings.HasPrefix(journalOutput, entries[0]+"\n") ||
+		!strings.HasSuffix(journalOutput, entries[3]+"\n") || journalOutput != fileOutput {
+		t.Fatalf("journal output (%d bytes) differs from file output (%d bytes)",
+			len(journalOutput), len(fileOutput))
+	}
+	if len(journalWarnings) != wantWarnings || !strings.Contains(journalWarnings[0], journalExtendedSpec) {
+		t.Fatalf("journal long-line warnings = %q, want %d about %s",
+			journalWarnings, wantWarnings, journalExtendedSpec)
+	}
+}
+
+// splitLongLineWarnings returns output without its long-line warnings, which
+// name the source and so differ between a file and a journal read, and the
+// warnings.
+func splitLongLineWarnings(output string) (string, []string) {
+	var payload strings.Builder
+	var warnings []string
+	for _, line := range strings.SplitAfter(output, "\n") {
+		if strings.HasPrefix(line, "WARN|") && strings.Contains(line, "Long log line") {
+			warnings = append(warnings, line)
+			continue
+		}
+		payload.WriteString(line)
+	}
+	return payload.String(), warnings
+}
+
 type dJournalExtendedServerMode struct {
 	name               string
 	env                map[string]string
@@ -531,7 +617,7 @@ func newDJournalExtendedEnv(t *testing.T, scenario journaltest.Scenario,
 		t.Fatalf("write journal extended authorized_keys cache: %v", err)
 	}
 	server := map[string]any{
-		"HostKeyFile": filepath.Join(tmpDir, "ssh_host_key"),
+		"HostKeyFile": suiteHostKeyPath(t),
 		"Permissions": map[string]any{
 			"Default": permissions,
 		},
@@ -560,96 +646,6 @@ func newDJournalExtendedEnv(t *testing.T, scenario journaltest.Scenario,
 	}
 }
 
-func currentUsername(t *testing.T) string {
-	t.Helper()
-
-	user, err := osuser.Current()
-	if err != nil {
-		t.Fatalf("get current user: %v", err)
-	}
-	return user.Username
-}
-
-func readIntegrationPublicKey(t *testing.T) []byte {
-	t.Helper()
-
-	path := config.IntegrationSSHPrivateKeyPath() + ".pub"
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read integration public key %s: %v", path, err)
-	}
-	return data
-}
-
-type dJournalExtendedServer struct {
-	ctx     context.Context
-	address string
-	logs    *safeLineLog
-}
-
-func startDJournalExtendedServer(t *testing.T, logger *TestLogger, configFile string,
-	env map[string]string, logLevel string, dropIntegrationEnv bool) dJournalExtendedServer {
-
-	t.Helper()
-
-	port := getUniquePortNumber()
-	bindAddress := "localhost"
-	ctx, cancel := context.WithCancel(context.Background())
-	ctx = WithTestLogger(ctx, logger)
-	logs := &safeLineLog{}
-	cmd := exec.CommandContext(ctx, "../dserver",
-		"--cfg", configFile,
-		"--logger", "stdout",
-		"--logLevel", logLevel,
-		"--bindAddress", bindAddress,
-		"--port", fmt.Sprintf("%d", port),
-	)
-	cmd.Env = mergedCommandEnv(env, dropIntegrationEnv)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		cancel()
-		t.Fatalf("open dserver stdout: %v", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		cancel()
-		t.Fatalf("open dserver stderr: %v", err)
-	}
-	if err := cmd.Start(); err != nil {
-		cancel()
-		t.Fatalf("start dserver: %v", err)
-	}
-	go scanToLog(stdout, logs)
-	go scanToLog(stderr, logs)
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- cmd.Wait()
-	}()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case <-errCh:
-		case <-time.After(3 * time.Second):
-			if cmd.Process != nil {
-				_ = cmd.Process.Kill()
-			}
-			<-errCh
-		}
-	})
-
-	if err := waitForServerReady(ctx, bindAddress, port); err != nil {
-		cancel()
-		t.Fatalf("wait for dserver: %v\nlogs:\n%s", err, logs.String())
-	}
-
-	return dJournalExtendedServer{
-		ctx:     ctx,
-		address: fmt.Sprintf("%s:%d", bindAddress, port),
-		logs:    logs,
-	}
-}
-
 func startDJournalExtendedServerForMode(t *testing.T, logger *TestLogger,
 	env dJournalExtendedEnv, logLevel string, mode dJournalExtendedServerMode) dJournalExtendedServer {
 
@@ -660,86 +656,6 @@ func startDJournalExtendedServerForMode(t *testing.T, logger *TestLogger,
 		serverEnv[key] = value
 	}
 	return startDJournalExtendedServer(t, logger, env.configFile, serverEnv, logLevel, mode.dropIntegrationEnv)
-}
-
-type safeLineLog struct {
-	mu    sync.Mutex
-	lines []string
-}
-
-func (l *safeLineLog) add(line string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.lines = append(l.lines, line)
-}
-
-func (l *safeLineLog) contains(substr string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for _, line := range l.lines {
-		if strings.Contains(line, substr) {
-			return true
-		}
-	}
-	return false
-}
-
-func (l *safeLineLog) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return strings.Join(l.lines, "\n")
-}
-
-func (l *safeLineLog) waitContains(t *testing.T, substr string, timeout time.Duration) {
-	t.Helper()
-
-	deadline := time.Now().Add(timeout)
-	for {
-		if l.contains(substr) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("server logs did not contain %q before timeout; logs:\n%s", substr, l.String())
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-func scanToLog(r io.Reader, logs *safeLineLog) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		logs.add(scanner.Text())
-	}
-}
-
-func mergedCommandEnv(overrides map[string]string, dropIntegrationEnv bool) []string {
-	skip := make(map[string]struct{}, len(overrides)+2)
-	for key := range overrides {
-		skip[key] = struct{}{}
-	}
-	if dropIntegrationEnv {
-		skip["DTAIL_INTEGRATION_TEST_RUN_MODE"] = struct{}{}
-		skip["DTAIL_TURBOBOOST_DISABLE"] = struct{}{}
-	}
-
-	env := make([]string, 0, len(os.Environ())+len(overrides))
-	for _, item := range os.Environ() {
-		key, _, found := strings.Cut(item, "=")
-		if found {
-			if _, ok := skip[key]; ok {
-				continue
-			}
-		}
-		env = append(env, item)
-	}
-	for key, value := range overrides {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
-	}
-	return env
-}
-
-func permissionForPath(path string) string {
-	return "readfiles:^" + regexp.QuoteMeta(path) + "$"
 }
 
 func appendLinesAfterDelay(ctx context.Context, t *testing.T, path string,

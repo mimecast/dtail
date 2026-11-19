@@ -375,6 +375,7 @@ func (s *subscriber) readOnce(ctx context.Context, logger logging.Logger) error 
 				// numbered from 1, with no join position to skip to and no
 				// private reader to go on with.
 				reading = newSessionRead(s.session, logger, Options{}, unknownPosition(), joinSkip{})
+				reading.snapshot = true
 			}
 			if it.kind == failedItem {
 				// The end of a group read: err is nil when it read the file
