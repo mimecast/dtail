@@ -10,6 +10,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -27,13 +28,26 @@ import (
 
 const spacedPathTestLine = "spaced-path-payload"
 
+// spacedPathTestUsername returns the OS username of the test process. linuxacl
+// builds call permissions.ToRead with that name via libacl, so a fake name
+// like "spaced-path-user" always fails on Jenkins even when readfiles allows
+// the path. Non-linuxacl builds ignore the OS check.
+func spacedPathTestUsername(t *testing.T) string {
+	t.Helper()
+	current, err := user.Current()
+	if err != nil {
+		t.Fatalf("current user: %v", err)
+	}
+	return current.Username
+}
+
 // newSpacedPathTestHandler returns a ServerHandler of a user with the given
 // permissions, built like dserver builds it (serverlessOutput nil) or like
 // the in-process serverless runtime does (serverlessOutput set).
 func newSpacedPathTestHandler(t *testing.T, permissions []string, serverlessOutput io.Writer) *ServerHandler {
 	t.Helper()
 	lookup := func(string) ([]string, error) { return permissions, nil }
-	user, err := userserver.New("spaced-path-user", "127.0.0.1", lookup, handlerTestLogger)
+	user, err := userserver.New(spacedPathTestUsername(t), "127.0.0.1", lookup, handlerTestLogger)
 	if err != nil {
 		t.Fatalf("new user: %v", err)
 	}

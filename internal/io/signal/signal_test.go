@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	gosignal "os/signal"
 	"strings"
 	"syscall"
 	"testing"
@@ -32,6 +33,7 @@ func TestInterruptHandlersRestoreDefaultSignalBehavior(t *testing.T) {
 	for _, handler := range handlers {
 		for _, sig := range signals {
 			t.Run(handler+"/"+sig.String(), func(t *testing.T) {
+				skipIfSignalIgnoredAtStartup(t, sig)
 				assertDefaultSignalBehavior(t, handler, sig)
 			})
 		}
@@ -200,12 +202,54 @@ func TestSignalHandlerHelperProcess(t *testing.T) {
 	case <-time.After(signalHandlerHelperTimeout):
 		t.Fatal("timed out waiting for signal handler cleanup")
 	}
+	// Stop restores the disposition from before Notify. Under Jenkins/rpmbuild
+	// that is often SIG_IGN for SIGHUP (and sometimes others), so Reset to
+	// SIG_DFL before the parent sends the kill signal.
+	gosignal.Reset(os.Interrupt, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
 	if _, err := fmt.Fprintln(os.Stdout, signalHandlerReadyMarker); err != nil {
 		t.Fatalf("write ready marker: %v", err)
 	}
 
 	<-time.After(signalHandlerWaitingForExit)
 	t.Fatal("process did not receive a signal after handler cleanup")
+}
+
+// skipIfSignalIgnoredAtStartup skips when sig was SIG_IGN at process start.
+// The Go runtime remembers that and restores IGN after Notify/Stop/Reset, so
+// tests that require default termination (process death) cannot pass under
+// Jenkins/rpmbuild which often start with SIGHUP ignored.
+func skipIfSignalIgnoredAtStartup(t *testing.T, sig syscall.Signal) {
+	t.Helper()
+	ignored, ok := signalIgnoredAtStartup(sig)
+	if ok && ignored {
+		t.Skipf("%s was SIG_IGN at process start; Go restores IGN after Notify/Stop/Reset", sig)
+	}
+}
+
+func signalIgnoredAtStartup(sig syscall.Signal) (ignored bool, ok bool) {
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return false, false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.HasPrefix(line, "SigIgn:") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return false, false
+		}
+		var mask uint64
+		if _, err := fmt.Sscanf(fields[len(fields)-1], "%x", &mask); err != nil {
+			return false, false
+		}
+		bit := uint64(sig) - 1
+		if bit >= 64 {
+			return false, false
+		}
+		return mask&(uint64(1)<<bit) != 0, true
+	}
+	return false, false
 }
 
 func assertDefaultSignalBehavior(t *testing.T, handler string, sig syscall.Signal) {
