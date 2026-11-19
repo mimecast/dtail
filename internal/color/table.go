@@ -19,13 +19,18 @@ const sampleParagraph string = "Mimecast is Making Email Safer for Business. " +
 
 // TablePrintAndExit prints the color table and then exits the process.
 func TablePrintAndExit(displaySampleParagraph bool) {
+	PrintTable(displaySampleParagraph)
+	os.Exit(0)
+}
+
+// PrintTable prints the color table.
+func PrintTable(displaySampleParagraph bool) {
 	for _, attr := range AttributeNames {
 		if attr == "Hidden" || attr == "SlowBlink" {
 			continue
 		}
 		printColorTable(attr, displaySampleParagraph)
 	}
-	os.Exit(0)
 }
 
 func printColorTable(attr string, displaySampleParagraph bool) {

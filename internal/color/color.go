@@ -86,7 +86,7 @@ func ToFgColor(s string) (FgColor, error) {
 	case "default":
 		return FgDefault, nil
 	default:
-		return FgDefault, fmt.Errorf("unknown foreground text color '" + s + "'")
+		return FgDefault, fmt.Errorf("unknown foreground text color '%s'", s)
 	}
 }
 
@@ -113,7 +113,7 @@ func ToBgColor(s string) (BgColor, error) {
 	case "default":
 		return BgDefault, nil
 	default:
-		return BgDefault, fmt.Errorf("unknown background text color '" + s + "'")
+		return BgDefault, fmt.Errorf("unknown background text color '%s'", s)
 	}
 }
 
@@ -143,6 +143,6 @@ func ToAttribute(s string) (Attribute, error) {
 	case "":
 		return AttrNone, nil
 	default:
-		return AttrNone, fmt.Errorf("unknown text attribute '" + s + "'")
+		return AttrNone, fmt.Errorf("unknown text attribute '%s'", s)
 	}
 }

@@ -2,6 +2,7 @@ package integrationtests
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -81,7 +82,7 @@ func compareFiles(t *testing.T, fileA, fileB string) error {
 		if bytes, err := exec.Command("diff", "-u", fileA, fileB).Output(); err != nil {
 			sb.Write(bytes)
 		}
-		return fmt.Errorf(sb.String())
+		return fmt.Errorf("%s", sb.String())
 	}
 
 	return nil
@@ -114,4 +115,28 @@ func shaOfFile(t *testing.T, file string) string {
 	sha := base64.URLEncoding.EncodeToString(hasher.Sum(nil))
 	t.Log("SHA", file, sha)
 	return sha
+}
+
+// compareFilesWithContext is a context-aware version of compareFiles that logs comparisons
+func compareFilesWithContext(ctx context.Context, t *testing.T, fileA, fileB string) error {
+	if logger := GetTestLogger(ctx); logger != nil {
+		logger.LogFileComparison(fileA, fileB, "exact (SHA256)")
+	}
+	return compareFiles(t, fileA, fileB)
+}
+
+// compareFilesContentsWithContext is a context-aware version of compareFilesContents that logs comparisons
+func compareFilesContentsWithContext(ctx context.Context, t *testing.T, fileA, fileB string) error {
+	if logger := GetTestLogger(ctx); logger != nil {
+		logger.LogFileComparison(fileA, fileB, "contents (order-independent)")
+	}
+	return compareFilesContents(t, fileA, fileB)
+}
+
+// fileContainsStrWithContext is a context-aware version of fileContainsStr that logs comparisons
+func fileContainsStrWithContext(ctx context.Context, t *testing.T, file, str string) error {
+	if logger := GetTestLogger(ctx); logger != nil {
+		logger.LogFileComparison(file, fmt.Sprintf("string '%s'", str), "contains check")
+	}
+	return fileContainsStr(t, file, str)
 }

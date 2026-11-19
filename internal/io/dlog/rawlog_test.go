@@ -1,0 +1,90 @@
+package dlog
+
+import (
+	"context"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/mimecast/dtail/internal/io/dlog/loggers"
+)
+
+// recordingLogger records whether a message arrived via the diagnostic (Log)
+// path or the payload (Raw) path, so the test can assert how RawLog vs Raw route
+// their messages. It reports SupportsColors()=false so the callers take their
+// non-color branch (logger.Log / logger.Raw), which is what the routing test
+// needs to observe.
+type recordingLogger struct {
+	mutex sync.Mutex
+	logs  []string
+	raws  []string
+}
+
+func (r *recordingLogger) Log(now time.Time, message string) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.logs = append(r.logs, message)
+}
+func (r *recordingLogger) LogWithColors(now time.Time, message, colored string) { r.Log(now, message) }
+func (r *recordingLogger) Raw(now time.Time, message string) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.raws = append(r.raws, message)
+}
+func (r *recordingLogger) RawWithColors(now time.Time, message, colored string) { r.Raw(now, message) }
+func (r *recordingLogger) Flush()                                               {}
+func (r *recordingLogger) SupportsColors() bool                                 { return false }
+
+var _ loggers.Logger = (*recordingLogger)(nil)
+
+func TestDLogAcceptsLoggerWithoutOptionalLifecycleCapabilities(t *testing.T) {
+	d := &DLog{logger: &recordingLogger{}}
+	d.Pause()
+	d.Resume()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go d.start(ctx, &wg)
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("DLog with a core-only logger did not stop after cancellation")
+	}
+}
+
+// TestRawLogUsesDiagnosticSink is the regression guard for the ReportServerError
+// footgun: a server-error audit line must go through the diagnostic (Log) sink,
+// not the payload (Raw) sink. Only the Log sink is written to the client log file
+// by default (Client.LogPayload=false gates the Raw/payload sink out of the file),
+// so a server error routed via Raw would silently vanish from the on-disk audit
+// trail. This asserts RawLog -> Log and, for contrast, Raw -> Raw.
+func TestRawLogUsesDiagnosticSink(t *testing.T) {
+	rec := &recordingLogger{}
+	d := &DLog{logger: rec}
+
+	const serverError = "SERVER|srv1|ERROR|journal file targets require server capability journal-v1"
+	d.RawLog(serverError)
+
+	if len(rec.logs) != 1 || rec.logs[0] != serverError {
+		t.Fatalf("RawLog must reach the diagnostic (Log) sink verbatim; got logs=%v raws=%v",
+			rec.logs, rec.raws)
+	}
+	if len(rec.raws) != 0 {
+		t.Fatalf("RawLog must NOT use the payload (Raw) sink (it would be gated out of the file); got raws=%v",
+			rec.raws)
+	}
+
+	// Contrast: bulk payload still goes through the Raw/payload sink.
+	d.Raw("payload-line\n")
+	if len(rec.raws) != 1 || rec.raws[0] != "payload-line\n" {
+		t.Fatalf("Raw must reach the payload (Raw) sink; got raws=%v", rec.raws)
+	}
+}

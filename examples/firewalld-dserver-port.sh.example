@@ -1,0 +1,21 @@
+#!/bin/bash
+# Allow inbound TCP to dserver (default port 2222) when firewalld is used.
+# Run once on the server as root, or fold into your config management.
+
+set -euo pipefail
+
+PORT="${DTAIL_FIREWALL_PORT:-2222}"
+
+if ! command -v firewall-cmd >/dev/null 2>&1; then
+	echo "firewall-cmd not found; skip or configure your firewall manually." >&2
+	exit 0
+fi
+
+if ! firewall-cmd --state >/dev/null 2>&1; then
+	echo "firewalld not running; nothing to do." >&2
+	exit 0
+fi
+
+firewall-cmd --permanent "--add-port=${PORT}/tcp"
+firewall-cmd --reload
+echo "Opened ${PORT}/tcp. Current ports: $(firewall-cmd --list-ports)"

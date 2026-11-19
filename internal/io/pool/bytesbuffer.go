@@ -8,9 +8,11 @@ import (
 // BytesBuffer is there to optimize memory allocations. DTail otherwise allocates
 // a lot of memory while reading logs.
 var BytesBuffer = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		b := bytes.Buffer{}
-		b.Grow(128)
+		// Increase initial capacity to 4KB to reduce reallocations
+		// Most log lines are between 100-500 bytes, but some can be larger
+		b.Grow(4096)
 		return &b
 	},
 }

@@ -1,5 +1,4 @@
 //go:build linuxacl
-// +build linuxacl
 
 package permissions
 
@@ -9,6 +8,8 @@ import (
 	"os/user"
 	"strings"
 	"testing"
+
+	"github.com/mimecast/dtail/internal/logging"
 )
 
 const (
@@ -44,7 +45,7 @@ func TestLinuxACL(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Errorf("%s -> %v", strings.Join(cmd.Args, " "), err)
 	}
-	if ok, _ := ToRead(user.Username, file); ok {
+	if ok, _ := ToRead(user.Username, file, logging.NopLogger{}); ok {
 		t.Errorf("Didn't expect permissions to read file!")
 	}
 
@@ -53,7 +54,7 @@ func TestLinuxACL(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Errorf("%s -> %v", strings.Join(cmd.Args, " "), err)
 	}
-	if ok, err := ToRead(user.Username, file); !ok {
+	if ok, err := ToRead(user.Username, file, logging.NopLogger{}); !ok {
 		t.Errorf("Expected permissions to read file: %v", err)
 	}
 
@@ -62,7 +63,7 @@ func TestLinuxACL(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Errorf("%s -> %v", strings.Join(cmd.Args, " "), err)
 	}
-	if ok, err := ToRead(user.Username, file); !ok {
+	if ok, err := ToRead(user.Username, file, logging.NopLogger{}); !ok {
 		t.Errorf("Expected permissions to read file: %v", err)
 	}
 
@@ -72,7 +73,7 @@ func TestLinuxACL(t *testing.T) {
 		t.Errorf("%s -> %v", strings.Join(cmd.Args, " "), err)
 	}
 
-	if ok, err := ToRead(user.Username, file); !ok {
+	if ok, err := ToRead(user.Username, file, logging.NopLogger{}); !ok {
 		t.Errorf("Expected permissions to read file: %v", err)
 	}
 
@@ -81,7 +82,7 @@ func TestLinuxACL(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Errorf("%s -> %v", strings.Join(cmd.Args, " "), err)
 	}
-	if ok, _ := ToRead(user.Username, file); ok {
+	if ok, _ := ToRead(user.Username, file, logging.NopLogger{}); ok {
 		t.Errorf("Didn't expect permissions to read file!")
 	}
 	cmd = exec.Command(setfacl, "-m", "m::r--", file)
@@ -94,7 +95,7 @@ func TestLinuxACL(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Errorf("%s -> %v", strings.Join(cmd.Args, " "), err)
 	}
-	if ok, err := ToRead(user.Username, file); !ok {
+	if ok, err := ToRead(user.Username, file, logging.NopLogger{}); !ok {
 		t.Errorf("Expected permissions to read file for user %v: %v", user.Username, err)
 	}
 
@@ -107,7 +108,7 @@ func TestLinuxACL(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Errorf("%s -> %v", strings.Join(cmd.Args, " "), err)
 	}
-	if ok, _ := ToRead(user.Username, file); ok {
+	if ok, _ := ToRead(user.Username, file, logging.NopLogger{}); ok {
 		t.Errorf("Didn't expect permissions to read file!")
 	}
 }

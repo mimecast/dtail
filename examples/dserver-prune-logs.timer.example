@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily cleanup of dserver logs older than 7 days
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

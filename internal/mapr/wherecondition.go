@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/io/dlog"
+	"github.com/mimecast/dtail/internal/logging"
 )
 
 // QueryOperation determines the mapreduce operation.
@@ -167,7 +167,7 @@ func (wc *whereCondition) fill(tokens []token) ([]token, error) {
 	return tokens[3:], nil
 }
 
-func (wc *whereCondition) floatClause(lValue float64, rValue float64) bool {
+func (wc *whereCondition) floatClause(lValue float64, rValue float64, logger logging.Logger) bool {
 	switch wc.Operation {
 	case FloatEq:
 		return lValue == rValue
@@ -182,12 +182,12 @@ func (wc *whereCondition) floatClause(lValue float64, rValue float64) bool {
 	case FloatGe:
 		return lValue >= rValue
 	default:
-		dlog.Common.Error("Unknown float operation", lValue, wc.Operation, rValue)
+		logger.Error("Unknown float operation", lValue, wc.Operation, rValue)
 	}
 	return false
 }
 
-func (wc *whereCondition) stringClause(lValue string, rValue string) bool {
+func (wc *whereCondition) stringClause(lValue string, rValue string, logger logging.Logger) bool {
 	switch wc.Operation {
 	case StringEq:
 		return lValue == rValue
@@ -206,7 +206,7 @@ func (wc *whereCondition) stringClause(lValue string, rValue string) bool {
 	case StringNotHasSuffix:
 		return !strings.HasSuffix(lValue, rValue)
 	default:
-		dlog.Common.Error("Unknown string operation", lValue, wc.Operation, rValue)
+		logger.Error("Unknown string operation", lValue, wc.Operation, rValue)
 	}
 	return false
 }

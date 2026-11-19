@@ -1,3 +1,5 @@
+# Installs disabled by default: do not run `systemctl enable dserver` unless you
+# want it at boot. Start manually with: sudo systemctl start dserver
 [Unit]
 Description=DTail server
 After=network.target

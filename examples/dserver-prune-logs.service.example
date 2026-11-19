@@ -1,0 +1,8 @@
+[Unit]
+Description=Delete dserver log files older than 7 days
+
+[Service]
+Type=oneshot
+User=dserver
+Group=dserver
+ExecStart=/var/run/dserver/prune_dserver_logs.sh

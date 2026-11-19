@@ -19,6 +19,8 @@ const (
 	Last                    AggregateOperation = iota
 	Avg                     AggregateOperation = iota
 	Len                     AggregateOperation = iota
+	Percentage              AggregateOperation = iota
+	Percentile              AggregateOperation = iota
 )
 
 // Represents a parsed "select" clause, used by mapr.Query.
@@ -81,6 +83,10 @@ func makeSelectConditions(tokens []token) ([]selectCondition, error) {
 			sc.Operation = Avg
 		case "len":
 			sc.Operation = Len
+		case "percentage":
+			sc.Operation = Percentage
+		case "percentile":
+			sc.Operation = Percentile
 		default:
 			return sc, errors.New(invalidQuery + "Unknown aggregation in 'select' clause: " + agg)
 		}

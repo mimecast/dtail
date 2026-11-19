@@ -90,7 +90,7 @@
   },
   "Server": {
     "SSHBindAddress": "0.0.0.0",
-    "HostKeyFile": "cache/ssh_host_key",
+    "HostKeyPath": "cache/ssh_host_key",
     "HostKeyBits": 2048,
     "MapreduceLogFormat": "default",
     "MaxConcurrentCats": 2,

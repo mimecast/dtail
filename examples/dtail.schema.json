@@ -86,6 +86,9 @@
         "TermColorsEnable": {
           "type": "boolean"
         },
+        "KnownHostsPath": {
+          "type": "string"
+        },
         "TermColors": {
           "type": "object",
           "additionalProperties": false,
@@ -368,6 +371,12 @@
         "HostKeyFile": {
           "type": "string"
         },
+        "HostKeyPath": {
+          "type": "string"
+        },
+        "AuthorizedKeysPath": {
+          "type": "string"
+        },
         "HostKeyBits": {
           "type": "integer",
           "minimum": 2048
@@ -498,6 +507,9 @@
     "Common": {
       "additionalProperties": false,
       "properties": {
+        "HostnameOverride": {
+          "type": "string"
+        },
         "LogDir": {
           "type": "string"
         },

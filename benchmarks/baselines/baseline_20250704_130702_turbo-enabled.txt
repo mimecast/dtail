@@ -1,0 +1,16 @@
+Git commit: 95fec10
+Date: 2025-07-04T13:07:02+03:00
+Tag: turbo-enabled
+----------------------------------------
+goos: linux
+goarch: amd64
+pkg: github.com/mimecast/dtail/benchmarks
+cpu: 11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz
+BenchmarkAll/DCat/Size=10MB-8       	      69	  17555969 ns/op	       242.8 MB/sec	   4298108 lines/sec	12549524 B/op	      94 allocs/op
+BenchmarkAll/DCat/Size=100MB-8      	       8	 128016674 ns/op	       318.8 MB/sec	   5629378 lines/sec	175763184 B/op	     133 allocs/op
+BenchmarkAll/DCat/Size=1GB-8        	       1	1338870134 ns/op	       320.3 MB/sec	   5636413 lines/sec	1500363280 B/op	     419 allocs/op
+BenchmarkAll/DGrep/Size=10MB/HitRate=1%-8         	     103	  10249720 ns/op	       389.5 MB/sec	         1.000 hit_rate_%	   6893035 lines/sec	     12382 matched_lines	 2859877 B/op	      90 allocs/op
+BenchmarkAll/DGrep/Size=10MB/HitRate=10%-8        	      76	  13603052 ns/op	       308.2 MB/sec	        10.00 hit_rate_%	   5392657 lines/sec	     29458 matched_lines	 6026552 B/op	      92 allocs/op
+BenchmarkAll/DGrep/Size=10MB/HitRate=50%-8        	      76	  14935581 ns/op	       281.2 MB/sec	        50.00 hit_rate_%	   4752925 lines/sec	     37737 matched_lines	10845289 B/op	      93 allocs/op
+BenchmarkAll/DGrep/Size=10MB/HitRate=90%-8        	      64	  18404599 ns/op	       247.8 MB/sec	        90.00 hit_rate_%	   4028493 lines/sec	     62908 matched_lines	12524432 B/op	      94 allocs/op
+BenchmarkAll/DGrep/Size=100MB/HitRate=1%-8        	

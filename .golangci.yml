@@ -1,0 +1,34 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - gocritic
+    - govet
+    - staticcheck
+    - unparam
+  settings:
+    govet:
+      enable:
+        - shadow
+  exclusions:
+    paths:
+      - ^integrationtests/
+      - ^fixtures/
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    paths:
+      - ^integrationtests/
+      - ^fixtures/
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -1,5 +1,4 @@
 //go:build linuxacl
-// +build linuxacl
 
 package permissions
 
@@ -12,10 +11,12 @@ import "C"
 import (
 	"errors"
 	"unsafe"
+
+	"github.com/mimecast/dtail/internal/logging"
 )
 
 // ToRead checks whether user has Linux file system permissions to read a file.
-func ToRead(user, filePath string) (bool, error) {
+func ToRead(user, filePath string, _ logging.Logger) (bool, error) {
 	cUser := C.CString(user)
 	cFilePath := C.CString(filePath)
 

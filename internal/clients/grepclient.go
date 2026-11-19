@@ -3,12 +3,9 @@ package clients
 import (
 	"errors"
 	"fmt"
-	"runtime"
-	"strings"
 
-	"github.com/mimecast/dtail/internal/clients/handlers"
+	"github.com/mimecast/dtail/internal/color/brush"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/omode"
 )
 
@@ -19,37 +16,18 @@ type GrepClient struct {
 }
 
 // NewGrepClient creates a new grep client.
-func NewGrepClient(args config.Args) (*GrepClient, error) {
+func NewGrepClient(args config.Args, cfg config.RuntimeConfig, loggers LoggerDependencies,
+	colorizers ...*brush.Brush) (*GrepClient, error) {
 	if args.RegexStr == "" {
-		return nil, errors.New("No regex specified, use '-regex' flag")
+		return nil, errors.New("no regex specified, use '-regex' flag")
 	}
 	args.Mode = omode.GrepClient
+	loggers = loggers.normalized()
 
-	c := GrepClient{
-		baseClient: baseClient{
-			Args:       args,
-			throttleCh: make(chan struct{}, args.ConnectionsPerCPU*runtime.NumCPU()),
-			retry:      false,
-		},
-	}
-
-	c.init()
-	c.makeConnections(c)
-	return &c, nil
-}
-
-func (c GrepClient) makeHandler(server string) handlers.Handler {
-	return handlers.NewClientHandler(server)
-}
-
-func (c GrepClient) makeCommands() (commands []string) {
-	regex, err := c.Regex.Serialize()
+	base, err := newBaseClient(args, cfg, loggers, firstColorizer(colorizers),
+		clientHandlerProfile(loggers.Client, false))
 	if err != nil {
-		dlog.Client.FatalPanic(err)
+		return nil, fmt.Errorf("initialize grep client: %w", err)
 	}
-	for _, file := range strings.Split(c.What, ",") {
-		commands = append(commands, fmt.Sprintf("%s:%s %s %s",
-			c.Mode.String(), c.Args.SerializeOptions(), file, regex))
-	}
-	return
+	return &GrepClient{baseClient: base}, nil
 }

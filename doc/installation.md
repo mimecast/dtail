@@ -25,7 +25,17 @@ Set the `DTAIL_USE_ACL` environment variable before invoking the make command.
 % export DTAIL_USE_ACL=yes
 ```
 
-Alternatively, you could add `-tags linuxacl` to the Go compiler. 
+Alternatively, you could add `-tags linuxacl` to the Go compiler.
+
+## Build without zstd (optional)
+
+For targets where CGO-based zstd is unavailable (for example cross-compiling `dserver` for another architecture), build with the `nozstd` tag. Compressed `.zst` log files will not be supported in that binary.
+
+```console
+% export DTAIL_NO_ZSTD=yes
+```
+
+This sets `-tags nozstd` via the Makefile. Plain `go build` users can pass `-tags nozstd` directly.
 
 # Install it
 
@@ -61,14 +71,27 @@ uid=1001(dserver) 1001=670(dserver) groups=1001(dserver)
     sudo tee /etc/dserver/dtail.json
 ```
 
+### SSH listen address (``SSHBindAddress``)
+
+The example config sets ``Server.SSHBindAddress`` to ``0.0.0.0``, so dserver listens on **every** local IPv4 address, including your LAN (e.g. ``192.168.1.x`` on eth0) and any other interface (loopback, WireGuard, etc.). Clients reach it as ``<that-host-LAN-IP>:2222``; you do **not** need to change this for normal LAN access.
+
+To listen **only** on a specific address—for example only the home LAN and not on a VPN—set ``SSHBindAddress`` in ``/etc/dserver/dtail.json`` to **that machine’s** address (each host needs its own value), e.g. ``192.168.1.125`` on ``pi0``, ``192.168.1.126`` on ``pi1``. Alternatively, override from the command line (after ``-cfg``): ``dserver -cfg /etc/dserver/dtail.json -bindAddress 192.168.1.125``. Then reload or restart dserver.
+
 5. It is recommended to configure DTail server as a service to ``systemd``. An example unit file for ``systemd`` can be found [here](../examples/dserver.service.example).
 
 ```console
 % curl https://raw.githubusercontent.com/mimecast/dtail/master/examples/dserver.service.example |
     sudo tee /etc/systemd/system/dserver.service
 % sudo systemctl daemon-reload
-% sudo systemctl enable dserver
 ```
+
+The unit is intended to stay **disabled** until you opt in. Start DTail server manually when needed:
+
+```console
+% sudo systemctl start dserver
+```
+
+To start it automatically at boot, run once: `sudo systemctl enable dserver`.
 
 # Start it
 
@@ -93,6 +116,20 @@ To start the DTail server via ``systemd`` run:
     Dec 06 13:21:24 serv-001.lan.example.org dserver[12296]: SERVER|serv-001|INFO|Binding server|1.2.3.4:2222
 ```
 
+### Firewall (firewalld on RHEL, Rocky Linux, Fedora, …)
+
+The DTail server listens on TCP port ``2222`` (see ``SSHPort`` in ``dtail.json``). **ICMP (ping) may work while TCP to 2222 is blocked**, because host firewalls often allow ping but not arbitrary ports.
+
+If ``firewalld`` is active, allow the DTail port permanently and reload:
+
+```console
+% sudo firewall-cmd --permanent --add-port=2222/tcp
+% sudo firewall-cmd --reload
+% sudo firewall-cmd --list-ports
+```
+
+Clients may report ``dial tcp …: connect: no route to host`` when the firewall rejects the connection with an ICMP unreachable—opening ``2222/tcp`` fixes that. For other firewalls (nftables, ufw, …), add an equivalent allow rule for ``2222/tcp``. A small helper script is [firewalld-dserver-port.sh.example](../examples/firewalld-dserver-port.sh.example).
+
 # Register SSH public keys in DTail server
 
 The DTail server now runs as a ``systemd`` service under system user ``dserver``. However, the system user ``dserver`` has no permissions to read the SSH public keys from ``/home/USER/.ssh/authorized_keys``. Therefore, no user would be able to establish an SSH session to DTail server. As an alternative path DTail server also checks for public SSH key files in ``/var/run/dserver/cache/USER.authorized_keys``.
@@ -112,6 +149,24 @@ It is recommended to execute [update_key_cache.sh](../examples/update_key_cache.
 % sudo systemctl enable dserver-update-keycache.timer
 % sudo systemctl start dserver-update-keycache.timer
 ```
+
+# Prune old dserver log files
+
+Log files live under ``/var/run/dserver/log`` (see ``LogDir`` in ``dtail.json``). To remove ``*.log`` files **older than seven days**, install [prune_dserver_logs.sh](../examples/prune_dserver_logs.sh.example) and a systemd timer (runs daily with a randomized delay):
+
+```console
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/examples/prune_dserver_logs.sh.example |
+    sudo tee /var/run/dserver/prune_dserver_logs.sh
+% sudo chmod 755 /var/run/dserver/prune_dserver_logs.sh
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/examples/dserver-prune-logs.service.example |
+    sudo tee /etc/systemd/system/dserver-prune-logs.service
+% curl https://raw.githubusercontent.com/mimecast/dtail/master/examples/dserver-prune-logs.timer.example |
+    sudo tee /etc/systemd/system/dserver-prune-logs.timer
+% sudo systemctl daemon-reload
+% sudo systemctl enable --now dserver-prune-logs.timer
+```
+
+The script uses ``find /var/run/dserver/log -type f -name '*.log' -mtime +7 -delete``.
 
 # Run DTail client
 

@@ -17,18 +17,18 @@ func TestDServer1(t *testing.T) {
 		return
 	}
 	// Testing a scheduled query.
+	cleanupTmpFiles(t)
+	testLogger := NewTestLogger("TestDServer1")
+	defer testLogger.WriteLogFile()
 
-	csvFile := "dserver1.csv"
+	csvFile := "dserver1.csv.tmp"
 	expectedCsvFile := "dserver1.csv.expected"
 	queryFile := fmt.Sprintf("%s.query", csvFile)
 	expectedQueryFile := "dserver1.csv.query.expected"
 
-	// In case files still exists from previous test run.
-	os.Remove(csvFile)
-	os.Remove(queryFile)
-
-	ctx, cancel := context.WithCancel(context.Background())
+	baseCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	ctx := WithTestLogger(baseCtx, testLogger)
 
 	stdoutCh, stderrCh, cmdErrCh, err := startCommand(ctx, t,
 		"", "../dserver",
@@ -46,17 +46,14 @@ func TestDServer1(t *testing.T) {
 
 	waitForCommand(ctx, t, stdoutCh, stderrCh, cmdErrCh)
 
-	if err := compareFiles(t, csvFile, expectedCsvFile); err != nil {
+	if err := compareFilesWithContext(ctx, t, csvFile, expectedCsvFile); err != nil {
 		t.Error(err)
 		return
 	}
-	if err := compareFiles(t, queryFile, expectedQueryFile); err != nil {
+	if err := compareFilesWithContext(ctx, t, queryFile, expectedQueryFile); err != nil {
 		t.Error(err)
 		return
 	}
-
-	os.Remove(csvFile)
-	os.Remove(queryFile)
 }
 
 func TestDServer2(t *testing.T) {
@@ -66,15 +63,19 @@ func TestDServer2(t *testing.T) {
 	}
 
 	// Testing a continious query.
+	cleanupTmpFiles(t)
+	testLogger := NewTestLogger("TestDServer2")
+	defer testLogger.WriteLogFile()
 
-	inFile := "dserver2.log"
-	csvFile := "dserver2.csv"
+	inFile := "dserver2.log.tmp"
+	csvFile := "dserver2.csv.tmp"
 	expectedCsvFile := "dserver2.csv.expected"
 	queryFile := fmt.Sprintf("%s.query", csvFile)
 	expectedQueryFile := "dserver2.csv.query.expected"
 
-	ctx, cancel := context.WithCancel(context.Background())
+	baseCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	ctx := WithTestLogger(baseCtx, testLogger)
 
 	fd, err := os.Create(inFile)
 	if err != nil {
@@ -114,16 +115,12 @@ func TestDServer2(t *testing.T) {
 	waitForCommand(ctx, t, stdoutCh, stderrCh, cmdErrCh)
 	cancel()
 
-	if err := compareFiles(t, csvFile, expectedCsvFile); err != nil {
+	if err := compareFilesWithContext(ctx, t, csvFile, expectedCsvFile); err != nil {
 		t.Error(err)
 		return
 	}
-	if err := compareFiles(t, queryFile, expectedQueryFile); err != nil {
+	if err := compareFilesWithContext(ctx, t, queryFile, expectedQueryFile); err != nil {
 		t.Error(err)
 		return
 	}
-
-	os.Remove(inFile)
-	os.Remove(csvFile)
-	os.Remove(queryFile)
 }

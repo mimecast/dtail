@@ -1,0 +1,10 @@
+#!/bin/bash
+
+declare -r LOGDIR=/var/run/dserver/log
+
+if [ ! -d "$LOGDIR" ]; then
+	exit 0
+fi
+
+# Daily rotated logs: YYYYMMDD.log — remove files not modified in the last 7 days.
+/usr/bin/find "$LOGDIR" -type f -name '*.log' -mtime +7 -delete

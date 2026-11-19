@@ -1,0 +1,8 @@
+{
+  "Common": {},
+  "Server": {
+    "MaxConcurrentCats": 100,
+    "MaxConcurrentTails": 10
+  },
+  "Client": {}
+}

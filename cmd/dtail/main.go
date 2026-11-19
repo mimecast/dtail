@@ -4,128 +4,130 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/http"
-	_ "net/http"
-	_ "net/http/pprof"
 	"os"
-	"sync"
 	"time"
 
+	"github.com/mimecast/dtail/internal/cli"
 	"github.com/mimecast/dtail/internal/clients"
 	"github.com/mimecast/dtail/internal/color"
+	"github.com/mimecast/dtail/internal/color/brush"
 	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/dlog"
-	"github.com/mimecast/dtail/internal/io/signal"
 	"github.com/mimecast/dtail/internal/omode"
-	"github.com/mimecast/dtail/internal/source"
-	"github.com/mimecast/dtail/internal/user"
-	"github.com/mimecast/dtail/internal/version"
 )
 
-// The evil begins here.
 func main() {
-	var args config.Args
-	var checkHealth bool
-	var displayColorTable bool
-	var displayWideColorTable bool
-	var displayVersion bool
-	var grep string
-	var pprof string
-	var shutdownAfter int
+	os.Exit(run())
+}
 
-	userName := user.Name()
+func run() int {
+	args := config.Args{Mode: omode.TailClient}
+	runner := cli.BindCommonClientFlags(flag.CommandLine, &args)
+	runner.WithBrushFactory(brush.New)
+	options := bindTailFlags(flag.CommandLine, &args)
+	options.configureRunner(runner)
+	return runner.RunClientWithBrush("dtail", buildTailClient)
+}
 
-	flag.BoolVar(&args.NoColor, "noColor", false, "Disable ANSII terminal colors")
-	flag.BoolVar(&args.Quiet, "quiet", false, "Quiet output mode")
-	flag.BoolVar(&args.RegexInvert, "invert", false, "Invert regex")
-	flag.BoolVar(&args.Plain, "plain", false, "Plain output mode")
-	flag.BoolVar(&args.TrustAllHosts, "trustAllHosts", false, "Trust all unknown host keys")
-	flag.BoolVar(&checkHealth, "checkHealth", false, "Deprecated, flag will be removed soon")
-	flag.BoolVar(&displayColorTable, "colorTable", false, "Show color table")
-	flag.BoolVar(&displayWideColorTable, "wideColorTable", false, "Show a large color table")
-	flag.BoolVar(&displayVersion, "version", false, "Display version")
-	flag.IntVar(&args.ConnectionsPerCPU, "cpc", config.DefaultConnectionsPerCPU,
-		"How many connections established per CPU core concurrently")
-	flag.IntVar(&args.LContext.AfterContext, "after", 0, "Print lines of trailing context after matching lines")
-	flag.IntVar(&args.LContext.BeforeContext, "before", 0, "Print lines of leading context before matching lines")
-	flag.IntVar(&args.LContext.MaxCount, "max", 0, "Stop reading file after NUM matching lines")
-	flag.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
-	flag.IntVar(&args.Timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
-	flag.IntVar(&shutdownAfter, "shutdownAfter", 3600*24, "Shutdown after so many seconds")
-	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
-	flag.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
-	flag.StringVar(&args.LogDir, "logDir", "~/log", "Log dir")
-	flag.StringVar(&args.Logger, "logger", config.DefaultClientLogger, "Logger name")
-	flag.StringVar(&args.LogLevel, "logLevel", config.DefaultLogLevel, "Log level")
-	flag.StringVar(&args.SSHPrivateKeyFilePath, "key", "", "Path to private key")
-	flag.StringVar(&args.QueryStr, "query", "", "Map reduce query")
-	flag.StringVar(&args.RegexStr, "regex", ".", "Regular expression")
-	flag.StringVar(&args.ServersStr, "servers", "", "Remote servers to connect")
-	flag.StringVar(&args.UserName, "user", userName, "Your system user name")
-	flag.StringVar(&args.What, "files", "", "File(s) to read")
-	flag.StringVar(&grep, "grep", "", "Alias for -regex")
-	flag.StringVar(&pprof, "pprof", "", "Start PProf server this address")
+type tailOptions struct {
+	checkHealth           bool
+	displayColorTable     bool
+	displayWideColorTable bool
+	grep                  string
+	shutdownAfter         int
+}
 
-	flag.Parse()
-	if grep != "" {
-		args.RegexStr = grep
-	}
-	config.Setup(source.Client, &args, flag.Args())
-	if displayVersion {
-		version.PrintAndExit()
-	}
-	if !args.Plain {
-		if displayWideColorTable {
-			color.TablePrintAndExit(true)
+func bindTailFlags(fs *flag.FlagSet, args *config.Args) *tailOptions {
+	options := &tailOptions{}
+	fs.BoolVar(&args.RegexInvert, "invert", false, "Invert regex")
+	fs.BoolVar(&options.checkHealth, "checkHealth", false, "Deprecated, flag will be removed soon")
+	fs.BoolVar(&options.displayColorTable, "colorTable", false, "Show color table")
+	fs.BoolVar(&options.displayWideColorTable, "wideColorTable", false, "Show a large color table")
+	fs.IntVar(&args.AfterContext, "after", 0, "Print lines of trailing context after matching lines")
+	fs.IntVar(&args.BeforeContext, "before", 0, "Print lines of leading context before matching lines")
+	fs.IntVar(&args.MaxCount, "max", 0, "Stop reading file after NUM matching lines")
+	fs.IntVar(&args.Timeout, "timeout", 0, "Max time dtail server will collect data until disconnection")
+	fs.IntVar(&options.shutdownAfter, "shutdownAfter", 3600*24, "Shutdown after so many seconds")
+	fs.StringVar(&args.QueryStr, "query", "", "Map reduce query")
+	fs.StringVar(&args.RegexStr, "regex", ".", "Regular expression")
+	fs.StringVar(&options.grep, "grep", "", "Alias for -regex")
+	return options
+}
+
+func (o *tailOptions) configureRunner(runner *cli.ClientRunner) {
+	runner.BeforeSetup(func(args *config.Args) {
+		if o.grep != "" {
+			args.RegexStr = o.grep
 		}
-		if displayColorTable {
-			color.TablePrintAndExit(false)
+	}).BeforeRuntime(func(args *config.Args) (bool, int) {
+		if args.Plain {
+			return false, 0
 		}
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	if shutdownAfter > 0 {
-		// NEXT: This does not work (auto shutdown)
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(shutdownAfter)*time.Second)
-		defer cancel()
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	dlog.Start(ctx, &wg, source.Client)
-
-	if checkHealth {
+		if o.displayWideColorTable {
+			color.PrintTable(true)
+			return true, 0
+		}
+		if o.displayColorTable {
+			color.PrintTable(false)
+			return true, 0
+		}
+		return false, 0
+	}).WithContext(func(args config.Args) (context.Context, context.CancelFunc) {
+		return applyClientDeadlines(context.Background(), o.shutdownAfter, args.Timeout)
+	}).AfterRuntime(func(*config.Args) (bool, int) {
+		if !o.checkHealth {
+			return false, 0
+		}
 		fmt.Println("WARN: DTail health check has moved to separate binary dtailhealth" +
 			" - please adjust the monitoring scripts!")
-		cancel()
-		os.Exit(1)
+		return true, 1
+	})
+}
+
+func buildTailClient(args config.Args, cfg config.RuntimeConfig, loggers clients.LoggerDependencies,
+	colorizer *brush.Brush) (clients.Client, error) {
+	if args.QueryStr == "" {
+		return clients.NewTailClient(args, cfg, loggers, colorizer)
 	}
+	return clients.NewMaprClient(args, cfg, clients.DefaultMode, loggers, colorizer)
+}
 
-	if pprof != "" {
-		dlog.Client.Info("Starting PProf", pprof)
-		go func() {
-			panic(http.ListenAndServe(pprof, nil))
-		}()
-	}
-
-	var client clients.Client
-	var err error
-	args.Mode = omode.TailClient
-
-	switch args.QueryStr {
-	case "":
-		if client, err = clients.NewTailClient(args); err != nil {
-			panic(err)
+// applyClientDeadlines wraps ctx with the earliest of two absolute deadlines:
+// the --shutdownAfter safety cap and the user's --timeout data-collection
+// window. Whichever elapses first cancels the returned context, which propagates
+// through the follow client's reconnect and per-connection read loops (both
+// select on ctx.Done()), so client.Start returns cleanly and the process exits
+// instead of auto-reconnecting for another cycle.
+//
+// Making --timeout a client-side deadline (rather than relying solely on the
+// server closing the read) is what fixes the historical hang: the server-side
+// read deadline fires at N seconds, but in tail+query mode the session stays
+// alive via the map/aggregate command, so the client used to treat the closed
+// read as a transient drop and reconnect indefinitely. A client-side deadline
+// makes --timeout behave consistently for follows with or without --query, which
+// matches the flag's help text ("Max time ... until disconnection").
+//
+// The two deadlines compose naturally (context deadlines nest, so the earlier
+// one wins), so they never conflict with each other. A timeout of 0 (unset)
+// contributes no deadline, preserving the previous behaviour. OS signals reach
+// the same context via signal.InterruptChWithCancel in the shared client runner.
+func applyClientDeadlines(ctx context.Context, shutdownAfter, timeout int) (
+	context.Context, context.CancelFunc) {
+	var cancels []context.CancelFunc
+	addDeadline := func(seconds int) {
+		if seconds <= 0 {
+			return
 		}
-	default:
-		if client, err = clients.NewMaprClient(args, clients.DefaultMode); err != nil {
-			panic(err)
-		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(seconds)*time.Second)
+		cancels = append(cancels, cancel)
 	}
 
-	status := client.Start(ctx, signal.InterruptCh(ctx))
-	cancel()
+	addDeadline(shutdownAfter)
+	addDeadline(timeout)
 
-	wg.Wait()
-	os.Exit(status)
+	return ctx, func() {
+		for i := len(cancels) - 1; i >= 0; i-- {
+			cancels[i]()
+		}
+	}
 }

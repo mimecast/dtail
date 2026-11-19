@@ -1,0 +1,19 @@
+Git commit: 95fec10
+Date: 2025-07-04T13:09:47+03:00
+Tag: turbo-enabled
+----------------------------------------
+goos: linux
+goarch: amd64
+pkg: github.com/mimecast/dtail/benchmarks
+cpu: 11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz
+BenchmarkQuick/DCat/Size=10MB-8         	      63	  17335750 ns/op	       246.8 MB/sec	   4367374 lines/sec	12550329 B/op	      96 allocs/op
+BenchmarkQuick/DGrep/Size=10MB/HitRate=1%-8         	     100	  11138559 ns/op	       363.9 MB/sec	         1.000 hit_rate_%	   6417697 lines/sec	     18197 matched_lines	 5302371 B/op	      92 allocs/op
+BenchmarkQuick/DGrep/Size=10MB/HitRate=10%-8        	     102	  11915230 ns/op	       342.6 MB/sec	        10.00 hit_rate_%	   5994158 lines/sec	     21088 matched_lines	 5515675 B/op	      91 allocs/op
+BenchmarkQuick/DGrep/Size=10MB/HitRate=50%-8        	      68	  15855670 ns/op	       265.1 MB/sec	        50.00 hit_rate_%	   4478224 lines/sec	     42230 matched_lines	11126238 B/op	      94 allocs/op
+BenchmarkQuick/DGrep/Size=10MB/HitRate=90%-8        	      49	  21060752 ns/op	       210.0 MB/sec	        90.00 hit_rate_%	   3388848 lines/sec	     67067 matched_lines	21190369 B/op	      97 allocs/op
+BenchmarkQuick/DMap/Size=10MB/Query=count-8         	       3	 355947821 ns/op	        21.77 MB/sec	    197405 records/sec	   53546 B/op	     181 allocs/op
+BenchmarkQuick/DMap/Size=10MB/Query=sum_avg-8       	       3	 367322290 ns/op	        21.05 MB/sec	    190930 records/sec	   53624 B/op	     182 allocs/op
+BenchmarkQuick/DMap/Size=10MB/Query=min_max-8       	       3	 354547224 ns/op	        21.80 MB/sec	    197700 records/sec	   53672 B/op	     182 allocs/op
+BenchmarkQuick/DMap/Size=10MB/Query=multi-8         	       3	 363740805 ns/op	        21.32 MB/sec	    193176 records/sec	   53528 B/op	     180 allocs/op
+PASS
+ok  	github.com/mimecast/dtail/benchmarks	21.345s

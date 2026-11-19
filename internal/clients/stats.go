@@ -8,9 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mimecast/dtail/internal/color"
-	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/dlog"
+	"github.com/mimecast/dtail/internal/clients/clientlog"
+	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -24,13 +23,25 @@ type stats struct {
 	connected int
 	// To synchronize concurrent access.
 	mutex sync.Mutex
+	// Formats interrupt-driven stats output.
+	formatter interruptMessageFormatter
+	// Controls how long interrupt output remains visible.
+	interruptPause time.Duration
+	logger         logging.Logger
 }
 
-func newTailStats(servers int) *stats {
+func newTailStats(servers int, formatter interruptMessageFormatter, interruptPause time.Duration,
+	logger logging.Logger) *stats {
+	if interruptPause <= 0 {
+		interruptPause = 3 * time.Second
+	}
 	return &stats{
 		servers:          servers,
 		connectionsEstCh: make(chan struct{}, servers),
 		connected:        0,
+		formatter:        formatter,
+		interruptPause:   interruptPause,
+		logger:           logging.OrNop(logger),
 	}
 }
 
@@ -38,6 +49,9 @@ func newTailStats(servers int) *stats {
 // connection count has changed.
 func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{},
 	statsCh <-chan string, quiet bool) {
+
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
 
 	var connectedLast int
 	for {
@@ -48,7 +62,7 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{},
 		case message := <-statsCh:
 			messages = append(messages, message)
 			force = true
-		case <-time.After(time.Second * 3):
+		case <-ticker.C:
 		case <-ctx.Done():
 			return
 		}
@@ -68,7 +82,7 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{},
 			s.printStatsDueInterrupt(messages)
 		default:
 			data := s.statsData(connected, newConnections, throttle)
-			dlog.Client.Mapreduce("STATS", data)
+			clientlog.Mapreduce(s.logger, "STATS", data)
 		}
 
 		connectedLast = connected
@@ -79,28 +93,24 @@ func (s *stats) Start(ctx context.Context, throttleCh <-chan struct{},
 }
 
 func (s *stats) printStatsDueInterrupt(messages []string) {
-	dlog.Client.Pause()
+	clientlog.Pause(s.logger)
 	for i, message := range messages {
-		if i > 0 && config.Client.TermColorsEnable {
-			fmt.Println(color.PaintStrWithAttr(message,
-				config.Client.TermColors.Client.ClientFg,
-				config.Client.TermColors.Client.ClientBg,
-				config.Client.TermColors.Client.ClientAttr,
-			))
+		if s.formatter != nil {
+			fmt.Println(s.formatter.FormatInterruptMessage(i, message))
 			continue
 		}
 		fmt.Printf(" %s\n", message)
 	}
-	time.Sleep(time.Second * time.Duration(config.InterruptTimeoutS))
-	dlog.Client.Resume()
+	time.Sleep(s.interruptPause)
+	clientlog.Resume(s.logger)
 }
 
 func (s *stats) statsData(connected, newConnections int,
-	throttle int) map[string]interface{} {
+	throttle int) map[string]any {
 
 	percConnected := percentOf(float64(s.servers), float64(connected))
 
-	data := make(map[string]interface{})
+	data := make(map[string]any)
 	data["connected"] = connected
 	data["servers"] = s.servers
 	data["connected%"] = int(percConnected)
@@ -122,7 +132,7 @@ func (s *stats) statsLine(connected, newConnections int, throttle int) string {
 		}
 		sb.WriteString(k)
 		sb.WriteByte('=')
-		sb.WriteString(fmt.Sprintf("%v", v))
+		fmt.Fprintf(&sb, "%v", v)
 		i++
 	}
 	return sb.String()

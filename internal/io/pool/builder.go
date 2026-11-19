@@ -8,7 +8,7 @@ import (
 // BuilderBuffer is there to optimize memory allocations (DTail allocates a lot
 // of memory while reading log data otherwise)
 var BuilderBuffer = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		sb := strings.Builder{}
 		return &sb
 	},

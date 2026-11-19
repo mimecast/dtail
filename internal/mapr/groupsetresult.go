@@ -3,18 +3,16 @@ package mapr
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/color"
-	"github.com/mimecast/dtail/internal/config"
-	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
-// Result returns a nicely formatted result of the query from the group set.
-func (g *GroupSet) Result(query *Query, rowsLimit int) (string, int, error) {
+// Result returns a nicely formated result of the query from the group set.
+func (g *GroupSet) Result(query *Query, rowsLimit int, renderer ResultRenderer) (string, int, error) {
 	rows, columnWidths, err := g.result(query, true)
 	if err != nil {
 		return "", 0, err
@@ -27,97 +25,69 @@ func (g *GroupSet) Result(query *Query, rowsLimit int) (string, int, error) {
 	sb := pool.BuilderBuffer.Get().(*strings.Builder)
 	defer pool.RecycleBuilderBuffer(sb)
 
-	g.resultWriteFormattedHeader(query, sb, lastColumn, rowsLimit, columnWidths)
-	g.resultWriteFormattedHeaderRowSeparator(query, sb, lastColumn, columnWidths)
-	g.resultWriteFormattedData(query, sb, lastColumn, rowsLimit, columnWidths, rows)
+	if renderer == nil {
+		renderer = PlainResultRenderer()
+	}
+
+	g.resultWriteFormattedHeader(query, renderer, sb, lastColumn, columnWidths)
+	g.resultWriteFormattedHeaderRowSeparator(query, renderer, sb, lastColumn, columnWidths)
+	g.resultWriteFormattedData(renderer, sb, lastColumn, rowsLimit, columnWidths, rows)
 
 	return sb.String(), len(rows), nil
 }
 
 // Write a nicely formatted header for the result data.
-func (g *GroupSet) resultWriteFormattedHeader(query *Query, sb *strings.Builder,
-	lastColumn, rowsLimit int, columnWidths []int) {
+func (g *GroupSet) resultWriteFormattedHeader(query *Query, renderer ResultRenderer, sb *strings.Builder,
+	lastColumn int, columnWidths []int) {
 
 	for i, sc := range query.Select {
 		format := fmt.Sprintf(" %%%ds ", columnWidths[i])
 		str := fmt.Sprintf(format, sc.FieldStorage)
 
-		g.resultWriteFormattedHeaderEntry(query, sb, sc, str)
+		g.resultWriteFormattedHeaderEntry(query, renderer, sb, sc, str)
 		if i == lastColumn {
 			continue
 		}
-		g.resultWriteFormattedHeaderEntrySeparator(query, sb)
+		g.resultWriteFormattedHeaderEntrySeparator(renderer, sb)
 
 	}
 	sb.WriteString("\n")
 }
 
-func (g *GroupSet) resultWriteFormattedHeaderEntry(query *Query, sb *strings.Builder,
+func (g *GroupSet) resultWriteFormattedHeaderEntry(query *Query, renderer ResultRenderer, sb *strings.Builder,
 	sc selectCondition, str string) {
 
-	if config.Client.TermColorsEnable {
-		attrs := []color.Attribute{config.Client.TermColors.MaprTable.HeaderAttr}
-		if sc.FieldStorage == query.OrderBy {
-			attrs = append(attrs, config.Client.TermColors.MaprTable.HeaderSortKeyAttr)
+	isGroupKey := false
+	for _, groupBy := range query.GroupBy {
+		if sc.FieldStorage == groupBy {
+			isGroupKey = true
+			break
 		}
-		for _, groupBy := range query.GroupBy {
-			if sc.FieldStorage == groupBy {
-				attrs = append(attrs, config.Client.TermColors.MaprTable.HeaderGroupKeyAttr)
-				break
-			}
-		}
-		color.PaintWithAttrs(sb, str,
-			config.Client.TermColors.MaprTable.HeaderFg,
-			config.Client.TermColors.MaprTable.HeaderBg,
-			attrs)
-
-	} else {
-		sb.WriteString(str)
 	}
+	renderer.WriteHeaderEntry(sb, str, sc.FieldStorage == query.OrderBy, isGroupKey)
 }
 
-func (g *GroupSet) resultWriteFormattedHeaderEntrySeparator(query *Query, sb *strings.Builder) {
-	if config.Client.TermColorsEnable {
-		color.PaintWithAttr(sb, protocol.FieldDelimiter,
-			config.Client.TermColors.MaprTable.HeaderDelimiterFg,
-			config.Client.TermColors.MaprTable.HeaderDelimiterBg,
-			config.Client.TermColors.MaprTable.HeaderDelimiterAttr)
-	} else {
-		sb.WriteString(protocol.FieldDelimiter)
-	}
+func (g *GroupSet) resultWriteFormattedHeaderEntrySeparator(renderer ResultRenderer, sb *strings.Builder) {
+	renderer.WriteHeaderDelimiter(sb, protocol.FieldDelimiter)
 }
 
 // This writes a nicely formatted line separating the header and the data.
-func (g *GroupSet) resultWriteFormattedHeaderRowSeparator(query *Query, sb *strings.Builder,
+func (g *GroupSet) resultWriteFormattedHeaderRowSeparator(query *Query, renderer ResultRenderer, sb *strings.Builder,
 	lastColumn int, columnWidths []int) {
 
 	for i := 0; i < len(query.Select); i++ {
 		str := fmt.Sprintf("-%s-", strings.Repeat("-", columnWidths[i]))
-		if config.Client.TermColorsEnable {
-			color.PaintWithAttr(sb, str,
-				config.Client.TermColors.MaprTable.HeaderDelimiterFg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterBg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterAttr)
-		} else {
-			sb.WriteString(str)
-		}
+		renderer.WriteHeaderDelimiter(sb, str)
 		if i == lastColumn {
 			continue
 		}
-		if config.Client.TermColorsEnable {
-			color.PaintWithAttr(sb, protocol.FieldDelimiter,
-				config.Client.TermColors.MaprTable.HeaderDelimiterFg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterBg,
-				config.Client.TermColors.MaprTable.HeaderDelimiterAttr)
-		} else {
-			sb.WriteString(protocol.FieldDelimiter)
-		}
+		renderer.WriteHeaderDelimiter(sb, protocol.FieldDelimiter)
 	}
 	sb.WriteString("\n")
 }
 
 // Write the result data nicely formatted.
-func (g *GroupSet) resultWriteFormattedData(query *Query, sb *strings.Builder,
+func (g *GroupSet) resultWriteFormattedData(renderer ResultRenderer, sb *strings.Builder,
 	lastColumn, rowsLimit int, columnWidths []int, rows []result) {
 
 	for i, r := range rows {
@@ -125,60 +95,45 @@ func (g *GroupSet) resultWriteFormattedData(query *Query, sb *strings.Builder,
 			break
 		}
 		for j, value := range r.values {
-			g.resultWriteFormattedDataEntry(query, sb, columnWidths, j, value)
+			g.resultWriteFormattedDataEntry(renderer, sb, columnWidths, j, value)
 			if j == lastColumn {
 				continue
 			}
-			// Now, write the data entry separator.
-			if config.Client.TermColorsEnable {
-				color.PaintWithAttr(sb, protocol.FieldDelimiter,
-					config.Client.TermColors.MaprTable.DelimiterFg,
-					config.Client.TermColors.MaprTable.DelimiterBg,
-					config.Client.TermColors.MaprTable.DelimiterAttr)
-			} else {
-				sb.WriteString(protocol.FieldDelimiter)
-			}
+			renderer.WriteDataDelimiter(sb, protocol.FieldDelimiter)
 		}
 		sb.WriteString("\n")
 	}
 }
 
-func (g *GroupSet) resultWriteFormattedDataEntry(query *Query, sb *strings.Builder,
+func (g *GroupSet) resultWriteFormattedDataEntry(renderer ResultRenderer, sb *strings.Builder,
 	columnWidths []int, j int, value string) {
 
 	format := fmt.Sprintf(" %%%ds ", columnWidths[j])
 	str := fmt.Sprintf(format, value)
-	if config.Client.TermColorsEnable {
-		color.PaintWithAttr(sb, str,
-			config.Client.TermColors.MaprTable.DataFg,
-			config.Client.TermColors.MaprTable.DataBg,
-			config.Client.TermColors.MaprTable.DataAttr)
-	} else {
-		sb.WriteString(str)
-	}
+	renderer.WriteDataEntry(sb, str)
 }
 
-func (*GroupSet) writeQueryFile(query *Query) error {
+func (g *GroupSet) writeQueryFile(query *Query) error {
 	queryFile := fmt.Sprintf("%s.query", query.Outfile.FilePath)
 	tmpQueryFile := fmt.Sprintf("%s.tmp", queryFile)
-	dlog.Common.Debug("Writing query file", queryFile)
+	g.logger.Debug("Writing query file", queryFile)
 
 	fd, err := os.OpenFile(tmpQueryFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
-		return err
+		return fmt.Errorf("open temporary query file %q: %w", tmpQueryFile, err)
 	}
-	defer fd.Close()
 
-	if _, err := fd.WriteString(query.RawQuery); err != nil {
-		return err
+	_, writeErr := fd.WriteString(query.RawQuery)
+	if err := closeAndRenameWrittenFile(fd, writeErr, tmpQueryFile, queryFile, os.Rename, os.Remove); err != nil {
+		return fmt.Errorf("write query file %q: %w", queryFile, err)
 	}
-	return os.Rename(tmpQueryFile, queryFile)
+	return nil
 }
 
 // WriteResult writes the result to an CSV outfile.
 func (g *GroupSet) WriteResult(query *Query, finalResult bool) error {
 	if !query.HasOutfile() {
-		return errors.New("No outfile specified")
+		return errors.New("no outfile specified")
 	}
 	if err := g.writeQueryFile(query); err != nil {
 		return err
@@ -193,7 +148,7 @@ func (g *GroupSet) WriteResult(query *Query, finalResult bool) error {
 
 	// In append mode, only write CSV header when file doesn't exist yet or is empty.
 	if query.Outfile.AppendMode {
-		if info, err := os.Stat(query.Outfile.FilePath); err == nil && info.Size() > 0 {
+		if info, statErr := os.Stat(query.Outfile.FilePath); statErr == nil && info.Size() > 0 {
 			writeHeader = false
 		}
 	}
@@ -202,23 +157,33 @@ func (g *GroupSet) WriteResult(query *Query, finalResult bool) error {
 	if err != nil {
 		return err
 	}
-	defer fd.Close()
 
-	return g.resultWriteUnformatted(query, rows, fd, writeHeader, finalResult)
+	writeErr := g.resultWriteUnformatted(query, rows, fd, writeHeader)
+	if query.Outfile.AppendMode {
+		return closeWrittenFile(fd, writeErr, query.Outfile.FilePath)
+	}
+
+	tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
+	g.logger.Debug("Renaming outfile", tmpOutfile, "to", query.Outfile.FilePath)
+	if err := closeAndRenameWrittenFile(fd, writeErr, tmpOutfile, query.Outfile.FilePath, os.Rename, os.Remove); err != nil {
+		return fmt.Errorf("commit outfile %q: %w", query.Outfile.FilePath, err)
+	}
+	g.logger.Info("Successfully renamed outfile to", query.Outfile.FilePath)
+	return nil
 }
 
 func (g *GroupSet) getOutfileFD(query *Query) (*os.File, error) {
 	if !query.Outfile.AppendMode {
-		dlog.Common.Info("Writing to outfile", query.Outfile.FilePath)
+		g.logger.Info("Writing to outfile", query.Outfile.FilePath)
 		tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
 		return os.OpenFile(tmpOutfile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	}
 
-	dlog.Common.Info("Appending to outfile", query.Outfile.FilePath)
+	g.logger.Info("Appending to outfile", query.Outfile.FilePath)
 	return os.OpenFile(query.Outfile.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 }
 
-func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.File, writeHeader, finalResult bool) error {
+func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd io.StringWriter, writeHeader bool) error {
 	lastColumn := len(query.Select) - 1
 
 	if writeHeader {
@@ -248,18 +213,44 @@ func (g *GroupSet) resultWriteUnformatted(query *Query, rows []result, fd *os.Fi
 		}
 	}
 
-	if !query.Outfile.AppendMode && finalResult {
-		tmpOutfile := fmt.Sprintf("%s.tmp", query.Outfile.FilePath)
-		if err := os.Rename(tmpOutfile, query.Outfile.FilePath); err != nil {
-			os.Remove(tmpOutfile)
-			return err
-		}
-	}
-
 	return nil
 }
 
-func (g *GroupSet) resultWriteUnformattedHeader(query *Query, fd *os.File, lastColumn int) (err error) {
+func closeWrittenFile(fd io.Closer, writeErr error, path string) error {
+	closeErr := fd.Close()
+	var errs []error
+	if writeErr != nil {
+		errs = append(errs, fmt.Errorf("write %q: %w", path, writeErr))
+	}
+	if closeErr != nil {
+		errs = append(errs, fmt.Errorf("close %q: %w", path, closeErr))
+	}
+	return errors.Join(errs...)
+}
+
+func closeAndRenameWrittenFile(fd io.Closer, writeErr error, tmpPath, finalPath string,
+	rename func(string, string) error, remove func(string) error) error {
+
+	if err := closeWrittenFile(fd, writeErr, tmpPath); err != nil {
+		return errors.Join(err, removeTemporaryFile(tmpPath, remove))
+	}
+	if err := rename(tmpPath, finalPath); err != nil {
+		return errors.Join(
+			fmt.Errorf("rename %q to %q: %w", tmpPath, finalPath, err),
+			removeTemporaryFile(tmpPath, remove),
+		)
+	}
+	return nil
+}
+
+func removeTemporaryFile(path string, remove func(string) error) error {
+	if err := remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove temporary file %q: %w", path, err)
+	}
+	return nil
+}
+
+func (g *GroupSet) resultWriteUnformattedHeader(query *Query, fd io.StringWriter, lastColumn int) (err error) {
 	for i, sc := range query.Select {
 		if _, err = fd.WriteString(sc.FieldStorage); err != nil {
 			return

@@ -42,7 +42,7 @@ func newGenericKVParser(hostname, timeZoneName string, timeZoneOffset int) (*gen
 	return &genericKVParser{defaultParser: *defaultParser}, nil
 }
 
-func (p *genericKVParser) MakeFields(maprLine string) (map[string]string, error) {
+func (p *genericKVParser) MakeFields(maprLine, _ string) (map[string]string, error) {
 	splitted := strings.Split(maprLine, protocol.FieldDelimiter)
 	fields := make(map[string]string, len(splitted))
 
@@ -70,6 +70,7 @@ func (p *genericKVParser) MakeFields(maprLine string) (map[string]string, error)
 ... whereas:
 
 * `maprLine` is the whole raw log line to be parsed by the log format.
+* `sourceID` is the stable identifier of the log file / stream the line came from. Stateful parsers (e.g. CSV with a header row per file) should key their per-file state by this value; stateless parsers may ignore it.
 * `protocol.FieldDelimiter` is the field delimiter used by the log format, here: `|`.
 * All field names starting with `$` are variables. They store some custom values.
 * All other fields are bareword-fields and are extracted from the log lines directly, e.g. `field1=value1|field2=value2|...`
@@ -139,7 +140,7 @@ func newFooParser(hostname, timeZoneName string, timeZoneOffset int) (*fooParser
 	return &fooParser{defaultParser: *defaultParser}, nil
 }
 
-func (p *fooParser) MakeFields(maprLine string) (map[string]string, error) {
+func (p *fooParser) MakeFields(maprLine, sourceID string) (map[string]string, error) {
 	fields := make(map[string]string, 3)
 
 	..

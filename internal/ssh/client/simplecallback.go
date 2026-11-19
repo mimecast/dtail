@@ -17,8 +17,9 @@ func NewSimpleCallback() (SimpleCallback, error) {
 	return SimpleCallback{}, nil
 }
 
-// Wrap the host key callback.
-func (SimpleCallback) Wrap() ssh.HostKeyCallback {
+// Wrap the host key callback. ctx is accepted for interface compatibility
+// but the simple callback never blocks so it has nothing to abort.
+func (SimpleCallback) Wrap(_ context.Context) ssh.HostKeyCallback {
 	return func(server string, remote net.Addr, key ssh.PublicKey) error {
 		return nil
 	}

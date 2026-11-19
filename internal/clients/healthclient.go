@@ -3,9 +3,9 @@ package clients
 import (
 	"context"
 	"fmt"
-	"runtime"
 
 	"github.com/mimecast/dtail/internal/clients/handlers"
+	"github.com/mimecast/dtail/internal/color/brush"
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/omode"
 
@@ -18,31 +18,22 @@ type HealthClient struct {
 }
 
 // NewHealthClient returns a new health client.
-func NewHealthClient(args config.Args) (*HealthClient, error) {
+func NewHealthClient(args config.Args, cfg config.RuntimeConfig, loggers LoggerDependencies,
+	colorizers ...*brush.Brush) (*HealthClient, error) {
 	args.Mode = omode.HealthClient
 	args.UserName = config.HealthUser
 	args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(config.HealthUser))
+	loggers = loggers.normalized()
 
-	c := HealthClient{
-		baseClient: baseClient{
-			Args:       args,
-			throttleCh: make(chan struct{}, args.ConnectionsPerCPU*runtime.NumCPU()),
-			retry:      false,
+	base, err := newBaseClient(args, cfg, loggers, firstColorizer(colorizers), clientProfile{
+		newHandler: func(server string) handlers.Handler {
+			return handlers.NewHealthHandler(server, loggers.Client)
 		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize health client: %w", err)
 	}
-
-	c.init()
-	c.makeConnections(c)
-	return &c, nil
-}
-
-func (c HealthClient) makeHandler(server string) handlers.Handler {
-	return handlers.NewHealthHandler(server)
-}
-
-func (c HealthClient) makeCommands() (commands []string) {
-	commands = append(commands, "health")
-	return
+	return &HealthClient{baseClient: base}, nil
 }
 
 // Start the health client.

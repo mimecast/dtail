@@ -2,28 +2,31 @@ package discovery
 
 import (
 	"bufio"
+	"fmt"
 	"os"
-
-	"github.com/mimecast/dtail/internal/io/dlog"
 )
 
 // ServerListFromFILE retrieves a list of servers from a file.
-func (d *Discovery) ServerListFromFILE() (servers []string) {
-	dlog.Common.Debug("Retrieving server list from file", d.server)
+func (d *Discovery) ServerListFromFILE() (servers []string, retErr error) {
+	d.logger.Debug("Retrieving server list from file", d.server)
 
 	file, err := os.Open(d.server)
 	if err != nil {
-		dlog.Common.FatalPanic(d.server, err)
+		return nil, fmt.Errorf("open server discovery file %q: %w", d.server, err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("close server discovery file %q: %w", d.server, err)
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		servers = append(servers, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
-		dlog.Common.FatalPanic(d.server, err)
+		return nil, fmt.Errorf("scan server discovery file %q: %w", d.server, err)
 	}
 
-	return
+	return servers, nil
 }

@@ -6,12 +6,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mimecast/dtail/internal/logging"
 )
 
 const (
-	invalidQuery  string = "Invalid query: "
-	unexpectedEnd string = "Unexpected end of query"
+	invalidQuery  string = "invalid query: "
+	unexpectedEnd string = "unexpected end of query"
 )
+
+// ErrEmptyQuery indicates that no mapreduce query was provided.
+var ErrEmptyQuery = errors.New("query cannot be empty")
 
 // Outfile represents the output file of a mapreduce query.
 type Outfile struct {
@@ -19,7 +24,8 @@ type Outfile struct {
 	AppendMode bool
 }
 
-func (o Outfile) String() string {
+// String returns the string representation of Outfile.
+func (o *Outfile) String() string {
 	return fmt.Sprintf("Outfile(FilePath:%v,AppendMode:%v)", o.FilePath, o.AppendMode)
 }
 
@@ -39,9 +45,11 @@ type Query struct {
 	RawQuery     string
 	tokens       []token
 	LogFormat    string
+	logger       logging.Logger
 }
 
-func (q Query) String() string {
+// String returns the string representation of Query.
+func (q *Query) String() string {
 	return fmt.Sprintf("Query(Select:%v,Table:%s,Where:%v,Set:%vGroupBy:%v,"+
 		"GroupKey:%s,OrderBy:%v,ReverseOrder:%v,Interval:%v,Limit:%d,Outfile:%s,"+
 		"RawQuery:%s,tokens:%v,LogFormat:%s)",
@@ -62,9 +70,9 @@ func (q Query) String() string {
 }
 
 // NewQuery returns a new mapreduce query.
-func NewQuery(queryStr string) (*Query, error) {
+func NewQuery(queryStr string, logger logging.Logger) (*Query, error) {
 	if queryStr == "" {
-		return nil, nil
+		return nil, ErrEmptyQuery
 	}
 	tokens := tokenize(queryStr)
 	q := Query{
@@ -72,18 +80,26 @@ func NewQuery(queryStr string) (*Query, error) {
 		tokens:   tokens,
 		Interval: time.Second * 5,
 		Limit:    -1,
+		logger:   logging.OrNop(logger),
 	}
 
-	// If log format is CSV, then use "." as the table. It means, that
-	// we don't do any file filtering, we process all lines of the CSV.
-	if q.LogFormat == "csv" {
+	// Parse the query tokens to populate all fields including LogFormat and Table.
+	if err := q.parse(tokens); err != nil {
+		return nil, err
+	}
+
+	// If the log format is CSV and no explicit FROM table was provided, default
+	// the table to "." so that all lines are processed without file filtering.
+	// This check must run after parse() because LogFormat is only populated
+	// once parseTokens() has processed the "logformat" keyword.
+	if q.LogFormat == "csv" && q.Table == "" {
 		q.Table = "."
 	}
 
-	return &q, q.parse(tokens)
+	return &q, nil
 }
 
-// HasOutfile returns true if query result will be written to a CSV output file.
+// HasOutfile returns true if query result will be written to a CVS output file.
 func (q *Query) HasOutfile() bool {
 	return q.Outfile != nil
 }
@@ -95,11 +111,11 @@ func (q *Query) Has(what string) bool {
 
 func (q *Query) parse(tokens []token) error {
 	if _, err := q.parseTokens(tokens); err != nil {
-		return err
+		return fmt.Errorf("failed to parse query tokens: %w", err)
 	}
 
 	if len(q.Select) < 1 {
-		return errors.New(invalidQuery + "Expected at least one field in 'select' " +
+		return errors.New(invalidQuery + "expected at least one field in 'select' " +
 			"clause but got none")
 	}
 
@@ -117,7 +133,7 @@ func (q *Query) parse(tokens []token) error {
 			}
 		}
 		if !orderFieldIsValid {
-			return errors.New(invalidQuery + fmt.Sprintf("Can not '(r)order by' '%s',"+
+			return errors.New(invalidQuery + fmt.Sprintf("cannot '(r)order by' '%s',"+
 				"must be present in 'select' clause", q.OrderBy))
 		}
 	}
@@ -162,14 +178,14 @@ func (q *Query) parseTokens(tokens []token) ([]token, error) {
 			}
 		case "group":
 			tokens = tokensConsumeOptional(tokens[1:], "by")
-			if tokens == nil || len(tokens) < 1 {
+			if len(tokens) < 1 {
 				return tokens, errors.New(invalidQuery + unexpectedEnd)
 			}
 			tokens, q.GroupBy = tokensConsumeStr(tokens)
 			q.GroupKey = strings.Join(q.GroupBy, ",")
 		case "rorder":
 			tokens = tokensConsumeOptional(tokens[1:], "by")
-			if tokens == nil || len(tokens) < 1 {
+			if len(tokens) < 1 {
 				return tokens, errors.New(invalidQuery + unexpectedEnd)
 			}
 			tokens, found = tokensConsume(tokens)
@@ -180,7 +196,7 @@ func (q *Query) parseTokens(tokens []token) ([]token, error) {
 			q.ReverseOrder = true
 		case "order":
 			tokens = tokensConsumeOptional(tokens[1:], "by")
-			if tokens == nil || len(tokens) < 1 {
+			if len(tokens) < 1 {
 				return tokens, errors.New(invalidQuery + unexpectedEnd)
 			}
 			tokens, found = tokensConsume(tokens)
@@ -228,7 +244,7 @@ func (q *Query) parseTokens(tokens []token) ([]token, error) {
 			}
 			q.LogFormat = found[0].str
 		default:
-			return tokens, errors.New(invalidQuery + "Unexpected keyword " + tokens[0].str)
+			return tokens, errors.New(invalidQuery + "unexpected keyword " + tokens[0].str)
 		}
 	}
 

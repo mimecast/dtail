@@ -25,34 +25,34 @@ const (
 var allLevels = []level{Fatal, Error, Warn, Info, Default, Verbose, Debug,
 	Devel, Trace, All}
 
-func newLevel(l string) level {
+func newLevel(l string) (level, error) {
 	switch strings.ToLower(l) {
 	case "none":
-		return None
+		return None, nil
 	case "fatal":
-		return Fatal
+		return Fatal, nil
 	case "error":
-		return Error
+		return Error, nil
 	case "warn":
-		return Warn
+		return Warn, nil
 	case "info":
-		return Info
+		return Info, nil
 	case "":
 		fallthrough
 	case "default":
-		return Default
+		return Default, nil
 	case "verbose":
-		return Verbose
+		return Verbose, nil
 	case "debug":
-		return Debug
+		return Debug, nil
 	case "devel":
-		return Devel
+		return Devel, nil
 	case "trace":
-		return Trace
+		return Trace, nil
 	case "all":
-		return All
+		return All, nil
 	}
-	panic(fmt.Sprintf("Unknown log level %s, must be one of: %v", l, allLevels))
+	return None, fmt.Errorf("unknown log level %q, must be one of: %v", l, allLevels)
 }
 
 func (l level) String() string {

@@ -14,75 +14,55 @@ type token struct {
 	quotesStripped bool
 }
 
-func (t token) isKeyword() bool {
-	if !t.isBareword {
-		return false
-	}
-	for _, keyword := range keywords {
-		if strings.ToLower(t.str) == keyword {
-			return true
-		}
-	}
-	return false
-}
-
-func (t token) String() string {
-	return t.str
-}
-
+// tokenize parses a query string into tokens.
 func tokenize(queryStr string) []token {
 	var tokens []token
 	for i, part := range strings.Split(queryStr, "\"") {
 		// Even i, means that it is not a quoted string
 		if i%2 == 0 {
-			commasStripped := strings.Replace(part, ",", " ", -1)
+			commasStripped := strings.ReplaceAll(part, ",", " ")
 			for _, tokenStr := range strings.Fields(commasStripped) {
-				token := token{
+				parsedToken := token{
 					str:        tokenStr,
 					isBareword: true,
 				}
-				tokens = append(tokens, token)
+				tokens = append(tokens, parsedToken)
 			}
 			continue
 		}
 		// Add whole quoted string as a token
-		token := token{
+		parsedToken := token{
 			str:        part,
 			isBareword: false,
 		}
-		tokens = append(tokens, token)
+		tokens = append(tokens, parsedToken)
 	}
 	return tokens
 }
 
 func tokensConsume(tokens []token) ([]token, []token) {
-	//dlog.Common.Trace("=====================")
 	var consumed []token
-	for i, t := range tokens {
-		if t.isKeyword() {
-			//dlog.Common.Trace("keyword", t)
+	for i, current := range tokens {
+		if current.isKeyword() {
 			return tokens[i:], consumed
 		}
 		// strip escapes, such as ` from `foo`, this allows to use keywords as field names
-		length := len(t.str)
+		length := len(current.str)
 		if length == 0 {
 			continue
 		}
-		if t.str[0] == '`' && t.str[length-1] == '`' {
-			stripped := t.str[1 : length-1]
-			//dlog.Common.Trace("stripped", stripped)
-			t := token{
+		if length >= 2 && current.str[0] == '`' && current.str[length-1] == '`' {
+			stripped := current.str[1 : length-1]
+			normalized := token{
 				str:            stripped,
-				isBareword:     t.isBareword,
+				isBareword:     current.isBareword,
 				quotesStripped: true,
 			}
-			consumed = append(consumed, t)
+			consumed = append(consumed, normalized)
 			continue
 		}
-		//dlog.Common.Trace("bare", token)
-		consumed = append(consumed, t)
+		consumed = append(consumed, current)
 	}
-	//dlog.Common.Trace("result", consumed)
 	return nil, consumed
 }
 
@@ -99,9 +79,25 @@ func tokensConsumeOptional(tokens []token, optional string) []token {
 	if len(tokens) < 1 {
 		return tokens
 	}
-	//if strings.ToLower(tokens[0].str) == strings.ToLower(optional) {
+	// if strings.ToLower(tokens[0].str) == strings.ToLower(optional) {
 	if strings.EqualFold(tokens[0].str, optional) {
 		return tokens[1:]
 	}
 	return tokens
+}
+
+func (t token) isKeyword() bool {
+	if !t.isBareword {
+		return false
+	}
+	for _, keyword := range keywords {
+		if strings.ToLower(t.str) == keyword {
+			return true
+		}
+	}
+	return false
+}
+
+func (t token) String() string {
+	return t.str
 }

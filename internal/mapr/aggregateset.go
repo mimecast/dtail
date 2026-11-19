@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mimecast/dtail/internal/io/dlog"
 	"github.com/mimecast/dtail/internal/io/pool"
+	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -37,7 +37,6 @@ func (s *AggregateSet) String() string {
 // Merge one aggregate set into this one.
 func (s *AggregateSet) Merge(query *Query, set *AggregateSet) error {
 	s.Samples += set.Samples
-	//dlog.Common.Trace("Merge", set)
 	for _, sc := range query.Select {
 		storage := sc.FieldStorage
 		switch sc.Operation {
@@ -46,6 +45,10 @@ func (s *AggregateSet) Merge(query *Query, set *AggregateSet) error {
 		case Sum:
 			fallthrough
 		case Avg:
+			fallthrough
+		case Percentage:
+			fallthrough
+		case Percentile:
 			value := set.FValues[storage]
 			s.addFloat(storage, value)
 		case Min:
@@ -61,27 +64,36 @@ func (s *AggregateSet) Merge(query *Query, set *AggregateSet) error {
 			s.setString(storage, set.SValues[storage])
 			s.setFloat(storage, set.FValues[storage])
 		default:
-			return fmt.Errorf("Unknown aggregation method '%v'", sc.Operation)
+			return fmt.Errorf("unknown aggregation method '%v'", sc.Operation)
 		}
 	}
 	return nil
 }
 
-// Serialize the aggregate set so it can be sent over the wire.
-func (s *AggregateSet) Serialize(ctx context.Context, groupKey string, ch chan<- string) {
-	dlog.Common.Trace("Serialising mapr.AggregateSet", s)
+// Serialize the aggregate set so it can be sent over the wire. Returns true
+// when the serialized message was successfully sent, and false when the
+// context was cancelled before the send completed. Callers that own the
+// source state (e.g. Aggregate) must re-merge unsent sets so data is
+// not silently lost.
+func (s *AggregateSet) Serialize(ctx context.Context, groupKey string, ch chan<- string,
+	logger logging.Logger) bool {
+
+	logger = logging.OrNop(logger)
+	if logger.TraceEnabled() {
+		logger.Trace("Serialising mapr.AggregateSet", s)
+	}
 	sb := pool.BuilderBuffer.Get().(*strings.Builder)
 	defer pool.RecycleBuilderBuffer(sb)
 
 	sb.WriteString(groupKey)
 	sb.WriteString(protocol.AggregateDelimiter)
-	sb.WriteString(fmt.Sprintf("%d", s.Samples))
+	sb.WriteString(strconv.Itoa(s.Samples))
 	sb.WriteString(protocol.AggregateDelimiter)
 
 	for k, v := range s.FValues {
 		sb.WriteString(k)
 		sb.WriteString(protocol.AggregateKVDelimiter)
-		sb.WriteString(fmt.Sprintf("%v", v))
+		sb.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
 		sb.WriteString(protocol.AggregateDelimiter)
 	}
 
@@ -94,7 +106,9 @@ func (s *AggregateSet) Serialize(ctx context.Context, groupKey string, ch chan<-
 
 	select {
 	case ch <- sb.String():
+		return true
 	case <-ctx.Done():
+		return false
 	}
 }
 
@@ -177,13 +191,17 @@ func (s *AggregateSet) Aggregate(key string, agg AggregateOperation, value strin
 	case Sum:
 		fallthrough
 	case Avg:
+		fallthrough
+	case Percentage:
+		fallthrough
+	case Percentile:
 		s.addFloat(key, f)
 	case Min:
 		s.addFloatMin(key, f)
 	case Max:
 		s.addFloatMax(key, f)
 	default:
-		err = fmt.Errorf("Unknown aggregation method '%v'", agg)
+		err = fmt.Errorf("unknown aggregation method '%v'", agg)
 	}
 	return
 }

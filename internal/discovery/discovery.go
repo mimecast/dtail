@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mimecast/dtail/internal/io/dlog"
+	"github.com/mimecast/dtail/internal/logging"
 )
 
 // ServerOrder to specify how to sort the server list.
@@ -32,17 +32,19 @@ type Discovery struct {
 	regex *regexp.Regexp
 	// How to order the server list.
 	order ServerOrder
+	// Logger for discovery diagnostics.
+	logger logging.Logger
 }
 
 // New returns a new discovery method.
-func New(method, server string, order ServerOrder) *Discovery {
+func New(method, server string, order ServerOrder, logger logging.Logger) (*Discovery, error) {
 	module := method
 	options := ""
 
 	if strings.Contains(module, ":") {
-		s := strings.Split(module, ":")
-		if len(s) != 2 {
-			dlog.Common.FatalPanic("Unable to parse discovery module", module)
+		s := strings.SplitN(module, ":", 2)
+		if len(s) != 2 || s[0] == "" || s[1] == "" {
+			return nil, fmt.Errorf("unable to parse discovery module %q", module)
 		}
 		module = s[0]
 		options = s[1]
@@ -53,16 +55,25 @@ func New(method, server string, order ServerOrder) *Discovery {
 		options: options,
 		server:  server,
 		order:   order,
+		logger:  logging.OrNop(logger),
+	}
+	if d.module != "" {
+		methodName := fmt.Sprintf("ServerListFrom%s", d.module)
+		if _, ok := reflect.TypeOf(&d).MethodByName(methodName); !ok {
+			return nil, fmt.Errorf("unknown server discovery module %q", method)
+		}
 	}
 
 	if strings.HasPrefix(server, "/") && strings.HasSuffix(server, "/") {
-		d.initRegex()
+		if err := d.initRegex(); err != nil {
+			return nil, err
+		}
 	}
 
-	return &d
+	return &d, nil
 }
 
-func (d *Discovery) initRegex() {
+func (d *Discovery) initRegex() error {
 	var runes []rune
 	last := len(d.server) - 1
 	for i, char := range d.server {
@@ -72,19 +83,23 @@ func (d *Discovery) initRegex() {
 	}
 
 	regexStr := string(runes)
-	dlog.Common.Debug("Using filter regex", regexStr)
+	d.logger.Debug("Using filter regex", regexStr)
 	regex, err := regexp.Compile(regexStr)
 	if err != nil {
-		dlog.Common.FatalPanic("Could not compile regex", regexStr, err)
+		return fmt.Errorf("compile server discovery regex %q: %w", regexStr, err)
 	}
 
 	d.regex = regex
 	d.server = ""
+	return nil
 }
 
 // ServerList to connect to via DTail client.
-func (d *Discovery) ServerList() []string {
-	servers := d.serverListFromModule()
+func (d *Discovery) ServerList() ([]string, error) {
+	servers, err := d.serverListFromModule()
+	if err != nil {
+		return nil, err
+	}
 
 	if d.regex != nil {
 		servers = d.filterList(servers)
@@ -94,13 +109,16 @@ func (d *Discovery) ServerList() []string {
 		servers = d.shuffleList(servers)
 	}
 
-	dlog.Common.Debug("Discovered servers", len(servers), servers)
-	return servers
+	d.logger.Debug("Discovered servers", len(servers), servers)
+	return servers, nil
 }
 
-func (d *Discovery) serverListFromModule() []string {
+func (d *Discovery) serverListFromModule() ([]string, error) {
 	if d.module != "" {
 		return d.serverListFromReflectedModule()
+	}
+	if d.server == "" && d.regex != nil {
+		return []string{}, nil
 	}
 	if _, err := os.Stat(d.server); err == nil {
 		// Appears to be a file name, now try to read from that file.
@@ -113,25 +131,38 @@ func (d *Discovery) serverListFromModule() []string {
 // The aim of this is that everyone can plug in their own server discovery
 // method to DTail. Just add a method ServerListFrommMODULENAME to type
 // Discovery. Whereas MODULENAME must be a upeprcase string.
-func (d *Discovery) serverListFromReflectedModule() []string {
+func (d *Discovery) serverListFromReflectedModule() ([]string, error) {
 	methodName := fmt.Sprintf("ServerListFrom%s", d.module)
 	// Now we are reflecting the serve discovery function by it's name.
 	rt := reflect.TypeOf(d)
 	reflectedMethod, ok := rt.MethodByName(methodName)
 	if !ok {
-		dlog.Common.FatalPanic("No such server discovery module", d.module, methodName)
+		panic(fmt.Sprintf("validated discovery module %q has no method %s", d.module, methodName))
 	}
 	inputValues := make([]reflect.Value, 1)
 	// Thist input value is method receiver.
 	inputValues[0] = reflect.ValueOf(d)
 	returnValues := reflectedMethod.Func.Call(inputValues)
-	// First return value is server list.
-	return returnValues[0].Interface().([]string)
+	if len(returnValues) != 2 {
+		panic(fmt.Sprintf("discovery method %s has invalid return signature", methodName))
+	}
+	servers, ok := returnValues[0].Interface().([]string)
+	if !ok {
+		panic(fmt.Sprintf("discovery method %s does not return []string", methodName))
+	}
+	if returnValues[1].IsNil() {
+		return servers, nil
+	}
+	err, ok := returnValues[1].Interface().(error)
+	if !ok {
+		panic(fmt.Sprintf("discovery method %s does not return error", methodName))
+	}
+	return nil, fmt.Errorf("run server discovery module %q: %w", d.module, err)
 }
 
 // Filter server list based on a regexp.
 func (d *Discovery) filterList(servers []string) (filtered []string) {
-	dlog.Common.Debug("Filtering server list")
+	d.logger.Debug("Filtering server list")
 	for _, server := range servers {
 		if d.regex.MatchString(server) {
 			filtered = append(filtered, server)
@@ -149,23 +180,26 @@ func (d *Discovery) dedupList(servers []string) (deduped []string) {
 			deduped = append(deduped, server)
 		}
 	}
-	dlog.Common.Debug("Deduped server list", len(servers), len(deduped))
+	d.logger.Debug("Deduped server list", len(servers), len(deduped))
 	return
 }
 
-// Randomly shuffle the server list.
+// Randomly shuffle the server list. A copy of the input slice is made so the
+// caller's backing array is never modified. The seed uses UnixNano so that
+// two callers started within the same wall-clock second still get different
+// shuffle orders, which is important for client-side load spreading.
 func (d *Discovery) shuffleList(servers []string) []string {
-	dlog.Common.Debug("Shuffling server list")
+	d.logger.Debug("Shuffling server list")
 
-	r := rand.New(rand.NewSource(time.Now().Unix()))
-	shuffled := make([]string, len(servers))
-	n := len(servers)
+	// Copy to avoid mutating the caller's backing array.
+	shuffled := append([]string(nil), servers...)
 
-	for i := 0; i < n; i++ {
-		randIndex := r.Intn(len(servers))
-		shuffled[i] = servers[randIndex]
-		servers = append(servers[:randIndex], servers[randIndex+1:]...)
-	}
+	// Seed with nanosecond resolution to avoid identical orderings when
+	// multiple clients start within the same second.
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	r.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
 
 	return shuffled
 }

@@ -1,0 +1,48 @@
+Git commit: 1249f9e
+Date: 2025-07-04T13:39:41+03:00
+Tag: post-pgo-optimized
+----------------------------------------
+goos: linux
+goarch: amd64
+pkg: github.com/mimecast/dtail/benchmarks
+cpu: 11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz
+BenchmarkAll/DCat/Size=10MB-8       	      76	  16216111 ns/op	       259.9 MB/sec	   4601512 lines/sec	12549421 B/op	      94 allocs/op
+BenchmarkAll/DCat/Size=100MB-8      	       9	 120403497 ns/op	       339.2 MB/sec	   6006232 lines/sec	175646822 B/op	     128 allocs/op
+BenchmarkAll/DCat/Size=1GB-8        	       1	1285097913 ns/op	       330.4 MB/sec	   5858397 lines/sec	1497218888 B/op	     428 allocs/op
+BenchmarkAll/DGrep/Size=10MB/HitRate=1%-8         	     114	   9579392 ns/op	       417.9 MB/sec	         1.000 hit_rate_%	   7397457 lines/sec	      9716 matched_lines	 2703464 B/op	      90 allocs/op
+BenchmarkAll/DGrep/Size=10MB/HitRate=10%-8        	      96	  12894868 ns/op	       324.0 MB/sec	        10.00 hit_rate_%	   5616731 lines/sec	     33668 matched_lines	 6304195 B/op	      91 allocs/op
+BenchmarkAll/DGrep/Size=10MB/HitRate=50%-8        	      79	  14874639 ns/op	       285.3 MB/sec	        50.00 hit_rate_%	   4780163 lines/sec	     45851 matched_lines	11378941 B/op	      93 allocs/op
+BenchmarkAll/DGrep/Size=10MB/HitRate=90%-8        	      68	  16490247 ns/op	       265.6 MB/sec	        90.00 hit_rate_%	   4336395 lines/sec	     58693 matched_lines	12252069 B/op	      94 allocs/op
+BenchmarkAll/DGrep/Size=100MB/HitRate=1%-8        	      13	  81839519 ns/op	       493.5 MB/sec	         1.000 hit_rate_%	   8685054 lines/sec	    167932 matched_lines	43974930 B/op	     116 allocs/op
+BenchmarkAll/DGrep/Size=100MB/HitRate=10%-8       	      14	 109455727 ns/op	       387.7 MB/sec	        10.00 hit_rate_%	   6780216 lines/sec	    265989 matched_lines	50166666 B/op	     114 allocs/op
+BenchmarkAll/DGrep/Size=100MB/HitRate=50%-8       	       9	 150064433 ns/op	       289.6 MB/sec	        50.00 hit_rate_%	   4798663 lines/sec	    559196 matched_lines	171169550 B/op	     129 allocs/op
+BenchmarkAll/DGrep/Size=100MB/HitRate=90%-8       	       7	 155150309 ns/op	       288.6 MB/sec	        90.00 hit_rate_%	   4678958 lines/sec	    643160 matched_lines	177629584 B/op	     139 allocs/op
+BenchmarkAll/DGrep/Size=1GB/HitRate=1%-8          	       2	 825743710 ns/op	       507.8 MB/sec	         1.000 hit_rate_%	   9009437 lines/sec	   1289082 matched_lines	356022256 B/op	     254 allocs/op
+BenchmarkAll/DGrep/Size=1GB/HitRate=10%-8         	       1	1123188972 ns/op	       394.1 MB/sec	        10.00 hit_rate_%	   6908484 lines/sec	   2721677 matched_lines	746862616 B/op	     412 allocs/op
+BenchmarkAll/DGrep/Size=1GB/HitRate=50%-8         	       1	2163640075 ns/op	       216.3 MB/sec	        50.00 hit_rate_%	   3643353 lines/sec	   4582718 matched_lines	1440782552 B/op	     415 allocs/op
+BenchmarkAll/DGrep/Size=1GB/HitRate=90%-8         	       1	2908900743 ns/op	       166.5 MB/sec	        90.00 hit_rate_%	   2689485 lines/sec	   6728133 matched_lines	1620998168 B/op	     413 allocs/op
+BenchmarkAll/DMap/Size=10MB/Query=count-8         	       2	 502789906 ns/op	        15.45 MB/sec	    139860 records/sec	   71928 B/op	     231 allocs/op
+BenchmarkAll/DMap/Size=10MB/Query=sum_avg-8       	       3	 455288778 ns/op	        17.05 MB/sec	    154466 records/sec	   53021 B/op	     180 allocs/op
+BenchmarkAll/DMap/Size=10MB/Query=min_max-8       	       3	 367933848 ns/op	        21.08 MB/sec	    191249 records/sec	   53032 B/op	     179 allocs/op
+BenchmarkAll/DMap/Size=10MB/Query=multi-8         	       3	 363108940 ns/op	        21.34 MB/sec	    193738 records/sec	   53181 B/op	     181 allocs/op
+BenchmarkAll/DMap/Size=100MB/Query=count-8        	       1	1850882955 ns/op	        42.05 MB/sec	    381180 records/sec	  128792 B/op	     388 allocs/op
+BenchmarkAll/DMap/Size=100MB/Query=sum_avg-8      	       1	2054243726 ns/op	        37.85 MB/sec	    343006 records/sec	  129152 B/op	     392 allocs/op
+BenchmarkAll/DMap/Size=100MB/Query=min_max-8      	       1	1935445223 ns/op	        40.24 MB/sec	    364459 records/sec	  128832 B/op	     388 allocs/op
+BenchmarkAll/DMap/Size=100MB/Query=multi-8        	       1	2281991922 ns/op	        34.07 MB/sec	    308783 records/sec	  129192 B/op	     392 allocs/op
+BenchmarkAll/DMap/Size=1GB/Query=count-8          	       1	18175390172 ns/op	        43.60 MB/sec	    395045 records/sec	  128776 B/op	     387 allocs/op
+BenchmarkAll/DMap/Size=1GB/Query=sum_avg-8        	       1	17415924780 ns/op	        45.55 MB/sec	    412780 records/sec	  128824 B/op	     388 allocs/op
+BenchmarkAll/DMap/Size=1GB/Query=min_max-8        	       1	16822541213 ns/op	        47.21 MB/sec	    427225 records/sec	  128888 B/op	     389 allocs/op
+BenchmarkAll/DMap/Size=1GB/Query=multi-8          	       1	17971202125 ns/op	        44.06 MB/sec	    399748 records/sec	  129496 B/op	     395 allocs/op
+BenchmarkQuick/DCat/Size=10MB-8                   	      70	  16836199 ns/op	       243.2 MB/sec	   4307143 lines/sec	12549578 B/op	      93 allocs/op
+BenchmarkQuick/DGrep/Size=10MB/HitRate=1%-8       	     106	  10493892 ns/op	       383.5 MB/sec	         1.000 hit_rate_%	   6801082 lines/sec	     12614 matched_lines	 2876440 B/op	      90 allocs/op
+BenchmarkQuick/DGrep/Size=10MB/HitRate=10%-8      	      81	  12459715 ns/op	       328.1 MB/sec	        10.00 hit_rate_%	   5728884 lines/sec	     22328 matched_lines	 5607074 B/op	      92 allocs/op
+BenchmarkQuick/DGrep/Size=10MB/HitRate=50%-8      	      61	  16646880 ns/op	       253.1 MB/sec	        50.00 hit_rate_%	   4264987 lines/sec	     43100 matched_lines	11193244 B/op	      94 allocs/op
+BenchmarkQuick/DGrep/Size=10MB/HitRate=90%-8      	      58	  19615976 ns/op	       226.5 MB/sec	        90.00 hit_rate_%	   3640840 lines/sec	     67150 matched_lines	21211204 B/op	      95 allocs/op
+BenchmarkQuick/DMap/Size=10MB/Query=count-8       	       3	 355368498 ns/op	        21.86 MB/sec	    197830 records/sec	   53528 B/op	     181 allocs/op
+BenchmarkQuick/DMap/Size=10MB/Query=sum_avg-8     	       3	 358795360 ns/op	        21.64 MB/sec	    196162 records/sec	   53560 B/op	     181 allocs/op
+BenchmarkQuick/DMap/Size=10MB/Query=min_max-8     	       3	 368410204 ns/op	        21.06 MB/sec	    191066 records/sec	   53458 B/op	     179 allocs/op
+BenchmarkQuick/DMap/Size=10MB/Query=multi-8       	       3	 367706100 ns/op	        21.09 MB/sec	    191352 records/sec	   53608 B/op	     181 allocs/op
+BenchmarkDGrepMultipleFiles/WithTurbo-8           	       9	 117668515 ns/op	51642920 B/op	     878 allocs/op
+BenchmarkDGrepLargeFile/WithTurbo-8               	      12	  98412672 ns/op	49813154 B/op	      91 allocs/op
+BenchmarkDCatSimple/Size=10MB-8                   	      69	  15250625 ns/op	       264.6 MB/sec	   4689901 lines/sec	12541157 B/op	      93 allocs/op
+BenchmarkDCatSimple/Size=100MB-8                  	       9	 135393692 ns/op	       300.3 MB/sec	   5316902 lines/sec	175646873 B/op	     129 allocs/op

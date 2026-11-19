@@ -12,10 +12,23 @@ type Logger interface {
 	LogWithColors(now time.Time, message, messageWithColors string)
 	Raw(now time.Time, message string)
 	RawWithColors(now time.Time, message, messageWithColors string)
-	Start(ctx context.Context, wg *sync.WaitGroup)
 	Flush()
+	SupportsColors() bool
+}
+
+// Starter is implemented by loggers that own background work.
+type Starter interface {
+	Start(ctx context.Context, wg *sync.WaitGroup)
+}
+
+// Pauser is implemented by terminal loggers whose output must pause while an
+// interactive prompt temporarily owns the terminal.
+type Pauser interface {
 	Pause()
 	Resume()
+}
+
+// Rotator is implemented by loggers backed by rotatable resources.
+type Rotator interface {
 	Rotate()
-	SupportsColors() bool
 }

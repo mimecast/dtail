@@ -2,6 +2,8 @@ package mapr
 
 import (
 	"fmt"
+
+	"github.com/mimecast/dtail/internal/logging"
 )
 
 // GlobalGroupSet is used on the dtail client to merge multiple group sets
@@ -12,11 +14,11 @@ type GlobalGroupSet struct {
 }
 
 // NewGlobalGroupSet creates a new empty global group set.
-func NewGlobalGroupSet() *GlobalGroupSet {
+func NewGlobalGroupSet(logger logging.Logger) *GlobalGroupSet {
 	g := GlobalGroupSet{
+		GroupSet:  *NewGroupSet(logger),
 		semaphore: make(chan struct{}, 1),
 	}
-	g.InitSet()
 	return &g
 }
 
@@ -33,12 +35,13 @@ func (g *GlobalGroupSet) Merge(query *Query, group *GroupSet) error {
 }
 
 // MergeNoblock merges (non-blocking) a group set into the global group set.
+// The semaphore is released via defer so it is always returned even if
+// g.merge panics, mirroring the guarantee provided by the blocking Merge.
 func (g *GlobalGroupSet) MergeNoblock(query *Query, group *GroupSet) (bool, error) {
 	select {
 	case g.semaphore <- struct{}{}:
-		err := g.merge(query, group)
-		<-g.semaphore
-		return true, err
+		defer func() { <-g.semaphore }()
+		return true, g.merge(query, group)
 	default:
 		return false, nil
 	}
@@ -73,7 +76,7 @@ func (g *GlobalGroupSet) SwapOut() *GroupSet {
 	g.semaphore <- struct{}{}
 	defer func() { <-g.semaphore }()
 
-	set := &GroupSet{sets: g.sets}
+	set := &GroupSet{sets: g.sets, logger: g.logger}
 	g.InitSet()
 	return set
 }
@@ -86,8 +89,8 @@ func (g *GlobalGroupSet) WriteResult(query *Query, finalResult bool) error {
 }
 
 // Result returns the result of the mapreduce aggregation as a string.
-func (g *GlobalGroupSet) Result(query *Query, rowsLimit int) (string, int, error) {
+func (g *GlobalGroupSet) Result(query *Query, rowsLimit int, renderer ResultRenderer) (string, int, error) {
 	g.semaphore <- struct{}{}
 	defer func() { <-g.semaphore }()
-	return g.GroupSet.Result(query, rowsLimit)
+	return g.GroupSet.Result(query, rowsLimit, renderer)
 }
