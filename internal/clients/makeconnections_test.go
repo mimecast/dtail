@@ -1,6 +1,10 @@
 package clients
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
@@ -16,6 +20,30 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 )
+
+// writeTestSSHKeyPair writes an unencrypted RSA key pair at path and path.pub
+// for unit tests that exercise InitSSHAuthMethods / AUTHKEY registration.
+func writeTestSSHKeyPair(t *testing.T, path string) {
+	t.Helper()
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("generate private key: %v", err)
+	}
+	privateBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	})
+	if err := os.WriteFile(path, privateBytes, 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	pub, err := gossh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("public key: %v", err)
+	}
+	if err := os.WriteFile(path+".pub", gossh.MarshalAuthorizedKey(pub), 0o600); err != nil {
+		t.Fatalf("write %s.pub: %v", path, err)
+	}
+}
 
 // newDiscoveryTestClient returns a cat client for servers that is ready for
 // makeConnections. With stub set, its connectionFactory records the servers
@@ -236,12 +264,11 @@ func TestNewHealthClientRejectsNoServer(t *testing.T) {
 func TestNewHealthClientDisablesAuthKey(t *testing.T) {
 	t.Parallel()
 
+	// A parseable key pair: InitSSHAuthMethods loads the private key, and a
+	// placeholder "key\n" can fail that step on some Jenkins agents while
+	// the .pub file alone is enough for the AUTHKEY registration path.
 	keyPath := filepath.Join(t.TempDir(), "id_rsa")
-	for _, name := range []string{keyPath, keyPath + ".pub"} {
-		if err := os.WriteFile(name, []byte("key\n"), 0o600); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
-	}
+	writeTestSSHKeyPair(t, keyPath)
 	args := config.Args{ServersStr: "localhost:1", ConnectionsPerCPU: 1}
 	args.TrustAllHosts = true
 	args.KnownHostsPath = filepath.Join(t.TempDir(), "known_hosts")

@@ -98,9 +98,12 @@ func TestMayReadBeneath(t *testing.T) {
 			perms: []string{"readfiles:^/data/", "readfiles:!(?m)^/data/.*$"}, dir: "/data", want: false},
 		// Known approximation (PathRules): a deny rule that denies everything
 		// beneath only through what follows the "/" does not hide it.
+		// Use a path that does not exist on CI hosts: linuxacl builds call
+		// permissions.ToRead, and a real unreadable /var/log/private would
+		// hide the directory before PathRules are considered.
 		{name: "deny of every file beneath by suffix is not seen",
-			perms: []string{`readfiles:^/var/log/.*\.log$`, `readfiles:!^/var/log/private/.*\.log$`},
-			dir:   "/var/log/private", want: true},
+			perms: []string{`readfiles:^/var/log/.*\.log$`, `readfiles:!^/var/log/dtail-test-private/.*\.log$`},
+			dir:   "/var/log/dtail-test-private", want: true},
 		{name: "deny of every name beneath by a class is not seen",
 			perms: []string{"readfiles:^/data/", "readfiles:!^/data/x/[^/]"}, dir: "/data/x", want: true},
 		// Known approximation: a deny rule of everything beneath that does not
@@ -114,8 +117,8 @@ func TestMayReadBeneath(t *testing.T) {
 		// Known approximation: a deny rule matching "<dir>/" at its end but
 		// not the samples, while it denies all the allow rule covers.
 		{name: "deny of all an allow rule covers beneath, by suffix, is not seen",
-			perms: []string{`readfiles:^/var/log/.*\.log$`, `readfiles:!^/var/log/private/(.*\.log)?$`},
-			dir:   "/var/log/private", want: true},
+			perms: []string{`readfiles:^/var/log/.*\.log$`, `readfiles:!^/var/log/dtail-test-private/(.*\.log)?$`},
+			dir:   "/var/log/dtail-test-private", want: true},
 		{name: "deny of all an allow rule covers beneath, by a subdirectory, is not seen",
 			perms: []string{"readfiles:^/srv/app/[^/]+/logs/", "readfiles:!^/srv/app/secret/(logs/.*)?$"},
 			dir:   "/srv/app/secret", want: true},
@@ -201,7 +204,7 @@ func TestMayReadBeneathAgreesWithFileChecks(t *testing.T) {
 	rules := [][]string{
 		{"readfiles:^/var/log/app/.*\\.log$"},
 		{"readfiles:^/var/log/", "readfiles:!^/var/log/secret/"},
-		{"readfiles:\\.log$", "readfiles:!^/root/"},
+		{"readfiles:\\.log$", "readfiles:!^/var/log/dtail-test-root/"},
 		{"readfiles:^/srv/(a|bb)/[0-9]+/x$"},
 		// Deny rules that match a directory path only at its end ("$") but
 		// not everything beneath it: the directory holds readable files.
@@ -216,12 +219,14 @@ func TestMayReadBeneathAgreesWithFileChecks(t *testing.T) {
 		{"readfiles:^/", `readfiles:!^/var/log/app/(x|x/x|\.x)?$`},
 		{"readfiles:^/", `readfiles:!^/home/u/([^y].*|y|y/[^y].*)?$`},
 		{"readfiles:^/", `readfiles:!^/var/log/secret/.+$`},
-		{`readfiles:^/var/log/.*\.log$`, `readfiles:!^/var/log/private/(.*\.log)?$`},
+		{`readfiles:^/var/log/.*\.log$`, `readfiles:!^/var/log/dtail-test-private/(.*\.log)?$`},
 		{`readfiles:^/var/\b\Blog/`, `readfiles:^/srv/\ba`, `readfiles:(?m)^/etc/passwd$`},
 		// Unanchored allow rules matching at the end of the path only.
 		{"readfiles:$"},
 		{"readfiles:(?m)$"},
-		{`readfiles:\b$`, "readfiles:!^/root/"},
+		// Avoid /root: on Jenkins linuxacl hosts it exists and is unreadable
+		// to the build user, so MayReadBeneath fails the OS check first.
+		{`readfiles:\b$`, "readfiles:!^/var/log/dtail-test-root/"},
 		{`readfiles:^/d/s/(?m).+|$`},
 		{`readfiles:\B(?m)$`},
 		{`readfiles:\Bog/`},
@@ -230,10 +235,10 @@ func TestMayReadBeneathAgreesWithFileChecks(t *testing.T) {
 	}
 	files := []string{
 		"/var/log/app/a.log", "/var/log/app/sub/b.log", "/var/log/app/a.txt", "/var/log/secret/s.log",
-		"/var/log/other.log", "/root/r.log", "/etc/passwd", "/srv/a/12/x", "/srv/bb/3/x", "/srv/c/1/x",
+		"/var/log/other.log", "/var/log/dtail-test-root/r.log", "/etc/passwd", "/srv/a/12/x", "/srv/bb/3/x", "/srv/c/1/x",
 		"/home/u", "/home/u/f", "/home/u/d/f", "/home/u/y/y/y/y.y", "/home/u/y/z", "/home/u/a/b/c/d/e.log",
 		"/var/log/app/x", "/var/log/app/x/x", "/var/log/app/.x", "/var/log/app/a/b/c/d.log",
-		"/var/log/private/a.log", "/var/log/private/a.txt", "/var/log/secret/a/b/c/d/e",
+		"/var/log/dtail-test-private/a.log", "/var/log/dtail-test-private/a.txt", "/var/log/secret/a/b/c/d/e",
 		"/var/log/-", "/var/log/-/-", "/var/log/app/-/--", "/srv/a/-", "/d/x/y-",
 	}
 	for _, perms := range rules {
