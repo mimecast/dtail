@@ -13,7 +13,7 @@ const (
 	// Name of DTail.
 	Name string = "DTail"
 	// Version of DTail.
-	Version string = "4.3.2"
+	Version string = "4.3.4"
 	// Additional information for DTail
 	Additional string = "Have a lot of fun!"
 )

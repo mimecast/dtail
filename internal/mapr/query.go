@@ -83,7 +83,7 @@ func NewQuery(queryStr string) (*Query, error) {
 	return &q, q.parse(tokens)
 }
 
-// HasOutfile returns true if query result will be written to a CVS output file.
+// HasOutfile returns true if query result will be written to a CSV output file.
 func (q *Query) HasOutfile() bool {
 	return q.Outfile != nil
 }
