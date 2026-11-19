@@ -380,6 +380,66 @@ func assertFileChange(t *testing.T, done <-chan error, want string) {
 	}
 }
 
+// restartRecordingProcessor is a line.SourceRestarter that reports every
+// line and every SourceRestarted call on one channel, in call order.
+type restartRecordingProcessor struct {
+	events chan string
+}
+
+func (p *restartRecordingProcessor) ProcessLine(content *bytes.Buffer, _ uint64, _ string) error {
+	event := "line " + content.String()
+	pool.RecycleBytesBuffer(content)
+	p.events <- event
+	return nil
+}
+
+func (p *restartRecordingProcessor) SourceRestarted() { p.events <- "restart" }
+func (*restartRecordingProcessor) Flush() error       { return nil }
+func (*restartRecordingProcessor) Close() error       { return nil }
+
+// TestTailFileCopytruncateRestartsSource pins the line.SourceRestarter
+// contract of the follow reader: an in-place truncation is reported once,
+// after the old content's last line and before the new content's first line,
+// and ending the read does not report one.
+func TestTailFileCopytruncateRestartsSource(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "restart.log")
+	writeTestPath(t, path, strings.Repeat("historical-data", 16)+"\n")
+	tail := newFollowReadFile(path, "restart.log", nil, defaultMaxLineLength, testLogger)
+	_, fd, decompressor, err := tail.makeReader(context.Background())
+	if err != nil {
+		t.Fatalf("open restart tail: %v", err)
+	}
+	if decompressor != nil {
+		t.Fatal("plain restart tail unexpectedly returned a decompressor")
+	}
+
+	cycleComplete := make(chan struct{}, 1)
+	observedReader := &readCycleObserver{reader: fd, cycleComplete: cycleComplete}
+	processor := &restartRecordingProcessor{events: make(chan string, 8)}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- tail.tailWithProcessorOptimized(ctx, fd, bufio.NewReader(observedReader), nil,
+			lcontext.LContext{}, processor, regex.NewNoop())
+	}()
+
+	appendTestPath(t, path, "old-1\nold-2\n")
+	assertTailLine(t, processor.events, "line old-1")
+	assertTailLine(t, processor.events, "line old-2")
+	select {
+	case <-cycleComplete:
+	case <-time.After(2 * time.Second):
+		t.Fatal("tail did not finish processing the old content")
+	}
+
+	writeTestPath(t, path, "new-1\n")
+	assertTailLine(t, processor.events, "restart")
+	assertTailLine(t, processor.events, "line new-1")
+
+	stopObservedTail(t, cancel, done, fd)
+	assertNoTailLine(t, processor.events)
+}
+
 func runCopytruncateContextBoundaryTest(t *testing.T, localContext lcontext.LContext,
 	oldData, oldOutput, replacement, firstNewOutput string) {
 	t.Helper()

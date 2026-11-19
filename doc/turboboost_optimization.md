@@ -103,7 +103,9 @@ The channel-less path is always on — there is no enable/disable switch. The
 former `DTAIL_TURBOBOOST_DISABLE` environment variable and the
 `Server.TurboBoostDisable` config field have been removed;
 `DTAIL_TURBOBOOST_DISABLE` is now inert and an old config still carrying a
-`TurboBoostDisable` key is silently ignored.
+`TurboBoostDisable` key is silently ignored. The example schema
+`examples/dtail.schema.json` does not list the removed `Turbo*` keys, so
+schema validation flags them as stale, while dtail itself still ignores them.
 
 The path provides:
 - Channel-less processing for read operations

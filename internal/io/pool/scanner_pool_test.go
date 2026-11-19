@@ -1,6 +1,9 @@
 package pool
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func TestLargeBufferPoolsPreserveContentsOnPut(t *testing.T) {
 	tests := []struct {
@@ -22,12 +25,21 @@ func TestLargeBufferPoolsPreserveContentsOnPut(t *testing.T) {
 	}
 }
 
-func TestSmallBufferPoolClearsContentsOnPut(t *testing.T) {
+func TestSmallBufferPoolRestoresLengthWithoutClearingContents(t *testing.T) {
 	buffer := []byte{1, 2, 3, 4}
+	buffer = buffer[:0]
 	PutSmallBuffer(&buffer)
-	for i, value := range buffer {
-		if value != 0 {
-			t.Fatalf("buffer[%d] = %d, want 0", i, value)
-		}
+
+	if got, want := len(buffer), cap(buffer); got != want {
+		t.Fatalf("buffer length = %d, want restored capacity %d", got, want)
+	}
+	if got, want := buffer, []byte{1, 2, 3, 4}; !bytes.Equal(got, want) {
+		t.Fatalf("PutSmallBuffer changed contents: %v, want %v", got, want)
+	}
+}
+
+func TestPrepareSmallBufferRejectsNilPointer(t *testing.T) {
+	if prepareSmallBuffer(nil) {
+		t.Fatal("prepareSmallBuffer accepted a nil pointer")
 	}
 }

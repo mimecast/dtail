@@ -3,7 +3,6 @@ package loggers
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -33,6 +32,7 @@ type stdout struct {
 var _ Logger = (*stdout)(nil)
 var _ Starter = (*stdout)(nil)
 var _ Pauser = (*stdout)(nil)
+var _ RawBytesWriter = (*stdout)(nil)
 
 func newStdout() *stdout {
 	return newStdoutWriter(os.Stdout)
@@ -73,23 +73,45 @@ func (s *stdout) Start(ctx context.Context, wg *sync.WaitGroup) {
 	}()
 }
 
-func (s *stdout) Log(now time.Time, message string) {
+func (s *stdout) Log(message string) {
 	s.log(message, true)
 }
 
-func (s *stdout) LogWithColors(now time.Time, message, coloredMessage string) {
+func (s *stdout) LogWithColors(message, coloredMessage string) {
 	s.log(coloredMessage, true)
 }
 
-func (s *stdout) Raw(now time.Time, message string) {
+func (s *stdout) Raw(message string) {
 	s.log(message, false)
 }
 
-func (s *stdout) RawWithColors(now time.Time, message, coloredMessage string) {
+func (s *stdout) RawWithColors(message, coloredMessage string) {
 	s.log(coloredMessage, false)
 }
 
+// RawBytes writes payload bytes verbatim without a string conversion.
+func (s *stdout) RawBytes(message []byte) {
+	s.lockUnpaused()
+	defer s.mutex.Unlock()
+	_, _ = s.writer.Write(message)
+}
+
 func (s *stdout) log(message string, nl bool) {
+	s.lockUnpaused()
+	defer s.mutex.Unlock()
+
+	// Buffered writes into the bufio.Writer batch many lines into one write
+	// syscall. Errors are intentionally ignored: a logger that cannot write to
+	// stdout has nowhere to report the failure.
+	_, _ = s.writer.WriteString(message)
+	if nl {
+		_ = s.writer.WriteByte('\n')
+	}
+}
+
+// lockUnpaused acquires the mutex once logging is not paused. The caller must
+// unlock it.
+func (s *stdout) lockUnpaused() {
 	s.mutex.Lock()
 	for s.pauseDepth > 0 {
 		// Cond.Wait releases the mutex while logging is paused. This lets
@@ -97,16 +119,6 @@ func (s *stdout) log(message string, nl bool) {
 		// interactive path that owns the terminal.
 		s.resumeCond.Wait()
 	}
-	defer s.mutex.Unlock()
-
-	// Buffered writes: fmt.Fprint(ln) into the bufio.Writer batches many lines
-	// into one write syscall. Errors are intentionally ignored — a logger that
-	// cannot write to stdout has nowhere to report the failure.
-	if nl {
-		_, _ = fmt.Fprintln(s.writer, message)
-		return
-	}
-	_, _ = fmt.Fprint(s.writer, message)
 }
 
 func (s *stdout) Pause() {

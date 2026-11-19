@@ -10,9 +10,14 @@ type CommonConfig struct {
 	SSHConnectTimeoutMs int `json:",omitempty"`
 	// Enable experimental features (mainly for dev purposes)
 	ExperimentalFeaturesEnable bool `json:",omitempty"`
-	// LogDir defines the log directory.
+	// LogDir defines the log directory. Empty selects the per-command default
+	// (DefaultClientLogDir or DefaultServerLogDir); --logDir overrides it.
+	// dtailhealth ignores this value and always uses DefaultServerLogDir.
 	LogDir string
-	// Logger defines the name of the logger implementation.
+	// Logger defines the name of the logger implementation. Empty selects the
+	// per-command default (DefaultClientLogger, DefaultServerLogger or
+	// DefaultHealthCheckLogger); --logger overrides it. dtailhealth ignores
+	// this value, so only its --logger flag replaces DefaultHealthCheckLogger.
 	Logger string
 	// LogLevel defines how much is logged.
 	LogLevel string `json:",omitempty"`
@@ -28,8 +33,6 @@ func newDefaultCommonConfig() *CommonConfig {
 		SSHPort:                    DefaultSSHPort,
 		SSHConnectTimeoutMs:        2000,
 		ExperimentalFeaturesEnable: false,
-		LogDir:                     "log",
-		Logger:                     "stdout",
 		LogLevel:                   DefaultLogLevel,
 		LogRotation:                "daily",
 		CacheDir:                   "cache",

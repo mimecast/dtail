@@ -30,13 +30,13 @@ type behaviorLogger struct {
 	supportsColor bool
 }
 
-func (l *behaviorLogger) Log(_ time.Time, message string) {
+func (l *behaviorLogger) Log(message string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.logs = append(l.logs, message)
 }
 
-func (l *behaviorLogger) LogWithColors(_ time.Time, message, colored string) {
+func (l *behaviorLogger) LogWithColors(message, colored string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.coloredLogs++
@@ -44,13 +44,13 @@ func (l *behaviorLogger) LogWithColors(_ time.Time, message, colored string) {
 	l.logs = append(l.logs, message)
 }
 
-func (l *behaviorLogger) Raw(_ time.Time, message string) {
+func (l *behaviorLogger) Raw(message string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.raws = append(l.raws, message)
 }
 
-func (l *behaviorLogger) RawWithColors(_ time.Time, message, colored string) {
+func (l *behaviorLogger) RawWithColors(message, colored string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.coloredRaws++
@@ -58,7 +58,7 @@ func (l *behaviorLogger) RawWithColors(_ time.Time, message, colored string) {
 	l.raws = append(l.raws, message)
 }
 
-func (l *behaviorLogger) RawFileOnly(_ time.Time, message string) {
+func (l *behaviorLogger) RawFileOnly(message string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.fileOnly = append(l.fileOnly, message)

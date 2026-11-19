@@ -18,7 +18,7 @@ func TestDTailHealth1(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDTailHealth1")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -103,7 +103,7 @@ func TestDTailHealth2(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDTailHealth2")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -191,7 +191,7 @@ func TestDTailHealthCheck3(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDTailHealthCheck3")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// This test only makes sense with a server
 	t.Run("ServerMode", func(t *testing.T) {
@@ -250,7 +250,7 @@ func TestDTailHealthNoPanicOnClientConstruction(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDTailHealthNoPanicOnClientConstruction")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	ctx := WithTestLogger(context.Background(), testLogger)
 
 	cases := []struct {

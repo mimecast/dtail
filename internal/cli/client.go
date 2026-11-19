@@ -17,7 +17,6 @@ import (
 	"github.com/mimecast/dtail/internal/profiling"
 	"github.com/mimecast/dtail/internal/source"
 	"github.com/mimecast/dtail/internal/user"
-	"github.com/mimecast/dtail/internal/version"
 )
 
 // ClientHook runs at a defined point in the common client lifecycle. A hook
@@ -95,8 +94,10 @@ func BindCommonClientFlags(fs *flag.FlagSet, args *config.Args) *ClientRunner {
 	fs.StringVar(&args.ControlTTYPath, "control-tty", "/dev/tty", "TTY device for interactive query control")
 	fs.StringVar(&args.Discovery, "discovery", "", "Server discovery method")
 	fs.StringVar(&args.HostnameOverride, "hostname-override", "", "Override the hostname used in logs and output")
-	fs.StringVar(&args.LogDir, "logDir", "~/log", "Log dir")
-	fs.StringVar(&args.Logger, "logger", config.DefaultClientLogger, "Logger name")
+	fs.StringVar(&args.LogDir, "logDir", "",
+		"Log dir (default: Common.LogDir from the config file, else "+config.DefaultClientLogDir+")")
+	fs.StringVar(&args.Logger, "logger", "",
+		"Logger name (default: Common.Logger from the config file, else "+config.DefaultClientLogger+")")
 	fs.StringVar(&args.LogLevel, "logLevel", config.DefaultLogLevel, "Log level")
 	BindAuthKeyFlags(fs, &runner.legacyAuthKeyPath, args)
 	fs.StringVar(&args.KnownHostsPath, "known-hosts-path", "", "OpenSSH known_hosts file path")
@@ -149,7 +150,7 @@ func (r *ClientRunner) RunClient(name string, build ClientBuilder) int {
 		stderr:          os.Stderr,
 		setup:           config.SetupRuntime,
 		currentUserName: user.CurrentName,
-		printVersion:    version.Print,
+		printVersion:    PrintVersion,
 		newBrushRuntime: func(ctx context.Context, flags profiling.Flags, name string,
 			cfg config.RuntimeConfig, colorizer *brush.Brush) (clientRuntime, error) {
 			return NewClientRuntime(ctx, flags, name, cfg, colorizer)
@@ -181,7 +182,7 @@ func (r *ClientRunner) RunClientWithBrush(name string, build BrushClientBuilder)
 		stderr:          os.Stderr,
 		setup:           config.SetupRuntime,
 		currentUserName: user.CurrentName,
-		printVersion:    version.Print,
+		printVersion:    PrintVersion,
 		newBrushRuntime: func(ctx context.Context, flags profiling.Flags, name string,
 			cfg config.RuntimeConfig, colorizer *brush.Brush) (clientRuntime, error) {
 			return NewClientRuntime(ctx, flags, name, cfg, colorizer)
@@ -200,11 +201,33 @@ func (r *ClientRunner) RunClientWithBrush(name string, build BrushClientBuilder)
 
 func (r *ClientRunner) runClientWithBrush(name string,
 	build BrushClientBuilder, deps clientRunDependencies) int {
+	runtimeCfg, status, proceed := r.prepareClient(name, deps)
+	if !proceed {
+		return status
+	}
+	parentCtx, cancel, status, proceed := r.newClientContext(name, deps)
+	if !proceed {
+		return status
+	}
+	defer cancel()
+
+	colorizer := r.newClientBrush(runtimeCfg)
+	runtime, err := r.createClientRuntime(parentCtx, name, runtimeCfg, colorizer, deps)
+	if err != nil {
+		_, _ = fmt.Fprintf(deps.stderr, "unable to initialize %s runtime: %v\n", name, err)
+		return 1
+	}
+	defer runtime.Stop()
+
+	return r.runConfiguredClient(name, build, deps, runtimeCfg, colorizer, runtime)
+}
+
+func (r *ClientRunner) prepareClient(name string, deps clientRunDependencies) (config.RuntimeConfig, int, bool) {
 	if err := r.fs.Parse(deps.argv); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return 0
+			return config.RuntimeConfig{}, 0, false
 		}
-		return 2
+		return config.RuntimeConfig{}, 2, false
 	}
 	if warning := ApplyAuthKeyPathCompatibility(r.args, r.legacyAuthKeyPath,
 		FlagWasSet(r.fs, "auth-key-path")); warning != "" {
@@ -216,47 +239,52 @@ func (r *ClientRunner) runClientWithBrush(name string,
 	runtimeCfg, err := deps.setup(source.Client, r.args, r.fs.Args())
 	if err != nil {
 		_, _ = fmt.Fprintf(deps.stderr, "unable to configure %s: %v\n", name, err)
-		return 1
+		return config.RuntimeConfig{}, 1, false
 	}
 	if r.displayVersion {
 		colorsEnabled := runtimeCfg.Client != nil && runtimeCfg.Client.TermColorsEnable
 		deps.printVersion(colorsEnabled)
-		return 0
+		return config.RuntimeConfig{}, 0, false
 	}
 	if r.args.UserName == "" {
 		userName, userErr := deps.currentUserName()
 		if userErr != nil {
 			_, _ = fmt.Fprintf(deps.stderr, "unable to determine %s user: %v\n", name, userErr)
-			return 1
+			return config.RuntimeConfig{}, 1, false
 		}
 		r.args.UserName = userName
 	}
 	if r.beforeRuntime != nil {
 		if handled, status := r.beforeRuntime(r.args); handled {
-			return status
+			return config.RuntimeConfig{}, status, false
 		}
 	}
+	return runtimeCfg, 0, true
+}
 
-	var parentCtx context.Context
-	var cancel context.CancelFunc
+func (r *ClientRunner) newClientContext(name string,
+	deps clientRunDependencies) (context.Context, context.CancelFunc, int, bool) {
 	if r.contextFactory == nil {
-		parentCtx, cancel = context.WithCancel(context.Background())
-	} else {
-		parentCtx, cancel = r.contextFactory(*r.args)
-		if parentCtx == nil {
-			if cancel != nil {
-				cancel()
-			}
-			_, _ = fmt.Fprintf(deps.stderr, "unable to initialize %s runtime: context factory returned nil context\n", name)
-			return 1
-		}
-		if cancel == nil {
-			_, _ = fmt.Fprintf(deps.stderr, "unable to initialize %s runtime: context factory returned nil cancel function\n", name)
-			return 1
-		}
+		ctx, cancel := context.WithCancel(context.Background())
+		return ctx, cancel, 0, true
 	}
-	defer cancel()
 
+	ctx, cancel := r.contextFactory(*r.args)
+	if ctx == nil {
+		if cancel != nil {
+			cancel()
+		}
+		_, _ = fmt.Fprintf(deps.stderr, "unable to initialize %s runtime: context factory returned nil context\n", name)
+		return nil, nil, 1, false
+	}
+	if cancel == nil {
+		_, _ = fmt.Fprintf(deps.stderr, "unable to initialize %s runtime: context factory returned nil cancel function\n", name)
+		return nil, nil, 1, false
+	}
+	return ctx, cancel, 0, true
+}
+
+func (r *ClientRunner) newClientBrush(runtimeCfg config.RuntimeConfig) *brush.Brush {
 	theme := config.DefaultTermColors()
 	if runtimeCfg.Client != nil {
 		theme = runtimeCfg.Client.TermColors
@@ -265,20 +293,25 @@ func (r *ClientRunner) runClientWithBrush(name string,
 	if brushFactory == nil {
 		brushFactory = brush.New
 	}
-	colorizer := brushFactory(theme)
+	return brushFactory(theme)
+}
 
+func (r *ClientRunner) createClientRuntime(parentCtx context.Context, name string,
+	runtimeCfg config.RuntimeConfig, colorizer *brush.Brush,
+	deps clientRunDependencies) (clientRuntime, error) {
 	var runtime clientRuntime
+	var err error
 	if deps.newBrushRuntime != nil {
 		runtime, err = deps.newBrushRuntime(parentCtx, r.profile, name, runtimeCfg, colorizer)
 	} else {
 		runtime, err = deps.newRuntime(parentCtx, r.profile, name)
 	}
-	if err != nil {
-		_, _ = fmt.Fprintf(deps.stderr, "unable to initialize %s runtime: %v\n", name, err)
-		return 1
-	}
-	defer runtime.Stop()
+	return runtime, err
+}
 
+func (r *ClientRunner) runConfiguredClient(name string, build BrushClientBuilder,
+	deps clientRunDependencies, runtimeCfg config.RuntimeConfig, colorizer *brush.Brush,
+	runtime clientRuntime) int {
 	if r.afterRuntime != nil {
 		if handled, status := r.afterRuntime(r.args); handled {
 			return status

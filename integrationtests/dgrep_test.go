@@ -21,7 +21,7 @@ func TestDGrep1(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrep1")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -113,7 +113,7 @@ func TestDGrep1Colors(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrep1Colors")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -240,7 +240,7 @@ func TestDGrep2(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrep2")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -332,7 +332,7 @@ func TestDGrepContext1(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrepContext1")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -428,7 +428,7 @@ func TestDGrepContext2(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrepContext2")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -526,7 +526,7 @@ func TestDGrepPipeToStdin(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrepPipeToStdin")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Only test in serverless mode (stdin piping doesn't work with server mode)
 	t.Run("Serverless", func(t *testing.T) {
@@ -559,12 +559,12 @@ func testDGrepStdinServerless(t *testing.T, logger *TestLogger) {
 		t.Error(err)
 		return
 	}
-	defer fd.Close()
+	defer closeIgnoringError(fd)
 
 	// Read from stdout channel
 	go func() {
 		for line := range stdoutCh {
-			fmt.Fprintln(fd, line)
+			_, _ = fmt.Fprintln(fd, line)
 		}
 	}()
 
@@ -616,7 +616,7 @@ func TestDGrepMaxCountNoEOFError(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrepMaxCountNoEOFError")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Many lines match "INFO"; -max 3 forces an early stop well before EOF, which
 	// is what makes processWithContext return the io.EOF sentinel.
@@ -705,7 +705,7 @@ func writeTurboFileServerConfig(t *testing.T, readableFile string) string {
 	if err != nil {
 		t.Fatalf("create key cache dir: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(cacheDirAbs) })
+	t.Cleanup(func() { _ = os.RemoveAll(cacheDirAbs) })
 	if err := os.WriteFile(filepath.Join(cacheDirAbs, currentUsername(t)+".authorized_keys"),
 		readIntegrationPublicKey(t), 0o600); err != nil {
 		t.Fatalf("write authorized_keys cache: %v", err)

@@ -54,19 +54,19 @@ type Message struct {
 }
 
 // EncodeLine appends a complete remote log-line frame to dst. Header fields
-// must not contain FieldDelimiter; the compatibility wire format has no escape
+// must not contain the field separator; the compatibility wire format has no escape
 // sequence for delimiters in those fields.
 func EncodeLine(dst *bytes.Buffer, line Line) {
 	dst.WriteString(LineMessageID)
-	dst.WriteString(FieldDelimiter)
+	dst.WriteString(fieldDelimiter)
 	dst.WriteString(line.Hostname)
-	dst.WriteString(FieldDelimiter)
+	dst.WriteString(fieldDelimiter)
 	dst.WriteString(line.TransmittedPercent)
-	dst.WriteString(FieldDelimiter)
+	dst.WriteString(fieldDelimiter)
 	dst.WriteString(strconv.FormatUint(line.Number, 10))
-	dst.WriteString(FieldDelimiter)
+	dst.WriteString(fieldDelimiter)
 	dst.WriteString(line.SourceID)
-	dst.WriteString(FieldDelimiter)
+	dst.WriteString(fieldDelimiter)
 	dst.Write(line.Content)
 	dst.WriteByte(MessageDelimiter)
 }
@@ -74,7 +74,7 @@ func EncodeLine(dst *bytes.Buffer, line Line) {
 // DecodeLine decodes a remote log-line payload after its stream-level
 // MessageDelimiter has been removed.
 func DecodeLine(payload string) (DecodedLine, error) {
-	parts := strings.SplitN(payload, FieldDelimiter, 6)
+	parts := strings.SplitN(payload, fieldDelimiter, 6)
 	if len(parts) != 6 || parts[0] != LineMessageID {
 		return DecodedLine{}, fmt.Errorf("decode line: malformed %s frame", LineMessageID)
 	}
@@ -97,15 +97,15 @@ func DecodeLine(payload string) (DecodedLine, error) {
 }
 
 // EncodeMessage appends a complete server, aggregate, or untagged message
-// frame to dst. Hostname must not contain FieldDelimiter for tagged messages;
+// frame to dst. Hostname must not contain the field separator for tagged messages;
 // the compatibility wire format has no escape sequence for that field.
 // Untagged messages retain their payload verbatim.
 func EncodeMessage(dst *bytes.Buffer, message Message) {
 	if message.Kind != MessagePlain {
 		dst.WriteString(string(message.Kind))
-		dst.WriteString(FieldDelimiter)
+		dst.WriteString(fieldDelimiter)
 		dst.WriteString(message.Hostname)
-		dst.WriteString(FieldDelimiter)
+		dst.WriteString(fieldDelimiter)
 	}
 	dst.WriteString(message.Content)
 	dst.WriteByte(MessageDelimiter)
@@ -116,7 +116,7 @@ func EncodeMessage(dst *bytes.Buffer, message Message) {
 // existing routing. The stream-level MessageDelimiter must already have been
 // removed.
 func DecodeMessage(payload string) (Message, error) {
-	parts := strings.SplitN(payload, FieldDelimiter, 3)
+	parts := strings.SplitN(payload, fieldDelimiter, 3)
 	if len(parts) == 0 {
 		return Message{Kind: MessagePlain}, nil
 	}

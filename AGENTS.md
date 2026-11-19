@@ -241,8 +241,15 @@ Journal targets use `journal:unit.service` syntax. Permission rules should match
 
 ### Client Log Contents: Diagnostics vs Payload
 The default client logger is `fout` (stdout + a daily file at
-`<LogDir>/YYYYMMDD.log`, `LogDir` defaults to `~/log`). By default that file
-records DIAGNOSTICS ONLY — the small connection/audit lines (INFO/WARN/ERROR).
+`<LogDir>/YYYYMMDD.log`, `LogDir` defaults to `~/log`). The logger and log
+directory resolve as: explicit `--logger`/`--logDir` flag > `Common.Logger`/
+`Common.LogDir` from the config file > per-command default (clients `fout` and
+`~/log`, dserver `file` and `log`). The flags default to empty so an unset flag
+never masks the config file. dtailhealth is the exception: it has no `--cfg`
+flag and reads the user's client config, so it ignores `Common.Logger` and
+`Common.LogDir` and uses `none` and `log` unless its own `--logger` flag is
+given (it has no `--logDir` flag). By default the
+`fout` daily file records DIAGNOSTICS ONLY — the small connection/audit lines (INFO/WARN/ERROR).
 The full retrieved PAYLOAD (the bulk `dcat`/`dgrep`/`dtail` output) is NOT written
 to the file by default, so a large read no longer silently grows the daily log by
 the full payload size. Payload always still goes to STDOUT/terminal, unchanged.
@@ -264,6 +271,10 @@ the full payload size. Payload always still goes to STDOUT/terminal, unchanged.
   directly to stdout; that path never wrote payload to the file and is unaffected.
   The disk-fill footgun lives on the `fout` file path (the server-mode receive
   path), which is what this setting gates.
+- Daily file rotation uses a day name cached by the file sink and refreshed on its
+  100 ms idle-flush tick, so no clock is read per line. The file is chosen at
+  write time: around midnight a line (including a timestamped dserver diagnostic)
+  can land in the neighbouring day's file. This is intended.
 
 ### Output Path and MapReduce Operations
 DTail uses a single, channel-less read/output path for both direct output
@@ -273,11 +284,19 @@ now the one and only mode. There is no on/off toggle: the old
 `DTAIL_TURBOBOOST_DISABLE` environment variable and the `Server.TurboBoostDisable`
 config field have been removed. `DTAIL_TURBOBOOST_DISABLE` is now inert (a no-op),
 and a leftover `TurboBoostDisable` key in an old config file is silently ignored
-(config decoding does not reject unknown keys).
+(config decoding does not reject unknown keys). The example schema
+`examples/dtail.schema.json` does not list the removed `Turbo*` keys, so schema
+validation flags them as stale, while the runtime still ignores them.
 
 **Technical Details:**
 - For cat/grep/tail: the read path writes directly to the output/connection
   without channel hand-offs.
+- Without local context (before/after/max), a matching file-backed
+  cat/grep/tail line is handed to `DirectLineProcessor` as a borrowed slice of
+  the reader's buffer through the optional `line.RawProcessor` interface, so no
+  pooled per-line buffer is used; the slice is only valid during the call and
+  must not be retained. Context greps, journal (`journal:`) reads and the
+  MapReduce processor keep the owned-buffer `ProcessLine` path.
 - For MapReduce in server mode: lines are processed directly without channels.
 - For MapReduce in serverless/client mode: the server-side direct processing does
   not apply — client-side aggregation runs on the client.
@@ -299,8 +318,16 @@ clamped. Removed `Turbo*`, output-delay, EOF-wait-sizing, flush-poll, and
 shutdown-wait keys in older config files are ignored by the lenient decoder.
 
 Authenticated connections use the rolling `IdleSessionTimeoutS` timeout (default
-900 seconds). Successful network reads or writes refresh the deadline, so active
-follow sessions stay connected while clients with no SSH activity are closed.
+900 seconds). Successful network reads or writes mark the connection active, and a
+per-connection ticker (timeout/4, clamped to 1-30 seconds) pushes the deadline to
+now + timeout + two intervals when activity was seen, so the hot I/O path does no
+clock reads or `SetDeadline` calls. Active follow sessions stay connected: any idle
+gap up to the timeout is still refreshed in time even when the refresh tick runs
+less than one interval late. Clients with no SSH activity are closed between the
+timeout plus two intervals and the timeout plus three intervals after their last
+activity (about 960-990 seconds with the defaults; late ticks can only extend
+this). The interval never drops below one second, so a timeout below four seconds
+closes two to three seconds past it instead of proportionally.
 Per-session payload backing memory waiting on a slow client is capped by
 `OutputBufferMaxBytes` (default 2 MiB); producers apply backpressure when the cap is reached. The
 configured cap must leave room for one maximum-length formatted line.

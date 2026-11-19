@@ -71,6 +71,26 @@ uid=1001(dserver) 1001=670(dserver) groups=1001(dserver)
     sudo tee /etc/dserver/dtail.json
 ```
 
+### Upgrade note: ``Common.Logger`` and ``Common.LogDir`` now take effect
+
+Older releases silently ignored ``Common.Logger`` (and the client commands' ``Common.LogDir``) from the config file, because every command's ``--logger`` and ``--logDir`` flag default always replaced it. These config values now apply. The precedence is: explicit ``--logger``/``--logDir`` flag > ``Common.Logger``/``Common.LogDir`` from the config file > the per-command default (``file`` and ``log`` for dserver, ``fout`` and ``~/log`` for the client commands). dtailhealth now ignores both config values: it always uses the ``none`` logger unless given ``--logger``, and always the ``log`` directory. It previously honoured ``Common.LogDir`` when run with ``--logger file`` or ``--logger fout``; such log files now go to ``./log``.
+
+Older copies of the example config contained ``"Logger": "Fout"``. If your installed ``/etc/dserver/dtail.json`` still has that line, dserver now tees its log to stdout as well as to the log file, so under systemd every line also lands in the journal. To keep the previous behaviour (log file only), set ``"Logger": "File"`` or remove the ``Logger`` key before restarting dserver after the upgrade:
+
+```console
+% grep -n '"Logger"' /etc/dserver/dtail.json
+```
+
+### Upgrade note: ``Client.TermColors`` names now take effect
+
+Older releases copied every ``Client.TermColors`` value verbatim into the output, so a colour name such as ``"Red"`` or ``"Dim"`` was printed as literal text instead of a colour; only raw escape sequences such as ``"\u001b[31m"`` worked. Colour and attribute names (matched case-insensitively) are now converted to terminal escape codes, so a configured palette now changes the client's colours.
+
+Existing config files keep loading, dserver included (it reads the same file but never renders colours):
+
+* The prefixed spellings used by the example configs of v4.0.0 through v4.3.4 (``samples/dtail.json.sample``, later ``examples/dtail.json.example``) (``"FgBlack"``, ``"BgCyan"``, ``"AttrDim"``, ``"AttrNone"`` ...) are still accepted and mean the colour or attribute they name. They are deprecated, and ``examples/dtail.schema.json`` reports them; drop the ``Fg``/``Bg``/``Attr`` prefix to silence the schema.
+* Raw SGR escape sequences (``ESC[...m``, including several concatenated ones and ``:``-separated parameters) are used unchanged, as before, and ``""`` still means no escape code. Other raw strings that older releases passed through verbatim (for example ``"\u001b[K"`` or an escape code followed by text) are now treated like any other invalid value, see below.
+* Any other value (for example a typo such as ``"Bleu"``) no longer ends up in the output. dtail uses that field's default colour instead and prints a warning naming the config file and the value on stderr, for example ``WARN: config file /etc/dserver/dtail.json: ignoring invalid background color "Bleu", using the default instead: ...``. A bad colour value is never a fatal config error.
+
 ### SSH listen address (``SSHBindAddress``)
 
 The example config sets ``Server.SSHBindAddress`` to ``0.0.0.0``, so dserver listens on **every** local IPv4 address, including your LAN (e.g. ``192.168.1.x`` on eth0) and any other interface (loopback, WireGuard, etc.). Clients reach it as ``<that-host-LAN-IP>:2222``; you do **not** need to change this for normal LAN access.

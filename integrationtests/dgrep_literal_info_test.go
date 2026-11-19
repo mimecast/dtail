@@ -21,7 +21,7 @@ func TestDGrepLiteralModeInfo(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrepLiteralModeInfo")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Create test data
 	testData := `ERROR test line 1
@@ -34,7 +34,7 @@ ERROR test line 5
 	if err := os.WriteFile(testFile, []byte(testData), 0644); err != nil {
 		t.Fatal("Failed to create test file:", err)
 	}
-	defer os.Remove(testFile)
+	defer removeIgnoringError(testFile)
 
 	// Test patterns - both literal and regex
 	tests := []struct {
@@ -124,7 +124,7 @@ ERROR test line 5
 
 			// Run dgrep
 			outFile := fmt.Sprintf("dgrep_info_%s.stdout.tmp", test.name)
-			defer os.Remove(outFile)
+			defer removeIgnoringError(outFile)
 
 			err = runCommandUntilValid(ctx, t, 5, 200*time.Millisecond, outFile, "../dgrep", func() error {
 				content, readErr := os.ReadFile(outFile)

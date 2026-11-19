@@ -13,30 +13,21 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
-// Args is a helper struct to summarize common client arguments.
-type Args struct {
-	lcontext.LContext
-	Arguments             []string
+// LoggingArgs configures process diagnostics and client payload output.
+type LoggingArgs struct {
+	LogDir     string
+	Logger     string
+	LogLevel   string
+	LogPayload bool
+	NoColor    bool
+}
+
+// SSHArgs configures SSH listeners, authentication, and host verification.
+type SSHArgs struct {
 	AuthorizedKeysPath    string
-	ConfigFile            string
-	ConnectionsPerCPU     int
-	ControlTTYPath        string
-	Discovery             string
-	HostnameOverride      string
 	HostKeyPath           string
-	InteractiveQuery      bool
 	KnownHostsPath        string
-	LogDir                string
-	Logger                string
-	LogLevel              string
-	LogPayload            bool
-	Mode                  omode.Mode
 	NoAuthKey             bool
-	NoColor               bool
-	QueryStr              string
-	Quiet                 bool
-	RegexInvert           bool
-	RegexStr              string
 	SSHAgentKeyIndex      int
 	SSHAuthMethods        []gossh.AuthMethod
 	SSHBindAddress        string
@@ -46,13 +37,33 @@ type Args struct {
 	// SSHPrivateKeyFallbackPaths contains additional bootstrap keys selected
 	// during configuration initialization. It is not exposed as a CLI flag.
 	SSHPrivateKeyFallbackPaths []string
-	Serverless                 bool
-	ServersStr                 string
-	Plain                      bool
-	Timeout                    int
 	TrustAllHosts              bool
 	UserName                   string
-	What                       string
+}
+
+// Args combines command-line concerns shared by the DTail processes.
+// Embedded groups preserve direct field selection for existing consumers.
+type Args struct {
+	lcontext.LContext
+	LoggingArgs
+	SSHArgs
+	Arguments         []string
+	ConfigFile        string
+	ConnectionsPerCPU int
+	ControlTTYPath    string
+	Discovery         string
+	HostnameOverride  string
+	InteractiveQuery  bool
+	Mode              omode.Mode
+	Plain             bool
+	QueryStr          string
+	Quiet             bool
+	RegexInvert       bool
+	RegexStr          string
+	Serverless        bool
+	ServersStr        string
+	Timeout           int
+	What              string
 }
 
 func (a *Args) String() string {

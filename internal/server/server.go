@@ -265,16 +265,18 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	}
 
 	// Handshake succeeded. Replace the fixed handshake deadline with a rolling
-	// inactivity deadline that successful reads and writes refresh.
+	// inactivity deadline that a per-connection ticker refreshes after activity.
 	idleTimeout := time.Duration(s.cfg.Server.IdleSessionTimeoutS) * time.Second
 	if idleTimeout <= 0 {
 		idleTimeout = time.Duration(config.DefaultIdleSessionTimeoutS) * time.Second
 	}
-	if deadlineErr := activeConn.enable(idleTimeout); deadlineErr != nil {
+	if deadlineErr := activeConn.enable(connCtx, idleTimeout); deadlineErr != nil {
 		s.log().Error("Failed to set SSH idle session deadline", deadlineErr)
 		_ = sshConn.Close()
 		return
 	}
+	// Stop the idle deadline refresher and wait for it before returning.
+	defer func() { _ = activeConn.Close() }()
 
 	// Atomically convert the pre-auth reservation into a full authenticated
 	// connection. This ensures no instant where neither counter holds the slot,

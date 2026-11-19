@@ -141,112 +141,151 @@ func (q *Query) parse(tokens []token) error {
 	return nil
 }
 
-// One can argue that this function is too large (as reported by automatic tools such
-// as SonarQube). However, refactoring this method into several smaller ones would make
-// the code as a matter of fact less readable. Also, I want to have at least one issue
-// reported in SonarQube, just to make sure that SonarQube still works ;-)
 func (q *Query) parseTokens(tokens []token) ([]token, error) {
-	var err error
-	var found []token
-
 	for len(tokens) > 0 {
+		var err error
 		switch strings.ToLower(tokens[0].str) {
 		case "select":
-			tokens, found = tokensConsume(tokens[1:])
-			q.Select, err = makeSelectConditions(found)
-			if err != nil {
-				return tokens, err
-			}
+			tokens, err = q.parseSelectClause(tokens[1:])
 		case "from":
-			tokens, found = tokensConsume(tokens[1:])
-			if len(found) == 0 {
-				return tokens, errors.New(invalidQuery + "expected table name after 'from'")
-			}
-			if len(found) > 1 {
-				return tokens, errors.New(invalidQuery + "expected only one table name after 'from'")
-			}
-			q.Table = strings.ToUpper(found[0].str)
+			tokens, err = q.parseFromClause(tokens[1:])
 		case "where":
-			tokens, found = tokensConsume(tokens[1:])
-			if q.Where, err = makeWhereConditions(found); err != nil {
-				return tokens, err
-			}
+			tokens, err = q.parseWhereClause(tokens[1:])
 		case "set":
-			tokens, found = tokensConsume(tokens[1:])
-			if q.Set, err = makeSetConditions(found); err != nil {
-				return tokens, err
-			}
+			tokens, err = q.parseSetClause(tokens[1:])
 		case "group":
-			tokens = tokensConsumeOptional(tokens[1:], "by")
-			if len(tokens) < 1 {
-				return tokens, errors.New(invalidQuery + unexpectedEnd)
-			}
-			tokens, q.GroupBy = tokensConsumeStr(tokens)
-			q.GroupKey = strings.Join(q.GroupBy, ",")
+			tokens, err = q.parseGroupClause(tokens[1:])
 		case "rorder":
-			tokens = tokensConsumeOptional(tokens[1:], "by")
-			if len(tokens) < 1 {
-				return tokens, errors.New(invalidQuery + unexpectedEnd)
-			}
-			tokens, found = tokensConsume(tokens)
-			if len(found) == 0 {
-				return tokens, errors.New(invalidQuery + unexpectedEnd)
-			}
-			q.OrderBy = found[0].str
-			q.ReverseOrder = true
+			tokens, err = q.parseOrderClause(tokens[1:], true)
 		case "order":
-			tokens = tokensConsumeOptional(tokens[1:], "by")
-			if len(tokens) < 1 {
-				return tokens, errors.New(invalidQuery + unexpectedEnd)
-			}
-			tokens, found = tokensConsume(tokens)
-			if len(found) == 0 {
-				return tokens, errors.New(invalidQuery + unexpectedEnd)
-			}
-			q.OrderBy = found[0].str
+			tokens, err = q.parseOrderClause(tokens[1:], false)
 		case "interval":
-			tokens, found = tokensConsume(tokens[1:])
-			if len(found) > 0 {
-				i, err := strconv.Atoi(found[0].str)
-				if err != nil {
-					return tokens, errors.New(invalidQuery + err.Error())
-				}
-				q.Interval = time.Second * time.Duration(i)
-			}
+			tokens, err = q.parseIntervalClause(tokens[1:])
 		case "limit":
-			tokens, found = tokensConsume(tokens[1:])
-			if len(found) == 0 {
-				return tokens, errors.New(invalidQuery + unexpectedEnd)
-			}
-			i, err := strconv.Atoi(found[0].str)
-			if err != nil {
-				return tokens, errors.New(invalidQuery + err.Error())
-			}
-			q.Limit = i
+			tokens, err = q.parseLimitClause(tokens[1:])
 		case "outfile":
-			tokens, found = tokensConsume(tokens[1:])
-			switch len(found) {
-			case 1:
-				q.Outfile = &Outfile{FilePath: found[0].str, AppendMode: false}
-			case 2:
-				if found[0].str == "append" {
-					q.Outfile = &Outfile{FilePath: found[1].str, AppendMode: true}
-				} else {
-					return tokens, errors.New(invalidQuery + invalidQuery)
-				}
-			default:
-				return tokens, errors.New(invalidQuery + invalidQuery)
-			}
+			tokens, err = q.parseOutfileClause(tokens[1:])
 		case "logformat":
-			tokens, found = tokensConsume(tokens[1:])
-			if len(found) == 0 {
-				return tokens, errors.New(invalidQuery + unexpectedEnd)
-			}
-			q.LogFormat = found[0].str
+			tokens, err = q.parseLogFormatClause(tokens[1:])
 		default:
 			return tokens, errors.New(invalidQuery + "unexpected keyword " + tokens[0].str)
+		}
+		if err != nil {
+			return tokens, err
 		}
 	}
 
 	return tokens, nil
+}
+
+func (q *Query) parseSelectClause(tokens []token) ([]token, error) {
+	remaining, found := tokensConsume(tokens)
+	var err error
+	q.Select, err = makeSelectConditions(found)
+	return remaining, err
+}
+
+func (q *Query) parseFromClause(tokens []token) ([]token, error) {
+	remaining, found := tokensConsume(tokens)
+	switch len(found) {
+	case 0:
+		return remaining, errors.New(invalidQuery + "expected table name after 'from'")
+	case 1:
+		q.Table = strings.ToUpper(found[0].str)
+		return remaining, nil
+	default:
+		return remaining, errors.New(invalidQuery + "expected only one table name after 'from'")
+	}
+}
+
+func (q *Query) parseWhereClause(tokens []token) ([]token, error) {
+	remaining, found := tokensConsume(tokens)
+	var err error
+	q.Where, err = makeWhereConditions(found)
+	return remaining, err
+}
+
+func (q *Query) parseSetClause(tokens []token) ([]token, error) {
+	remaining, found := tokensConsume(tokens)
+	var err error
+	q.Set, err = makeSetConditions(found)
+	return remaining, err
+}
+
+func (q *Query) parseGroupClause(tokens []token) ([]token, error) {
+	tokens = tokensConsumeOptional(tokens, "by")
+	if len(tokens) < 1 {
+		return tokens, errors.New(invalidQuery + unexpectedEnd)
+	}
+	remaining, fields := tokensConsumeStr(tokens)
+	q.GroupBy = fields
+	q.GroupKey = strings.Join(fields, ",")
+	return remaining, nil
+}
+
+func (q *Query) parseOrderClause(tokens []token, reverse bool) ([]token, error) {
+	tokens = tokensConsumeOptional(tokens, "by")
+	if len(tokens) < 1 {
+		return tokens, errors.New(invalidQuery + unexpectedEnd)
+	}
+	remaining, found := tokensConsume(tokens)
+	if len(found) == 0 {
+		return remaining, errors.New(invalidQuery + unexpectedEnd)
+	}
+	q.OrderBy = found[0].str
+	if reverse {
+		q.ReverseOrder = true
+	}
+	return remaining, nil
+}
+
+func (q *Query) parseIntervalClause(tokens []token) ([]token, error) {
+	remaining, found := tokensConsume(tokens)
+	if len(found) == 0 {
+		return remaining, nil
+	}
+	interval, err := strconv.Atoi(found[0].str)
+	if err != nil {
+		return remaining, errors.New(invalidQuery + err.Error())
+	}
+	q.Interval = time.Second * time.Duration(interval)
+	return remaining, nil
+}
+
+func (q *Query) parseLimitClause(tokens []token) ([]token, error) {
+	remaining, found := tokensConsume(tokens)
+	if len(found) == 0 {
+		return remaining, errors.New(invalidQuery + unexpectedEnd)
+	}
+	limit, err := strconv.Atoi(found[0].str)
+	if err != nil {
+		return remaining, errors.New(invalidQuery + err.Error())
+	}
+	q.Limit = limit
+	return remaining, nil
+}
+
+func (q *Query) parseOutfileClause(tokens []token) ([]token, error) {
+	remaining, found := tokensConsume(tokens)
+	switch len(found) {
+	case 1:
+		q.Outfile = &Outfile{FilePath: found[0].str, AppendMode: false}
+	case 2:
+		if found[0].str != "append" {
+			return remaining, errors.New(invalidQuery + invalidQuery)
+		}
+		q.Outfile = &Outfile{FilePath: found[1].str, AppendMode: true}
+	default:
+		return remaining, errors.New(invalidQuery + invalidQuery)
+	}
+	return remaining, nil
+}
+
+func (q *Query) parseLogFormatClause(tokens []token) ([]token, error) {
+	remaining, found := tokensConsume(tokens)
+	if len(found) == 0 {
+		return remaining, errors.New(invalidQuery + unexpectedEnd)
+	}
+	q.LogFormat = found[0].str
+	return remaining, nil
 }

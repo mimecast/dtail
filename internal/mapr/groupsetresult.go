@@ -68,7 +68,7 @@ func (g *GroupSet) resultWriteFormattedHeaderEntry(query *Query, renderer Result
 }
 
 func (g *GroupSet) resultWriteFormattedHeaderEntrySeparator(renderer ResultRenderer, sb *strings.Builder) {
-	renderer.WriteHeaderDelimiter(sb, protocol.FieldDelimiter)
+	renderer.WriteHeaderDelimiter(sb, protocol.FieldSeparator())
 }
 
 // This writes a nicely formatted line separating the header and the data.
@@ -81,7 +81,7 @@ func (g *GroupSet) resultWriteFormattedHeaderRowSeparator(query *Query, renderer
 		if i == lastColumn {
 			continue
 		}
-		renderer.WriteHeaderDelimiter(sb, protocol.FieldDelimiter)
+		renderer.WriteHeaderDelimiter(sb, protocol.FieldSeparator())
 	}
 	sb.WriteString("\n")
 }
@@ -99,7 +99,7 @@ func (g *GroupSet) resultWriteFormattedData(renderer ResultRenderer, sb *strings
 			if j == lastColumn {
 				continue
 			}
-			renderer.WriteDataDelimiter(sb, protocol.FieldDelimiter)
+			renderer.WriteDataDelimiter(sb, protocol.FieldSeparator())
 		}
 		sb.WriteString("\n")
 	}

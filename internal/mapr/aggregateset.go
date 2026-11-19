@@ -155,7 +155,8 @@ func (s *AggregateSet) setFloat(key string, value float64) {
 	s.FValues[key] = value
 }
 
-// Aggregate data to the aggregate set.
+// Aggregate data to the aggregate set. The value is only borrowed for the
+// duration of the call: every string the set keeps is stored as a copy.
 func (s *AggregateSet) Aggregate(key string, agg AggregateOperation, value string, clientAggregation bool) (err error) {
 	var f float64
 	// First check if we can aggregate anything without converting value to float.
@@ -172,10 +173,12 @@ func (s *AggregateSet) Aggregate(key string, agg AggregateOperation, value strin
 		s.addFloat(key, 1)
 		return
 	case Last:
-		s.setString(key, value)
+		// value may borrow memory that the caller reuses for the next line
+		// (see aggregate.parseLine), so anything retained must be a copy.
+		s.setString(key, strings.Clone(value))
 		return
 	case Len:
-		s.setString(key, value)
+		s.setString(key, strings.Clone(value))
 		s.setFloat(key, float64(len(value)))
 		return
 	default:

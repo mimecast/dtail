@@ -5,6 +5,13 @@ import "reflect"
 
 // Logger is the small consumer-side logging contract shared by packages that
 // must not depend on the configured dlog implementation or its global loggers.
+//
+// Implementations must format args before returning and must not retain them
+// past the call. Callers on borrowed-memory paths (the MapReduce line path,
+// for example, where a value can alias a buffer that is recycled right after
+// the call) pass values whose backing memory is reused immediately, so a
+// logger that queued args for asynchronous formatting would render whatever
+// overwrote them.
 type Logger interface {
 	Error(args ...any) string
 	Warn(args ...any) string

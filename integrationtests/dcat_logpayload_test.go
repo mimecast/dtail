@@ -46,7 +46,7 @@ func TestDCatLogPayload(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDCatLogPayload")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	inFile := "dcat1a.txt"
 

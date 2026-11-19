@@ -11,7 +11,7 @@ func TestDMap1(t *testing.T) {
 	skipIfNotIntegrationTest(t)
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDMap1")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	testTable := map[string]string{
 		"a": "from STATS select count($line),last($time)," +
@@ -143,7 +143,7 @@ func testDmap1WithServer(t *testing.T, logger *TestLogger, query, subtestName st
 func TestDMap2(t *testing.T) {
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDMap2")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	runDualModeTest(t, DualModeTest{
 		Name:           "TestDMap2",
 		ServerlessTest: func(t *testing.T) { testDMap2Serverless(t, testLogger) },
@@ -154,7 +154,7 @@ func TestDMap2(t *testing.T) {
 func TestDMapOutfileArbitraryPath(t *testing.T) {
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDMapOutfileArbitraryPath")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	runDualModeTest(t, DualModeTest{
 		Name: "TestDMapOutfileArbitraryPath",
 		ServerlessTest: func(t *testing.T) {
@@ -318,7 +318,7 @@ func testDMap2WithServer(t *testing.T, logger *TestLogger) {
 func TestDMap3(t *testing.T) {
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDMap3")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	runDualModeTest(t, DualModeTest{
 		Name:           "TestDMap3",
 		ServerlessTest: func(t *testing.T) { testDMap3Serverless(t, testLogger) },
@@ -431,7 +431,7 @@ func testDMap3WithServer(t *testing.T, logger *TestLogger) {
 func TestDMap4Append(t *testing.T) {
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDMap4Append")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	runDualModeTest(t, DualModeTest{
 		Name:           "TestDMap4Append",
 		ServerlessTest: func(t *testing.T) { testDMap4AppendServerless(t, testLogger) },
@@ -646,7 +646,7 @@ func testDMap4AppendWithServer(t *testing.T, logger *TestLogger) {
 func TestDMap5CSV(t *testing.T) {
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDMap5CSV")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	runDualModeTest(t, DualModeTest{
 		Name:           "TestDMap5CSV",
 		ServerlessTest: func(t *testing.T) { testDMap5CSVServerless(t, testLogger) },

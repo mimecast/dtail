@@ -15,8 +15,13 @@ import (
 )
 
 const (
-	defaultOutputBufferMaxBytes    = config.DefaultOutputBufferMaxBytes
-	outputQueueEntryBudgetBytes    = 64
+	defaultOutputBufferMaxBytes = config.DefaultOutputBufferMaxBytes
+	outputQueueEntryBudgetBytes = 64
+	// outputAdoptMinBytes is the payload size from which enqueue may adopt
+	// the caller's backing allocation instead of copying it (see
+	// outputAdoptable). Smaller payloads are always copied, which keeps
+	// coalescing many tiny writes into one descriptor.
+	outputAdoptMinBytes            = networkWriterBufferSize / 2
 	defaultOutputFlushTimeout      = 2 * time.Second
 	defaultOutputReadRetryInterval = time.Millisecond
 	// Generation changes normally cancel their command context. Keep a bounded
@@ -340,6 +345,11 @@ func (t *outputManager) waitForEOFAck(ctx context.Context, timeout time.Duration
 // partially-read payload bytes to exceed the configured limit. Admission is
 // atomic per logical writer payload: an oversized payload is rejected before
 // any prefix can reach the client.
+//
+// Ownership of payload, including its spare capacity up to cap(payload),
+// passes to the output manager when enqueue is called, whatever the result: a
+// large payload is queued without copying (see tryEnqueueLocked), so the caller
+// must neither modify nor reuse payload afterwards.
 func (t *outputManager) enqueue(ctx context.Context, generation uint64, payload []byte,
 	activeGeneration func() uint64) error {
 
@@ -398,57 +408,114 @@ func (t *outputManager) enqueue(ctx context.Context, generation uint64, payload 
 
 }
 
-// tryEnqueueLocked admits a complete logical payload while bounding both the
-// unread bytes and the payload backing allocations retained by queue/buffer.
-// Adjacent payloads from the same generation share a descriptor. Geometric
-// growth avoids copying every preceding tiny write, and all spare capacity is
-// charged immediately.
-func (t *outputManager) tryEnqueueLocked(generation uint64, payload []byte, maxBytes int) bool {
-	last := len(t.queue) - 1
-	if last >= 0 && t.queue[last].generation == generation {
-		entry := &t.queue[last]
-		neededLength := len(entry.payload) + len(payload)
-		if neededLength > entry.retainedBytes {
-			available := maxBytes - t.retainedBytes
-			minimumGrowth := neededLength - entry.retainedBytes
-			if minimumGrowth > available {
-				return false
-			}
+// outputAdoptable reports whether payload's backing allocation is worth
+// queueing as it is: the payload is at least outputAdoptMinBytes long and its
+// spare capacity is at most an eighth of its length. The queue charges an
+// adopted payload its whole capacity, so this bounds the charge at 1.125
+// times the payload (a full 64 KiB NetworkWriter batch in its 72 KiB
+// allocation). A payload with more spare capacity, such as a partial flush or
+// a batch whose buffer bytes.Buffer doubled for a long line, is copied at its
+// exact length instead of charging the slack against OutputBufferMaxBytes.
+func outputAdoptable(payload []byte) bool {
+	return len(payload) >= outputAdoptMinBytes && cap(payload)-len(payload) <= len(payload)/8
+}
 
-			targetCapacity := entry.retainedBytes * 2
-			if targetCapacity < neededLength {
-				targetCapacity = neededLength
-			}
-			if maximumCapacity := entry.retainedBytes + available; targetCapacity > maximumCapacity {
-				targetCapacity = maximumCapacity
-			}
-			grown := make([]byte, len(entry.payload), targetCapacity)
-			copy(grown, entry.payload)
-			entry.payload = grown
-			t.retainedBytes += targetCapacity - entry.retainedBytes
-			entry.retainedBytes = targetCapacity
-		}
-		entry.payload = append(entry.payload, payload...)
-		t.markNotDrainedLocked()
-		t.bufferedBytes += len(payload)
-		t.signalStateChangedLocked()
-		return true
-	}
-
-	if t.bufferedEntries >= t.resolvedMaxQueueEntries() || t.retainedBytes+len(payload) > maxBytes {
+// adoptionKeepsNextBatchRoom reports whether adopting payload, charged its
+// whole capacity on top of retained bytes, stays within maxBytes without
+// costing the next payload of the same length its room. Adoption only differs
+// from an exact copy by the spare capacity it charges, so that capacity
+// matters only when a copy would leave room for the next batch and adoption
+// would not. When the next batch fits either way, or fits in neither case (the
+// usual situation under backpressure, where a reader has just freed about one
+// batch and the queue is otherwise full), adopting costs nothing and saves the
+// copy.
+func adoptionKeepsNextBatchRoom(retained int, payload []byte, maxBytes int) bool {
+	adopted := retained + cap(payload)
+	if adopted > maxBytes {
 		return false
 	}
-	queuedPayload := make([]byte, len(payload))
-	copy(queuedPayload, payload)
+	nextFitsAdopted := adopted+len(payload) <= maxBytes
+	nextFitsCopied := retained+2*len(payload) <= maxBytes
+	return nextFitsAdopted || !nextFitsCopied
+}
+
+// tryEnqueueLocked admits a complete logical payload while bounding both the
+// unread bytes and the payload backing allocations retained by queue/buffer.
+//
+// A small payload (below outputAdoptMinBytes) is copied: into the last
+// descriptor when that has the same generation, so many tiny writes share one
+// descriptor, otherwise into a new exact-size one. A large payload (a writer
+// batch) gets a descriptor of its own. It is adopted without copying when
+// outputAdoptable allows it and adoptionKeepsNextBatchRoom agrees; the whole
+// capacity is charged, because the queue retains all of it. Otherwise it is
+// copied at its exact length when that fits. So an admissible payload is never
+// stranded by its spare capacity, and near the cap the spare capacity of an
+// adopted batch never costs the room of the next batch: at the smallest
+// OutputBufferMaxBytes the handler accepts (MaxLineLength plus two 64 KiB
+// batches) two full batches still queue, as they did before batches were
+// adopted.
+func (t *outputManager) tryEnqueueLocked(generation uint64, payload []byte, maxBytes int) bool {
+	if len(payload) < outputAdoptMinBytes {
+		last := len(t.queue) - 1
+		if last >= 0 && t.queue[last].generation == generation {
+			return t.tryAppendLocked(&t.queue[last], payload, maxBytes)
+		}
+	}
+	if t.bufferedEntries >= t.resolvedMaxQueueEntries() {
+		return false
+	}
+
+	queued := payload
+	switch {
+	case outputAdoptable(payload) && adoptionKeepsNextBatchRoom(t.retainedBytes, payload, maxBytes):
+		// Adopt: the caller handed its backing over, nothing is copied.
+	case t.retainedBytes+len(payload) <= maxBytes:
+		queued = make([]byte, len(payload))
+		copy(queued, payload)
+	default:
+		return false
+	}
 	t.queue = append(t.queue, generatedOutput{
 		generation:    generation,
-		payload:       queuedPayload,
-		retainedBytes: len(queuedPayload),
+		payload:       queued,
+		retainedBytes: cap(queued),
 	})
 	t.markNotDrainedLocked()
-	t.bufferedBytes += len(payload)
-	t.retainedBytes += len(queuedPayload)
+	t.bufferedBytes += len(queued)
+	t.retainedBytes += cap(queued)
 	t.bufferedEntries++
+	t.signalStateChangedLocked()
+	return true
+}
+
+// tryAppendLocked coalesces a small payload into entry, growing the entry's
+// backing allocation geometrically within the remaining budget. All spare
+// capacity is charged immediately.
+func (t *outputManager) tryAppendLocked(entry *generatedOutput, payload []byte, maxBytes int) bool {
+	neededLength := len(entry.payload) + len(payload)
+	if neededLength > entry.retainedBytes {
+		available := maxBytes - t.retainedBytes
+		minimumGrowth := neededLength - entry.retainedBytes
+		if minimumGrowth > available {
+			return false
+		}
+
+		targetCapacity := entry.retainedBytes * 2
+		if targetCapacity < neededLength {
+			targetCapacity = neededLength
+		}
+		if maximumCapacity := entry.retainedBytes + available; targetCapacity > maximumCapacity {
+			targetCapacity = maximumCapacity
+		}
+		grown := make([]byte, len(entry.payload), targetCapacity)
+		copy(grown, entry.payload)
+		entry.payload = grown
+		t.retainedBytes += targetCapacity - entry.retainedBytes
+		entry.retainedBytes = targetCapacity
+	}
+	entry.payload = append(entry.payload, payload...)
+	t.markNotDrainedLocked()
+	t.bufferedBytes += len(payload)
 	t.signalStateChangedLocked()
 	return true
 }
@@ -599,10 +666,11 @@ func (t *outputManager) flush(ctx context.Context, user *user.User) error {
 // observe torn state.
 //
 // Lock ordering: the shouldDropGeneration callback is invoked (via
-// consumeLocked) while t.mu is held and itself acquires sessionState.mu
-// (sessionCommandState.currentGeneration), establishing the ordering
-// output.mu -> sessionState.mu. Nothing may call into outputManager while
-// holding sessionState.mu, or it would deadlock.
+// consumeLocked) while t.mu is held. In production it reads the session
+// generation with an atomic load (sessionCommandState.currentGeneration) and
+// takes no lock, so it adds no lock-ordering edge. A callback must never call
+// back into outputManager, and it must not take a lock that is held by code
+// which calls into outputManager.
 func (t *outputManager) tryRead(p []byte, user *user.User, shouldDropGeneration func(uint64) bool) (n int, handled bool) {
 	// tryRead runs on the session output goroutine once per Read (i.e. per output
 	// payload / ~64KB in server mode). Decide trace state once, before taking

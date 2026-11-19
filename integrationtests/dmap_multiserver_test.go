@@ -16,7 +16,7 @@ func TestDMapMultiServer(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDMapMultiServer")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Start three servers
 	server1 := NewTestServer(t)

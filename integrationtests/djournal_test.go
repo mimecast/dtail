@@ -32,7 +32,7 @@ func TestDJournalWithServer(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDJournalWithServer")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	t.Run("DCatBoundedJournal", func(t *testing.T) {
 		testDJournalDCatBounded(t, testLogger)

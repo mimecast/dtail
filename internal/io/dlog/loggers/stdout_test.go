@@ -51,7 +51,7 @@ func TestStdoutBuffersAndPreservesOrder(t *testing.T) {
 	var want strings.Builder
 	for i := 0; i < n; i++ {
 		line := "line-" + strconv.Itoa(i)
-		s.Raw(time.Now(), line+"\n")
+		s.Raw(line + "\n")
 		want.WriteString(line + "\n")
 	}
 
@@ -79,7 +79,7 @@ func TestStdoutPauseReturnsAndFlushesWithoutLogCall(t *testing.T) {
 	cw := &countingWriter{}
 	s := newStdoutWriter(cw)
 
-	s.Raw(time.Now(), "before-pause\n")
+	s.Raw("before-pause\n")
 
 	paused := make(chan struct{})
 	go func() {
@@ -107,10 +107,11 @@ func TestStdoutBlocksEveryLogPathWhilePaused(t *testing.T) {
 		name  string
 		write func()
 	}{
-		{name: "Log", write: func() { s.Log(time.Now(), "[log]") }},
-		{name: "LogWithColors", write: func() { s.LogWithColors(time.Now(), "[plain-log]", "[colored-log]") }},
-		{name: "Raw", write: func() { s.Raw(time.Now(), "[raw]") }},
-		{name: "RawWithColors", write: func() { s.RawWithColors(time.Now(), "[plain-raw]", "[colored-raw]") }},
+		{name: "Log", write: func() { s.Log("[log]") }},
+		{name: "LogWithColors", write: func() { s.LogWithColors("[plain-log]", "[colored-log]") }},
+		{name: "Raw", write: func() { s.Raw("[raw]") }},
+		{name: "RawWithColors", write: func() { s.RawWithColors("[plain-raw]", "[colored-raw]") }},
+		{name: "RawBytes", write: func() { s.RawBytes([]byte("[raw-bytes]")) }},
 	}
 
 	done := make([]chan struct{}, len(writes))
@@ -136,7 +137,7 @@ func TestStdoutBlocksEveryLogPathWhilePaused(t *testing.T) {
 	s.Flush()
 
 	got := cw.String()
-	for _, message := range []string{"[log]\n", "[colored-log]\n", "[raw]", "[colored-raw]"} {
+	for _, message := range []string{"[log]\n", "[colored-log]\n", "[raw]", "[colored-raw]", "[raw-bytes]"} {
 		if count := strings.Count(got, message); count != 1 {
 			t.Errorf("resumed output contains %d copies of %q in %q, want 1", count, message, got)
 		}
@@ -153,12 +154,12 @@ func TestStdoutBlocksEveryLogPathWhilePaused(t *testing.T) {
 func TestStdoutPausePreservesPromptOrdering(t *testing.T) {
 	cw := &countingWriter{}
 	s := newStdoutWriter(cw)
-	s.Raw(time.Now(), "before\n")
+	s.Raw("before\n")
 	s.Pause()
 
 	logged := make(chan struct{})
 	go func() {
-		s.Raw(time.Now(), "after\n")
+		s.Raw("after\n")
 		close(logged)
 	}()
 	assertNoSignal(t, logged, "log returned while direct prompt output owned the sink")
@@ -184,7 +185,7 @@ func TestStdoutNestedPauseRequiresMatchingResumes(t *testing.T) {
 
 	logged := make(chan struct{})
 	go func() {
-		s.Log(time.Now(), "blocked")
+		s.Log("blocked")
 		close(logged)
 	}()
 	assertNoSignal(t, logged, "log returned during nested pause")
@@ -216,7 +217,7 @@ func TestStdoutIdleFlush(t *testing.T) {
 	wg.Add(1)
 	s.Start(ctx, &wg)
 
-	s.Raw(time.Now(), "follow-line\n")
+	s.Raw("follow-line\n")
 	waitForLoggerCondition(t, 2*time.Second, func() bool {
 		return strings.Contains(cw.String(), "follow-line")
 	}, func() string {
@@ -256,7 +257,7 @@ func TestStdoutFinalFlushOnClose(t *testing.T) {
 	wg.Add(1)
 	s.Start(ctx, &wg)
 
-	s.Raw(time.Now(), "last-line-before-exit\n")
+	s.Raw("last-line-before-exit\n")
 	cancel()
 	wg.Wait()
 
@@ -275,11 +276,11 @@ func TestStdoutShutdownWhilePaused(t *testing.T) {
 	flushers.Add(1)
 	s.Start(ctx, &flushers)
 
-	s.Raw(time.Now(), "before-shutdown\n")
+	s.Raw("before-shutdown\n")
 	s.Pause()
 	logged := make(chan struct{})
 	go func() {
-		s.Raw(time.Now(), "after-resume\n")
+		s.Raw("after-resume\n")
 		close(logged)
 	}()
 	assertNoSignal(t, logged, "log returned while stdout was paused")
@@ -318,7 +319,7 @@ func TestStdoutConcurrentPauseResume(t *testing.T) {
 			defer workers.Done()
 			<-start
 			for i := 0; i < writesPerLoop; i++ {
-				s.Raw(time.Now(), "line\n")
+				s.Raw("line\n")
 			}
 		}()
 	}
@@ -361,5 +362,49 @@ func assertNoSignal(t *testing.T, ch <-chan struct{}, failure string) {
 	case <-ch:
 		t.Fatal(failure)
 	case <-time.After(25 * time.Millisecond):
+	}
+}
+
+// TestStdoutRawBytesMatchesRaw checks that the byte-slice payload path writes
+// exactly what Raw writes, including empty messages and messages larger than
+// the bufio buffer, and that the sink does not keep the caller's slice.
+func TestStdoutRawBytesMatchesRaw(t *testing.T) {
+	messages := []string{"", "line\n", "no newline", "\n", strings.Repeat("x", 3*stdoutWriterBufSize) + "\n", "tail"}
+
+	viaRaw := &countingWriter{}
+	rawSink := newStdoutWriter(viaRaw)
+	viaBytes := &countingWriter{}
+	bytesSink := newStdoutWriter(viaBytes)
+	for _, message := range messages {
+		rawSink.Raw(message)
+		buf := []byte(message)
+		bytesSink.RawBytes(buf)
+		for i := range buf {
+			buf[i] = '!' // the caller reuses its buffer after the call returns
+		}
+	}
+	rawSink.Flush()
+	bytesSink.Flush()
+
+	if viaBytes.String() != viaRaw.String() {
+		t.Fatalf("RawBytes output differs from Raw: got %d bytes, want %d bytes",
+			len(viaBytes.String()), len(viaRaw.String()))
+	}
+}
+
+// TestStdoutLogAlwaysAppendsNewline pins the diagnostic newline behavior after
+// fmt.Fprintln was replaced by direct buffer writes: Log appends a newline even
+// when the message already ends with one, and Raw appends none.
+func TestStdoutLogAlwaysAppendsNewline(t *testing.T) {
+	cw := &countingWriter{}
+	s := newStdoutWriter(cw)
+	s.Log("diag")
+	s.Log("")
+	s.Log("already\n")
+	s.Raw("raw")
+	s.Flush()
+
+	if got, want := cw.String(), "diag\n\nalready\n\nraw"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
 	}
 }

@@ -17,7 +17,6 @@ import (
 	"github.com/mimecast/dtail/internal/io/signal"
 	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/source"
-	"github.com/mimecast/dtail/internal/version"
 )
 
 type healthClientFactory func(config.Args, config.RuntimeConfig,
@@ -46,13 +45,14 @@ func main() {
 }
 
 func run() int {
-	args := config.Args{SSHPort: config.DefaultSSHPort}
+	args := config.Args{SSHArgs: config.SSHArgs{SSHPort: config.DefaultSSHPort}}
 	var displayVersion bool
 	var pprof string
 
 	flag.BoolVar(&displayVersion, "version", false, "Display version")
 	flag.StringVar(&args.HostnameOverride, "hostname-override", "", "Override the hostname used in logs and output")
-	flag.StringVar(&args.Logger, "logger", config.DefaultHealthCheckLogger, "Logger name")
+	flag.StringVar(&args.Logger, "logger", "",
+		"Logger name (default "+config.DefaultHealthCheckLogger+"; Common.Logger from the config file is ignored)")
 	flag.StringVar(&args.LogLevel, "logLevel", "none", "Log level")
 	flag.StringVar(&args.ServersStr, "server", "", "Remote server to connect")
 	flag.BoolVar(&args.NoAuthKey, "no-auth-key", false, "Disable auth-key fast reconnect feature")
@@ -60,7 +60,8 @@ func run() int {
 	flag.Parse()
 
 	if displayVersion {
-		version.PrintAndExit(false)
+		cli.PrintVersion(false)
+		return 0
 	}
 
 	runtimeCfg, err := config.SetupRuntime(source.HealthCheck, &args, flag.Args())

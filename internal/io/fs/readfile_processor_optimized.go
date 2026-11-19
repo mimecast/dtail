@@ -81,6 +81,12 @@ func (f *ReadFile) newFilteringProcessor(ltx lcontext.LContext,
 		stats:     &f.stats,
 		globID:    f.globID,
 	}
+	// The raw fast path is only valid without local context; ProcessFilteredRaw
+	// is not called in that case, but leave the field nil so the precondition
+	// does not rest on the callers alone.
+	if rawProcessor, ok := processor.(line.RawProcessor); ok && !ltx.Has() {
+		filterProcessor.rawProcessor = rawProcessor
+	}
 	if f.bufferRecycleObserver != nil {
 		filterProcessor.recycle = f.recycleBytesBuffer
 	}
@@ -366,6 +372,10 @@ func (p *followLineProcessor) handleTruncation(fd *os.File, reader *bufio.Reader
 	reader.Reset(fd)
 	p.partialLine.Reset()
 	p.filter.resetGeneration()
+	// The same processor keeps being fed, now from the rewritten content:
+	// let a processor with per-source state (the CSV header of a MapReduce
+	// aggregation) start over for it.
+	p.filter.restartSource()
 	p.file.logger.Info(p.file.FilePath(), "File got truncated, reading from beginning")
 	return true, nil
 }

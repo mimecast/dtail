@@ -217,3 +217,48 @@ func TestCSVLogFormatConcurrentSources(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestCSVLogFormatHeaderIsFirstLinePerSource pins the ordering contract the
+// parser relies on: the first line parsed for a sourceID is taken as its
+// header, whatever it contains, and ReleaseSource makes the next line of that
+// sourceID a header again. Parsing a data row first therefore installs it as
+// the header and maps the real header row as data, which is why the
+// aggregator gives every file read a sourceID of its own.
+func TestCSVLogFormatHeaderIsFirstLinePerSource(t *testing.T) {
+	const sourceID = "source"
+	header := strings.Join([]string{"name", "value"}, protocol.CSVDelimiter)
+	data := strings.Join([]string{"alpha", "1"}, protocol.CSVDelimiter)
+
+	parser, err := NewParser("csv", nil)
+	if err != nil {
+		t.Fatalf("Unable to create parser: %s", err.Error())
+	}
+	releaser, ok := parser.(SourceReleaser)
+	if !ok {
+		t.Fatalf("csv parser does not implement SourceReleaser")
+	}
+
+	// Data before header: the data row is taken as the header.
+	if _, err = parser.MakeFields(data, sourceID); !errors.Is(err, ErrIgnoreFields) {
+		t.Fatalf("first line: err = %v, want ErrIgnoreFields", err)
+	}
+	fields, err := parser.MakeFields(header, sourceID)
+	if err != nil {
+		t.Fatalf("header row after data row: err = %v", err)
+	}
+	if fields["alpha"] != "name" {
+		t.Fatalf("header row after data row: fields = %v, want it mapped as data", fields)
+	}
+
+	releaser.ReleaseSource(sourceID)
+	if _, err = parser.MakeFields(header, sourceID); !errors.Is(err, ErrIgnoreFields) {
+		t.Fatalf("first line after release: err = %v, want ErrIgnoreFields", err)
+	}
+	fields, err = parser.MakeFields(data, sourceID)
+	if err != nil {
+		t.Fatalf("data row after release: err = %v", err)
+	}
+	if fields["name"] != "alpha" || fields["value"] != "1" {
+		t.Fatalf("data row after release: fields = %v", fields)
+	}
+}

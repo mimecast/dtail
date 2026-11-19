@@ -40,6 +40,13 @@ type sshSession interface {
 
 type serverDialFunc func(context.Context, context.CancelFunc, chan struct{}, chan struct{}) error
 
+type sshSessionIO struct {
+	stdin      io.WriteCloser
+	stdinDone  <-chan struct{}
+	stdoutDone <-chan struct{}
+	waitDone   <-chan struct{}
+}
+
 const (
 	defaultSSHConnectTimeout    = 2 * time.Second
 	defaultSSHPort              = 2222
@@ -387,114 +394,149 @@ func (c *ServerConnection) session(ctx context.Context, cancel context.CancelFun
 
 func (c *ServerConnection) handle(ctx context.Context, cancel context.CancelFunc,
 	session sshSession, throttleCh chan struct{}) error {
-	var closeSessionOnce sync.Once
-	closeSession := func() {
-		closeSessionOnce.Do(func() {
-			if err := session.Close(); err != nil {
-				c.log().Trace(err)
-			}
-		})
-	}
+	closeSession := c.closeSessionOnce(session)
 	defer closeSession()
 
 	c.log().Debug(c.server, "Creating handler for SSH session")
-	stdinPipe, err := session.StdinPipe()
+	sessionIO, err := c.startSessionIO(ctx, session)
 	if err != nil {
-		return preferContextError(ctx, fmt.Errorf("failed to get SSH session stdin pipe for %s: %w", c.server, err))
+		return err
 	}
-	stdoutPipe, err := session.StdoutPipe()
-	if err != nil {
-		return preferContextError(ctx, fmt.Errorf("failed to get SSH session stdout pipe for %s: %w", c.server, err))
-	}
-	if shellErr := session.Shell(); shellErr != nil {
-		return preferContextError(ctx, fmt.Errorf("failed to start SSH shell for %s: %w", c.server, shellErr))
-	}
-
-	stdinDone := copyAsync(stdinPipe, c.handler, c.log())
-	stdoutDone := copyAsync(c.handler, stdoutPipe, c.log())
-	waitDone := waitSessionAsync(session, c.log())
-
-	if c.authKeyDisabled {
-		c.log().Debug(c.server, "Skipping AUTHKEY registration because auth-key is disabled")
-	} else {
-		c.sendAuthKeyRegistrationCommand()
-	}
+	c.registerAuthKey()
 
 	dispatchErr := dispatchInitialCommands(c.server, c.handler, c.commands, c.interactive,
 		c.sessionSpec, &c.sessionState, c.log())
 	if dispatchErr != nil {
 		dispatchErr = preferContextError(ctx, dispatchErr)
 	}
+	c.finishSessionWork(ctx, cancel, closeSession, sessionIO, throttleCh, dispatchErr)
+	return dispatchErr
+}
 
-	// Release the throttle slot as soon as the session is fully established so
-	// the next pending connection can proceed without waiting for this session
-	// to finish.  throttleReleased.Do is idempotent: if the deferred cleanup
-	// in Start() fires first (e.g. on a dial error path that never reaches
-	// here), the slot is still returned exactly once.
-	if dispatchErr == nil {
-		c.throttleReleased.Do(func() {
-			c.log().Debug(c.server, "Unthrottling connection (session up)",
-				len(throttleCh), cap(throttleCh))
-			<-throttleCh
+func (c *ServerConnection) closeSessionOnce(session sshSession) func() {
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			if err := session.Close(); err != nil {
+				c.log().Trace(err)
+			}
 		})
+	}
+}
 
-		select {
-		case <-ctx.Done():
-			closeSession()
-		case <-c.handler.Done():
-			// A hidden close request marks the handler done after enqueueing its
-			// acknowledgement. Give the stdin copy a bounded opportunity to send
-			// that acknowledgement before closing the transport.
-			timer := time.NewTimer(defaultSSHCloseDrainTimeout)
-			select {
-			case <-stdinDone:
-			case <-stdoutDone:
-			case <-ctx.Done():
-			case <-timer.C:
-			}
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			cancel()
-			closeSession()
-		case <-stdinDone:
-			cancel()
-			closeSession()
-		case <-stdoutDone:
-			// Stdout EOF does not guarantee that the peer also closed the SSH
-			// channel or request stream. Cancel the connection context so dial's
-			// context hook closes the transport and unblocks Session.Wait.
-			cancel()
-			closeSession()
-		case <-waitDone:
-		}
-	} else {
+func (c *ServerConnection) startSessionIO(ctx context.Context, session sshSession) (*sshSessionIO, error) {
+	stdinPipe, err := session.StdinPipe()
+	if err != nil {
+		return nil, preferContextError(ctx,
+			fmt.Errorf("failed to get SSH session stdin pipe for %s: %w", c.server, err))
+	}
+	stdoutPipe, err := session.StdoutPipe()
+	if err != nil {
+		return nil, preferContextError(ctx,
+			fmt.Errorf("failed to get SSH session stdout pipe for %s: %w", c.server, err))
+	}
+	if shellErr := session.Shell(); shellErr != nil {
+		return nil, preferContextError(ctx,
+			fmt.Errorf("failed to start SSH shell for %s: %w", c.server, shellErr))
+	}
+
+	return &sshSessionIO{
+		stdin:      stdinPipe,
+		stdinDone:  copyAsync(stdinPipe, c.handler, c.log()),
+		stdoutDone: copyAsync(c.handler, stdoutPipe, c.log()),
+		waitDone:   waitSessionAsync(session, c.log()),
+	}, nil
+}
+
+func (c *ServerConnection) registerAuthKey() {
+	if c.authKeyDisabled {
+		c.log().Debug(c.server, "Skipping AUTHKEY registration because auth-key is disabled")
+		return
+	}
+	c.sendAuthKeyRegistrationCommand()
+}
+
+func (c *ServerConnection) finishSessionWork(ctx context.Context, cancel context.CancelFunc,
+	closeSession func(), sessionIO *sshSessionIO, throttleCh chan struct{}, dispatchErr error) {
+	if dispatchErr != nil {
 		cancel()
 		closeSession()
+	} else {
+		c.releaseSessionThrottle(throttleCh)
+		c.waitForSessionEnd(ctx, cancel, closeSession, sessionIO)
 	}
 
 	// Closing the transport above interrupts a blocked stdout read. Joining the
 	// copy before Shutdown makes the MapReduce flush final: no subsequent Write
 	// can leave local aggregate state behind after it has been flushed.
-	<-stdoutDone
+	<-sessionIO.stdoutDone
 	c.handler.Shutdown()
 
 	// Shutdown releases a handler.Read blocked waiting for another command.
 	// Closing the SSH stdin pipe also interrupts a write if the peer has stopped
 	// reading. Join both remaining session goroutines before returning so callers
 	// can safely render final results.
-	if closeErr := stdinPipe.Close(); closeErr != nil {
+	if closeErr := sessionIO.stdin.Close(); closeErr != nil {
 		c.log().Trace(closeErr)
 	}
-	<-stdinDone
+	<-sessionIO.stdinDone
 	closeSession()
-	<-waitDone
+	<-sessionIO.waitDone
 	cancel()
+}
 
-	return dispatchErr
+func (c *ServerConnection) releaseSessionThrottle(throttleCh chan struct{}) {
+	// Release the throttle slot as soon as the session is fully established so
+	// the next pending connection can proceed without waiting for this session
+	// to finish. throttleReleased.Do remains idempotent with Start's cleanup.
+	c.throttleReleased.Do(func() {
+		c.log().Debug(c.server, "Unthrottling connection (session up)",
+			len(throttleCh), cap(throttleCh))
+		<-throttleCh
+	})
+}
+
+func (c *ServerConnection) waitForSessionEnd(ctx context.Context, cancel context.CancelFunc,
+	closeSession func(), sessionIO *sshSessionIO) {
+	select {
+	case <-ctx.Done():
+		closeSession()
+	case <-c.handler.Done():
+		c.waitForCloseAcknowledgement(ctx, sessionIO)
+		cancel()
+		closeSession()
+	case <-sessionIO.stdinDone:
+		cancel()
+		closeSession()
+	case <-sessionIO.stdoutDone:
+		// Stdout EOF does not guarantee that the peer also closed the SSH
+		// channel or request stream. Cancel the connection context so dial's
+		// context hook closes the transport and unblocks Session.Wait.
+		cancel()
+		closeSession()
+	case <-sessionIO.waitDone:
+	}
+}
+
+func (c *ServerConnection) waitForCloseAcknowledgement(ctx context.Context, sessionIO *sshSessionIO) {
+	// A hidden close request marks the handler done after enqueueing its
+	// acknowledgement. Give the stdin copy a bounded opportunity to send that
+	// acknowledgement before closing the transport.
+	timer := time.NewTimer(defaultSSHCloseDrainTimeout)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
+	select {
+	case <-sessionIO.stdinDone:
+	case <-sessionIO.stdoutDone:
+	case <-ctx.Done():
+	case <-timer.C:
+	}
 }
 
 func preferContextError(ctx context.Context, err error) error {

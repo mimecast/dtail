@@ -14,7 +14,7 @@ import (
 
 func TestDTailWithServer(t *testing.T) {
 	testLogger := NewTestLogger("TestDTailWithServer")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	cleanupTmpFiles(t)
 
 	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
@@ -74,7 +74,7 @@ func TestDTailWithServer(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer fd.Close()
+	defer closeIgnoringError(fd)
 
 	go func() {
 		var circular int
@@ -145,7 +145,7 @@ readLoop:
 // fail; it must now pass well within that window.
 func TestDTailShutdownAfter(t *testing.T) {
 	testLogger := NewTestLogger("TestDTailShutdownAfter")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	cleanupTmpFiles(t)
 
 	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {
@@ -202,7 +202,7 @@ func TestDTailShutdownAfter(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	defer fd.Close()
+	defer closeIgnoringError(fd)
 	go func() {
 		for i := 0; ; i++ {
 			select {
@@ -262,7 +262,7 @@ func TestDTailColorTable(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDTailColorTable")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {

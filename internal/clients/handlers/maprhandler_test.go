@@ -94,8 +94,8 @@ func TestMaprHandlerWriteEmptyMessageBetweenDelimiters(t *testing.T) {
 // parser, which previously logged a spurious
 // "Unable to aggregate data ... expected 3 parts" error.
 func TestMaprHandlerClassifiesAuthKeyAckAsControl(t *testing.T) {
-	aggregate := protocol.AggregateMessageID + protocol.FieldDelimiter +
-		"host1" + protocol.FieldDelimiter + "payload"
+	aggregate := protocol.AggregateMessageID + protocol.FieldSeparator() +
+		"host1" + protocol.FieldSeparator() + "payload"
 
 	tests := []struct {
 		name          string
@@ -109,7 +109,7 @@ func TestMaprHandlerClassifiesAuthKeyAckAsControl(t *testing.T) {
 		},
 		{
 			name:          "malformed aggregate data",
-			message:       protocol.AggregateMessageID + protocol.FieldDelimiter + "host1",
+			message:       protocol.AggregateMessageID + protocol.FieldSeparator() + "host1",
 			wantAggregate: true,
 		},
 		{
@@ -119,7 +119,7 @@ func TestMaprHandlerClassifiesAuthKeyAckAsControl(t *testing.T) {
 		},
 		{
 			name:          "server-prefixed authkey ack",
-			message:       "SERVER" + protocol.FieldDelimiter + "host1" + protocol.FieldDelimiter + "AUTHKEY OK",
+			message:       "SERVER" + protocol.FieldSeparator() + "host1" + protocol.FieldSeparator() + "AUTHKEY OK",
 			wantAggregate: false,
 		},
 		{
@@ -131,7 +131,7 @@ func TestMaprHandlerClassifiesAuthKeyAckAsControl(t *testing.T) {
 			// Adversarial: the AGGREGATE| tag appears, but embedded in a
 			// later field rather than as the leading field. Only the leading
 			// tag may classify a message as aggregate data.
-			message:       "SERVER" + protocol.FieldDelimiter + "host1" + protocol.FieldDelimiter + aggregate,
+			message:       "SERVER" + protocol.FieldSeparator() + "host1" + protocol.FieldSeparator() + aggregate,
 			name:          "embedded aggregate tag is not the leading field",
 			wantAggregate: false,
 		},
@@ -155,7 +155,7 @@ func TestMaprHandlerReportsMalformedAggregateFrame(t *testing.T) {
 
 	logger := &recordingClientLogger{}
 	handler := NewMaprHandler("srv1", maprclient.NewSessionState(query, logging.NopLogger{}), logger)
-	malformed := protocol.AggregateMessageID + protocol.FieldDelimiter + "host1"
+	malformed := protocol.AggregateMessageID + protocol.FieldSeparator() + "host1"
 	input := append([]byte(malformed), protocol.MessageDelimiter)
 	if _, err := handler.Write(input); err != nil {
 		t.Fatalf("Write() error = %v", err)
@@ -198,8 +198,8 @@ func TestMaprHandlerWriteAuthKeyAckEmitsNoAggregateError(t *testing.T) {
 		countStorage + protocol.AggregateKVDelimiter + "2",
 		"",
 	}, protocol.AggregateDelimiter)
-	aggregate := protocol.AggregateMessageID + protocol.FieldDelimiter +
-		"host1" + protocol.FieldDelimiter + serialized
+	aggregate := protocol.AggregateMessageID + protocol.FieldSeparator() +
+		"host1" + protocol.FieldSeparator() + serialized
 
 	// Plain-mode ack first, then the genuine aggregate message, each
 	// terminated by the protocol message delimiter.

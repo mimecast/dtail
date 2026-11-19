@@ -25,6 +25,25 @@ func BenchmarkDefaultParserMakeFields(b *testing.B) {
 		}
 	})
 
+	b.Run("into_reused_map", func(b *testing.B) {
+		parser, err := NewParser("default", nil)
+		if err != nil {
+			b.Fatalf("Unable to create parser: %s", err.Error())
+		}
+		into, ok := parser.(FieldsIntoParser)
+		if !ok {
+			b.Fatal("default parser does not implement FieldsIntoParser")
+		}
+		fields := make(map[string]string, 24)
+
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if err := into.MakeFieldsInto(fields, input, ""); err != nil {
+				b.Fatalf("Unable to parse input: %s", err.Error())
+			}
+		}
+	})
+
 	b.Run("query_specific", func(b *testing.B) {
 		q, err := mapr.NewQuery(`select count(foo) from STATS where bar eq "baz"`, logging.NopLogger{})
 		if err != nil {

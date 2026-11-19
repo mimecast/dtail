@@ -3,19 +3,51 @@ package clients
 import (
 	"bytes"
 	"context"
+	"io"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/mimecast/dtail/internal/clients/clientlog"
 	"github.com/mimecast/dtail/internal/clients/connectors"
 	"github.com/mimecast/dtail/internal/clients/handlers"
 	"github.com/mimecast/dtail/internal/config"
+	sessionHandlers "github.com/mimecast/dtail/internal/handlers"
 	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/mapr"
 	maprclient "github.com/mimecast/dtail/internal/mapr/client"
 	"github.com/mimecast/dtail/internal/omode"
 )
+
+type serverlessStatsFactory struct {
+	handler sessionHandlers.Handler
+	created chan struct{}
+}
+
+type serverlessStatsHandler struct {
+	done chan struct{}
+	once sync.Once
+}
+
+func newServerlessStatsHandler() *serverlessStatsHandler {
+	return &serverlessStatsHandler{done: make(chan struct{})}
+}
+
+func (f *serverlessStatsFactory) NewServerlessHandler(context.Context, string) (sessionHandlers.Handler, error) {
+	close(f.created)
+	return f.handler, nil
+}
+
+func (h *serverlessStatsHandler) Read([]byte) (int, error) {
+	<-h.done
+	return 0, io.EOF
+}
+
+func (*serverlessStatsHandler) Write(p []byte) (int, error) { return len(p), nil }
+func (h *serverlessStatsHandler) Shutdown()                 { h.once.Do(func() { close(h.done) }) }
+func (h *serverlessStatsHandler) Done() <-chan struct{}     { return h.done }
 
 func TestClientConstructorsBuildServerlessWorkloads(t *testing.T) {
 	runtimeCfg := clientTestRuntimeConfig()
@@ -296,6 +328,53 @@ func TestTailStatsDataAndPercentages(t *testing.T) {
 				t.Fatalf("percentOf(%v, %v) = %v, want %v", tt.total, tt.value, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTailStatsReportServerlessConnectionLifecycle(t *testing.T) {
+	connectionStats := newTailStats(1, nil, time.Nanosecond, nil)
+	throttleCh := make(chan struct{}, 1)
+	serverHandler := newServerlessStatsHandler()
+	factory := &serverlessStatsFactory{
+		handler: serverHandler,
+		created: make(chan struct{}),
+	}
+	connector := connectors.NewServerless(
+		"test-user",
+		handlers.NewClientHandler("local(serverless)", clientlog.NopLogger{}),
+		nil,
+		SessionSpec{},
+		false,
+		factory,
+		logging.NopLogger{},
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		connector.Start(ctx, cancel, throttleCh, connectionStats.connectionsEstCh)
+	}()
+
+	select {
+	case <-factory.created:
+	case <-time.After(time.Second):
+		t.Fatal("serverless handler was not created")
+	}
+	data := connectionStats.statsData(len(connectionStats.connectionsEstCh), 1, len(throttleCh))
+	if got := data["connected"]; got != 1 {
+		t.Fatalf("serverless connected stats = %#v, want 1", got)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("serverless connection did not finish teardown")
+	}
+	data = connectionStats.statsData(len(connectionStats.connectionsEstCh), -1, len(throttleCh))
+	if got := data["connected"]; got != 0 {
+		t.Fatalf("serverless connected stats after teardown = %#v, want 0", got)
 	}
 }
 

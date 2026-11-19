@@ -2,56 +2,54 @@ package aggregate
 
 import (
 	"bytes"
-	"errors"
-	"sync"
+
+	"github.com/mimecast/dtail/internal/io/pool"
 )
+
+// processorBatchSize is the number of lines a Processor collects before it
+// aggregates them in one go.
+const processorBatchSize = 100
 
 type rawLine struct {
 	content  *bytes.Buffer
 	sourceID string
 }
 
-type batcher struct {
-	mu      sync.Mutex
-	pending []rawLine
-	maxSize int
+// lineBatch collects the lines of a single Processor. A processor is fed by
+// exactly one reader goroutine, which also flushes and closes it, so the batch
+// needs no lock; the backing array is reused for every batch.
+type lineBatch struct {
+	lines []rawLine
 }
 
-func newBatcher(maxSize int) (*batcher, error) {
-	if maxSize <= 0 {
-		return nil, errors.New("create aggregate batcher: maximum size must be positive")
+// add appends line and reports whether the batch has reached its threshold.
+func (b *lineBatch) add(line rawLine) bool {
+	if b.lines == nil {
+		// Allocated on first use: processors which never see a line, such
+		// as inert ones created after cancellation, cost no batch storage.
+		b.lines = make([]rawLine, 0, processorBatchSize)
 	}
-	return &batcher{
-		pending: make([]rawLine, 0, maxSize),
-		maxSize: maxSize,
-	}, nil
+	b.lines = append(b.lines, line)
+	return len(b.lines) >= processorBatchSize
 }
 
-// add retains line until the batch reaches its threshold. The caller owns any
-// returned batch and may process it without holding the batcher lock.
-func (b *batcher) add(line rawLine) []rawLine {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+// pending returns the batched lines. They stay owned by the batch until reset.
+func (b *lineBatch) pending() []rawLine {
+	return b.lines
+}
 
-	b.pending = append(b.pending, line)
-	if len(b.pending) < b.maxSize {
-		return nil
+// reset empties the batch for reuse and drops its references to line buffers
+// the caller has recycled meanwhile.
+func (b *lineBatch) reset() {
+	clear(b.lines)
+	b.lines = b.lines[:0]
+}
+
+// recycleRawLines returns the line buffers of batch to the buffer pool.
+func recycleRawLines(batch []rawLine) {
+	for i := range batch {
+		if batch[i].content != nil {
+			pool.RecycleBytesBuffer(batch[i].content)
+		}
 	}
-	return b.takeLocked()
-}
-
-// take transfers every pending line to the caller.
-func (b *batcher) take() []rawLine {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.takeLocked()
-}
-
-func (b *batcher) takeLocked() []rawLine {
-	if len(b.pending) == 0 {
-		return nil
-	}
-	batch := b.pending
-	b.pending = make([]rawLine, 0, b.maxSize)
-	return batch
 }

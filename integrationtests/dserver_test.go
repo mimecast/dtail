@@ -19,7 +19,7 @@ func TestDServer1(t *testing.T) {
 	// Testing a scheduled query.
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDServer1")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	csvFile := "dserver1.csv.tmp"
 	expectedCsvFile := "dserver1.csv.expected"
@@ -65,7 +65,7 @@ func TestDServer2(t *testing.T) {
 	// Testing a continious query.
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDServer2")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	inFile := "dserver2.log.tmp"
 	csvFile := "dserver2.csv.tmp"
@@ -81,7 +81,7 @@ func TestDServer2(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer fd.Close()
+	defer closeIgnoringError(fd)
 
 	go func() {
 		for {

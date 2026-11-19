@@ -67,7 +67,7 @@ func (b *Brush) paintRemote(sb *strings.Builder, line string) {
 		b.theme.Remote.RemoteBg,
 		b.theme.Remote.RemoteAttr)
 
-	color.PaintWithAttr(sb, protocol.FieldDelimiter,
+	color.PaintWithAttr(sb, protocol.FieldSeparator(),
 		b.theme.Remote.DelimiterFg,
 		b.theme.Remote.DelimiterBg,
 		b.theme.Remote.DelimiterAttr)
@@ -77,7 +77,7 @@ func (b *Brush) paintRemote(sb *strings.Builder, line string) {
 		b.theme.Remote.HostnameBg,
 		b.theme.Remote.HostnameAttr)
 
-	color.PaintWithAttr(sb, protocol.FieldDelimiter,
+	color.PaintWithAttr(sb, protocol.FieldSeparator(),
 		b.theme.Remote.DelimiterFg,
 		b.theme.Remote.DelimiterBg,
 		b.theme.Remote.DelimiterAttr)
@@ -94,7 +94,7 @@ func (b *Brush) paintRemote(sb *strings.Builder, line string) {
 			b.theme.Remote.StatsWarnAttr)
 	}
 
-	color.PaintWithAttr(sb, protocol.FieldDelimiter,
+	color.PaintWithAttr(sb, protocol.FieldSeparator(),
 		b.theme.Remote.DelimiterFg,
 		b.theme.Remote.DelimiterBg,
 		b.theme.Remote.DelimiterAttr)
@@ -104,7 +104,7 @@ func (b *Brush) paintRemote(sb *strings.Builder, line string) {
 		b.theme.Remote.CountBg,
 		b.theme.Remote.CountAttr)
 
-	color.PaintWithAttr(sb, protocol.FieldDelimiter,
+	color.PaintWithAttr(sb, protocol.FieldSeparator(),
 		b.theme.Remote.DelimiterFg,
 		b.theme.Remote.DelimiterBg,
 		b.theme.Remote.DelimiterAttr)
@@ -113,7 +113,7 @@ func (b *Brush) paintRemote(sb *strings.Builder, line string) {
 		b.theme.Remote.IDFg,
 		b.theme.Remote.IDBg,
 		b.theme.Remote.IDAttr)
-	color.PaintWithAttr(sb, protocol.FieldDelimiter,
+	color.PaintWithAttr(sb, protocol.FieldSeparator(),
 		b.theme.Remote.DelimiterFg,
 		b.theme.Remote.DelimiterBg,
 		b.theme.Remote.DelimiterAttr)
@@ -128,37 +128,37 @@ func (b *Brush) paintRemote(sb *strings.Builder, line string) {
 }
 
 func (b *Brush) paintClient(sb *strings.Builder, line string) {
-	splitted := strings.SplitN(line, protocol.FieldDelimiter, 3)
-	if len(splitted) < 3 {
+	decoded, err := protocol.DecodeDiagnostic(line)
+	if err != nil {
 		b.paintDefault(sb, line)
 		return
 	}
 
-	color.PaintWithAttr(sb, splitted[0],
+	color.PaintWithAttr(sb, decoded.Source,
 		b.theme.Client.ClientFg,
 		b.theme.Client.ClientBg,
 		b.theme.Client.ClientAttr)
 
-	color.PaintWithAttr(sb, protocol.FieldDelimiter,
+	color.PaintWithAttr(sb, protocol.FieldSeparator(),
 		b.theme.Client.DelimiterFg,
 		b.theme.Client.DelimiterBg,
 		b.theme.Client.DelimiterAttr)
 
-	color.PaintWithAttr(sb, splitted[1],
+	color.PaintWithAttr(sb, decoded.Hostname,
 		b.theme.Client.HostnameFg,
 		b.theme.Client.HostnameBg,
 		b.theme.Client.HostnameAttr)
 
-	color.PaintWithAttr(sb, protocol.FieldDelimiter,
+	color.PaintWithAttr(sb, protocol.FieldSeparator(),
 		b.theme.Client.DelimiterFg,
 		b.theme.Client.DelimiterBg,
 		b.theme.Client.DelimiterAttr)
 
-	if b.paintSeverity(sb, splitted[2]) {
+	if b.paintSeverity(sb, decoded.Content) {
 		return
 	}
 
-	color.PaintWithAttr(sb, splitted[2],
+	color.PaintWithAttr(sb, decoded.Content,
 		b.theme.Client.TextFg,
 		b.theme.Client.TextBg,
 		b.theme.Client.TextAttr)
@@ -176,7 +176,7 @@ func (b *Brush) paintServer(sb *strings.Builder, line string) {
 		b.theme.Server.ServerBg,
 		b.theme.Server.ServerAttr)
 
-	color.PaintWithAttr(sb, protocol.FieldDelimiter,
+	color.PaintWithAttr(sb, protocol.FieldSeparator(),
 		b.theme.Server.DelimiterFg,
 		b.theme.Server.DelimiterBg,
 		b.theme.Server.DelimiterAttr)
@@ -186,7 +186,7 @@ func (b *Brush) paintServer(sb *strings.Builder, line string) {
 		b.theme.Server.HostnameBg,
 		b.theme.Server.HostnameAttr)
 
-	color.PaintWithAttr(sb, protocol.FieldDelimiter,
+	color.PaintWithAttr(sb, protocol.FieldSeparator(),
 		b.theme.Server.DelimiterFg,
 		b.theme.Server.DelimiterBg,
 		b.theme.Server.DelimiterAttr)

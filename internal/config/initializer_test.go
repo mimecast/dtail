@@ -38,8 +38,10 @@ func TestSetupRuntimeReturnsConfigWithoutPublishingGlobals(t *testing.T) {
 
 	args := &Args{
 		ConfigFile: "none",
-		NoAuthKey:  true,
-		SSHPort:    DefaultSSHPort,
+		SSHArgs: SSHArgs{
+			NoAuthKey: true,
+			SSHPort:   DefaultSSHPort,
+		},
 	}
 	cfg, err := SetupRuntime(source.Client, args, nil)
 	if err != nil {
@@ -80,7 +82,10 @@ func TestSetupLogDirectoryReturnsHomeLookupError(t *testing.T) {
 func TestSetupRejectsInvalidSSHPort(t *testing.T) {
 	for _, port := range []int{-1, 0, 65536} {
 		t.Run(fmt.Sprintf("port_%d", port), func(t *testing.T) {
-			err := Setup(source.Client, &Args{ConfigFile: "none", SSHPort: port}, nil)
+			err := Setup(source.Client, &Args{
+				ConfigFile: "none",
+				SSHArgs:    SSHArgs{SSHPort: port},
+			}, nil)
 			if err == nil || !strings.Contains(err.Error(), "ssh port must be between 1 and 65535") {
 				t.Fatalf("Setup SSHPort %d error = %v, want port range error", port, err)
 			}
@@ -361,7 +366,7 @@ func TestProcessEnvVarsCLIFlagNotOverridden(t *testing.T) {
 		Server: newDefaultServerConfig(),
 		Client: newDefaultClientConfig(),
 	}
-	args := &Args{SSHPrivateKeyFilePath: "/cli/explicit/key"}
+	args := &Args{SSHArgs: SSHArgs{SSHPrivateKeyFilePath: "/cli/explicit/key"}}
 	in.processEnvVars(args)
 
 	if args.SSHPrivateKeyFilePath != "/cli/explicit/key" {
@@ -417,10 +422,12 @@ func TestProcessEnvVarsPreservesExplicitSecurityPaths(t *testing.T) {
 		Client: &ClientConfig{KnownHostsPath: "/config/known-hosts"},
 	}
 	args := &Args{
-		HostnameOverride:   "cli-host",
-		KnownHostsPath:     "/cli/known-hosts",
-		AuthorizedKeysPath: "/cli/authorized-keys",
-		HostKeyPath:        "/cli/host-key",
+		HostnameOverride: "cli-host",
+		SSHArgs: SSHArgs{
+			KnownHostsPath:     "/cli/known-hosts",
+			AuthorizedKeysPath: "/cli/authorized-keys",
+			HostKeyPath:        "/cli/host-key",
+		},
 	}
 	in.processEnvVars(args)
 
@@ -502,7 +509,10 @@ func TestSetupLoadsExplicitSecurityPaths(t *testing.T) {
   }
 }`)
 
-	clientArgs := &Args{ConfigFile: configPath, SSHPort: DefaultSSHPort}
+	clientArgs := &Args{
+		ConfigFile: configPath,
+		SSHArgs:    SSHArgs{SSHPort: DefaultSSHPort},
+	}
 	if err := Setup(source.Client, clientArgs, nil); err != nil {
 		t.Fatalf("Setup client: %v", err)
 	}
@@ -514,7 +524,10 @@ func TestSetupLoadsExplicitSecurityPaths(t *testing.T) {
 		t.Fatalf("Hostname() = %q, %v; want configured-host", hostname, err)
 	}
 
-	serverArgs := &Args{ConfigFile: configPath, SSHPort: DefaultSSHPort}
+	serverArgs := &Args{
+		ConfigFile: configPath,
+		SSHArgs:    SSHArgs{SSHPort: DefaultSSHPort},
+	}
 	if err := Setup(source.Server, serverArgs, nil); err != nil {
 		t.Fatalf("Setup server: %v", err)
 	}
@@ -537,11 +550,13 @@ func TestSetupFlagsOverrideConfiguredSecurityPaths(t *testing.T) {
 		Client: &ClientConfig{KnownHostsPath: "/config/known_hosts", AuthKeyDisable: true},
 	}
 	args := &Args{
-		HostnameOverride:   "flag-host",
-		KnownHostsPath:     "/flag/known_hosts",
-		AuthorizedKeysPath: "/flag/authorized_keys",
-		HostKeyPath:        "/flag/ssh_host_key",
-		SSHPort:            DefaultSSHPort,
+		HostnameOverride: "flag-host",
+		SSHArgs: SSHArgs{
+			KnownHostsPath:     "/flag/known_hosts",
+			AuthorizedKeysPath: "/flag/authorized_keys",
+			HostKeyPath:        "/flag/ssh_host_key",
+			SSHPort:            DefaultSSHPort,
+		},
 	}
 	in.processEnvVars(args)
 	if err := in.setupConfig(transformServer, args, nil); err != nil {
@@ -601,5 +616,67 @@ func writeTestConfig(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("write config failed: %v", err)
+	}
+}
+
+// TestSetupLoggingPrecedence checks that an explicitly given --logger or
+// --logDir wins over the config file, that the config file wins over the
+// per-command default, and that the per-command default applies otherwise.
+// dtailhealth ignores the config file's logger and log directory, so only its
+// --logger flag replaces its defaults.
+func TestSetupLoggingPrecedence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	configPath := filepath.Join(t.TempDir(), "dtail.json")
+	writeTestConfig(t, configPath, `{"Common":{"Logger":"stdout","LogDir":"/cfg/logs"}}`)
+	emptyConfigPath := filepath.Join(t.TempDir(), "empty.json")
+	writeTestConfig(t, emptyConfigPath, `{"Common":{}}`)
+	foutConfigPath := filepath.Join(t.TempDir(), "fout.json")
+	writeTestConfig(t, foutConfigPath, `{"Common":{"Logger":"Fout","LogDir":"/cfg/logs"}}`)
+
+	tests := []struct {
+		name       string
+		source     source.Source
+		configFile string
+		logger     string
+		logDir     string
+		wantLogger string
+		wantLogDir string
+	}{
+		{"client default", source.Client, emptyConfigPath, "", "", DefaultClientLogger, home + "/log"},
+		{"client no config file", source.Client, "none", "", "", DefaultClientLogger, home + "/log"},
+		{"client config", source.Client, configPath, "", "", "stdout", "/cfg/logs"},
+		{"client flag", source.Client, configPath, "none", "/flag/logs", "none", "/flag/logs"},
+		{"client flag equal to default", source.Client, configPath, DefaultClientLogger, "~/log",
+			DefaultClientLogger, home + "/log"},
+		{"server default", source.Server, emptyConfigPath, "", "", DefaultServerLogger, DefaultServerLogDir},
+		{"server config", source.Server, configPath, "", "", "stdout", "/cfg/logs"},
+		{"server flag", source.Server, configPath, "fout", "/flag/logs", "fout", "/flag/logs"},
+		{"health default", source.HealthCheck, emptyConfigPath, "", "", DefaultHealthCheckLogger, DefaultServerLogDir},
+		// dtailhealth ignores Common.Logger and Common.LogDir from the config.
+		{"health config ignored", source.HealthCheck, configPath, "", "",
+			DefaultHealthCheckLogger, DefaultServerLogDir},
+		{"health fout config ignored", source.HealthCheck, foutConfigPath, "", "",
+			DefaultHealthCheckLogger, DefaultServerLogDir},
+		{"health flag", source.HealthCheck, configPath, "stdout", "", "stdout", DefaultServerLogDir},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := &Args{
+				ConfigFile:  tt.configFile,
+				LoggingArgs: LoggingArgs{Logger: tt.logger, LogDir: tt.logDir, LogLevel: DefaultLogLevel},
+				SSHArgs:     SSHArgs{NoAuthKey: true, SSHPort: DefaultSSHPort},
+			}
+			cfg, err := SetupRuntime(tt.source, args, nil)
+			if err != nil {
+				t.Fatalf("SetupRuntime: %v", err)
+			}
+			if cfg.Common.Logger != tt.wantLogger {
+				t.Errorf("Common.Logger = %q, want %q", cfg.Common.Logger, tt.wantLogger)
+			}
+			if cfg.Common.LogDir != tt.wantLogDir {
+				t.Errorf("Common.LogDir = %q, want %q", cfg.Common.LogDir, tt.wantLogDir)
+			}
+		})
 	}
 }

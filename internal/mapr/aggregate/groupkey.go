@@ -1,31 +1,25 @@
 package aggregate
 
 import (
-	"strings"
-
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
-func buildGroupKey(groupBy []string, fields map[string]string) string {
+// buildGroupKey appends the values of the group-by fields to dst and returns
+// the extended buffer. Callers pass a reusable buffer (typically scratch[:0])
+// so that building a key allocates nothing on the per-line path; the returned
+// bytes borrow both that buffer and the field values, hence whoever stores the
+// key must copy it (see serializer.aggregate).
+func buildGroupKey(dst []byte, groupBy []string, fields map[string]string) []byte {
 	if len(groupBy) == 0 {
-		return ""
+		return dst
 	}
-
-	total := 0
-	for _, field := range groupBy {
-		total += len(fields[field])
-	}
-	total += (len(groupBy) - 1) * len(protocol.AggregateGroupKeyCombinator)
-
-	var sb strings.Builder
-	sb.Grow(total)
 
 	for i, field := range groupBy {
 		if i > 0 {
-			sb.WriteString(protocol.AggregateGroupKeyCombinator)
+			dst = append(dst, protocol.AggregateGroupKeyCombinator...)
 		}
-		sb.WriteString(fields[field])
+		dst = append(dst, fields[field]...)
 	}
 
-	return sb.String()
+	return dst
 }

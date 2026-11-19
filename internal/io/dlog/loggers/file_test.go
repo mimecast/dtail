@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -66,7 +67,7 @@ func TestFileLoggerNothingLostOnClose(t *testing.T) {
 	var want strings.Builder
 	for i := 0; i < n; i++ {
 		line := "line-" + strconv.Itoa(i)
-		f.Log(time.Now(), line)
+		f.Log(line)
 		want.WriteString(line + "\n")
 	}
 
@@ -91,7 +92,7 @@ func TestFileLoggerIdleFlush(t *testing.T) {
 	stop := startFileLogger(t, f)
 	defer stop()
 
-	f.Log(time.Now(), "follow-line")
+	f.Log("follow-line")
 	waitForLoggerCondition(t, 2*time.Second, func() bool {
 		return strings.Contains(readLogFile(t, dir, base), "follow-line")
 	}, func() string {
@@ -110,7 +111,7 @@ func TestFileLoggerExplicitFlush(t *testing.T) {
 	stop := startFileLogger(t, f)
 	defer stop()
 
-	f.Log(time.Now(), "flush-me")
+	f.Log("flush-me")
 	f.Flush()
 
 	if got := readLogFile(t, dir, base); !strings.Contains(got, "flush-me") {
@@ -167,7 +168,7 @@ func TestFileLoggerCreateFailuresAreReportedAndMessagesDropped(t *testing.T) {
 			f.errorWriter = &stderr
 			stop := startFileLogger(t, f)
 
-			f.Log(time.Now(), "must-be-dropped")
+			f.Log("must-be-dropped")
 			f.Flush()
 			stop()
 
@@ -201,7 +202,7 @@ func TestFileLoggerFailedRotationPreservesCurrentWriter(t *testing.T) {
 	f.lastFileName = "" // The logger goroutine consumed a Rotate signal.
 	var stderr bytes.Buffer
 	f.errorWriter = &stderr
-	rotationErr := f.write(&fileMessageBuf{now: time.Now(), message: "dropped", nl: true})
+	rotationErr := f.write(&fileMessageBuf{message: "dropped", nl: true})
 	f.reportError("write log message", rotationErr)
 
 	if rotationErr == nil || !strings.Contains(rotationErr.Error(), "create log directory") {
@@ -234,9 +235,8 @@ func TestFileLoggerColorMethodsWritePlainMessages(t *testing.T) {
 	f := newFile(Strategy{Rotation: SignalRotation, FileBase: "colors"}, dir)
 	stop := startFileLogger(t, f)
 
-	now := time.Now()
-	f.LogWithColors(now, "plain diagnostic", "\x1b[31mcolored diagnostic\x1b[0m")
-	f.RawWithColors(now, "plain payload", "\x1b[31mcolored payload\x1b[0m")
+	f.LogWithColors("plain diagnostic", "\x1b[31mcolored diagnostic\x1b[0m")
+	f.RawWithColors("plain payload", "\x1b[31mcolored payload\x1b[0m")
 	f.Flush()
 	stop()
 
@@ -301,5 +301,142 @@ func TestFileLoggerCancelBeforeFirstWriteDoesNotPanic(t *testing.T) {
 	case <-doneCh:
 	case <-time.After(1 * time.Second):
 		t.Fatal("file logger goroutine did not exit after ctx cancel")
+	}
+}
+
+// fakeClock is a concurrency-safe injectable clock for the file sink: the test
+// goroutine moves it while the logger goroutine reads it on idle-flush ticks.
+type fakeClock struct {
+	unixNano atomic.Int64
+	reads    atomic.Int64
+}
+
+func newFakeClock(at time.Time) *fakeClock {
+	c := &fakeClock{}
+	c.set(at)
+	return c
+}
+
+func (c *fakeClock) set(at time.Time) { c.unixNano.Store(at.UnixNano()) }
+
+func (c *fakeClock) now() time.Time {
+	c.reads.Add(1)
+	return time.Unix(0, c.unixNano.Load()).In(time.Local)
+}
+
+// midnightTimes returns one instant just before and one just after local
+// midnight, plus the daily file base names they map to.
+func midnightTimes() (before, after time.Time, beforeDay, afterDay string) {
+	before = time.Date(2026, time.September, 15, 23, 59, 59, 0, time.Local)
+	after = before.Add(2 * time.Second)
+	return before, after, before.Format(dailyFileNameLayout), after.Format(dailyFileNameLayout)
+}
+
+func writeFileMessage(t *testing.T, f *file, message string) {
+	t.Helper()
+	if err := f.write(&fileMessageBuf{message: message, nl: true}); err != nil {
+		t.Fatalf("write %q: %v", message, err)
+	}
+}
+
+func closeFileLogger(t *testing.T, f *file) {
+	t.Helper()
+	if err := f.flush(); err != nil {
+		t.Fatalf("flush file logger: %v", err)
+	}
+	if err := f.fd.Close(); err != nil {
+		t.Fatalf("close file logger: %v", err)
+	}
+}
+
+// TestFileLoggerDailyRotationUsesCachedDayUntilRefresh pins the cached-day
+// contract: write() never reads the clock per message, so a message written
+// after midnight still lands in the previous day's file until refreshDay (the
+// idle-flush tick) runs, and every message after the refresh lands in the new
+// day's file. It also documents the accepted dlog trade-off: a server
+// diagnostic stamped after midnight (dlog.log reads time.Now for the stamp)
+// but written before the next refresh goes to the previous day's file.
+func TestFileLoggerDailyRotationUsesCachedDayUntilRefresh(t *testing.T) {
+	dir := withTempLogDir(t)
+	before, after, beforeDay, afterDay := midnightTimes()
+	clock := newFakeClock(before)
+	f := newFile(Strategy{Rotation: DailyRotation}, dir)
+	f.clock = clock.now
+
+	// Timestamps as dlog.log formats them for server diagnostics.
+	const diagnosticStampLayout = "0102-150405"
+	stampedAfter := "diagnostic stamped " + after.Format(diagnosticStampLayout)
+
+	writeFileMessage(t, f, "day-one")
+	clock.set(after)
+	writeFileMessage(t, f, stampedAfter)
+	if got := clock.reads.Load(); got != 1 {
+		t.Fatalf("clock reads before refresh = %d, want 1 (first write only)", got)
+	}
+
+	f.refreshDay()
+	writeFileMessage(t, f, "day-two")
+	closeFileLogger(t, f)
+
+	if got, want := readLogFile(t, dir, beforeDay), "day-one\n"+stampedAfter+"\n"; got != want {
+		t.Fatalf("%s.log = %q, want %q: a line stamped %s but written before the refresh stays in the previous day's file",
+			beforeDay, got, want, after.Format(diagnosticStampLayout))
+	}
+	if got := readLogFile(t, dir, afterDay); got != "day-two\n" {
+		t.Fatalf("%s.log = %q, want only the message written after the refresh", afterDay, got)
+	}
+}
+
+// TestFileLoggerIdleTickerRotatesDailyFile verifies the running logger picks up
+// a new day from its idle-flush ticker, without any explicit refresh call.
+func TestFileLoggerIdleTickerRotatesDailyFile(t *testing.T) {
+	dir := withTempLogDir(t)
+	before, after, beforeDay, afterDay := midnightTimes()
+	clock := newFakeClock(before)
+	f := newFile(Strategy{Rotation: DailyRotation}, dir)
+	f.clock = clock.now
+	stop := startFileLogger(t, f)
+
+	f.Log("before-midnight")
+	f.Flush()
+	clock.set(after)
+
+	waitForLoggerCondition(t, 2*time.Second, func() bool {
+		f.Log("after-midnight")
+		f.Flush()
+		return strings.Contains(readLogFile(t, dir, afterDay), "after-midnight")
+	}, func() string {
+		return fmt.Sprintf("idle ticker never rotated to %s.log; old file %q",
+			afterDay, readLogFile(t, dir, beforeDay))
+	})
+	stop()
+
+	if got := readLogFile(t, dir, beforeDay); !strings.HasPrefix(got, "before-midnight\n") {
+		t.Fatalf("%s.log = %q, want it to start with the pre-midnight message", beforeDay, got)
+	}
+	if got := readLogFile(t, dir, afterDay); strings.Contains(got, "before-midnight") {
+		t.Fatalf("%s.log = %q, pre-midnight message leaked into the new day", afterDay, got)
+	}
+}
+
+// TestFileLoggerSignalRotationNeverReadsClock is the negative case: a fixed
+// FileBase strategy has no use for wall time, so neither writes nor idle ticks
+// may read the clock.
+func TestFileLoggerSignalRotationNeverReadsClock(t *testing.T) {
+	dir := withTempLogDir(t)
+	clock := newFakeClock(time.Now())
+	f := newFile(Strategy{Rotation: SignalRotation, FileBase: "signal"}, dir)
+	f.clock = clock.now
+
+	writeFileMessage(t, f, "first")
+	f.refreshDay()
+	writeFileMessage(t, f, "second")
+	closeFileLogger(t, f)
+
+	if got := clock.reads.Load(); got != 0 {
+		t.Fatalf("clock reads = %d, want 0 for signal rotation", got)
+	}
+	if got := readLogFile(t, dir, "signal"); got != "first\nsecond\n" {
+		t.Fatalf("signal.log = %q, want both messages in the fixed file", got)
 	}
 }

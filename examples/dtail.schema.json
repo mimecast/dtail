@@ -1,6 +1,6 @@
 {
-  "$schema": "https://json-schema.org/2019-09/schema",
-  "description": "Schema for dtail.json",
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "description": "Schema for dtail.json. Property names mirror the JSON-decodable fields of internal/config (CommonConfig, ServerConfig, ClientConfig); internal/config/schema_test.go keeps them in sync. Every section and key is optional: omitted keys keep their built-in defaults. Keys removed from DTail (for example the former TurboBoostDisable and other Turbo*/output tuning keys) are deliberately NOT listed: dtail itself silently ignores unknown keys, but this schema reports them so stale no-op settings can be cleaned up.",
   "definitions": {
     "userPermission": {
       "type": "array",
@@ -10,90 +10,57 @@
     },
     "userPermissions": {
       "type": "object",
-      "patternProperties": {
-        "^.*$": {
-          "$ref": "#/definitions/userPermission"
-        }
+      "additionalProperties": {
+        "$ref": "#/definitions/userPermission"
       }
     },
     "loglevel": {
       "type": "string",
-      "enum": [
-        "None",
-        "Fatal",
-        "Error",
-        "Warn",
-        "Info",
-        "Default",
-        "Verbose",
-        "Debug",
-        "Devel",
-        "Trace",
-        "All"
-      ]
+      "description": "Log level, matched case-insensitively: none, fatal, error, warn, info, default, verbose, debug, devel, trace or all. An empty string is the same as default, which logs more than info (it sits between info and verbose).",
+      "pattern": "^(?:[Nn][Oo][Nn][Ee]|[Ff][Aa][Tt][Aa][Ll]|[Ee][Rr][Rr][Oo][Rr]|[Ww][Aa][Rr][Nn]|[Ii][Nn][Ff][Oo]|[Dd][Ee][Ff][Aa][Uu][Ll][Tt]|[Vv][Ee][Rr][Bb][Oo][Ss][Ee]|[Dd][Ee][Bb][Uu][Gg]|[Dd][Ee][Vv][Ee][Ll]|[Tt][Rr][Aa][Cc][Ee]|[Aa][Ll][Ll])?$"
     },
     "logger": {
       "type": "string",
-      "enum": [
-        "None",
-        "Stdout",
-        "File",
-        "Fout"
-      ]
+      "description": "Logger implementation, matched case-insensitively: none, stdout, file or fout.",
+      "pattern": "^(?:[Nn][Oo][Nn][Ee]|[Ss][Tt][Dd][Oo][Uu][Tt]|[Ff][Ii][Ll][Ee]|[Ff][Oo][Uu][Tt])$"
     },
     "logrotation": {
       "type": "string",
-      "enum": [
-        "Daily",
-        "Signal"
-      ]
+      "description": "Log rotation strategy, matched case-insensitively: daily or signal. dtail itself treats every value other than daily as signal.",
+      "pattern": "^(?:[Dd][Aa][Ii][Ll][Yy]|[Ss][Ii][Gg][Nn][Aa][Ll])$"
     },
     "color": {
       "type": "string",
-      "enum": [
-        "Black",
-        "Red",
-        "Green",
-        "Yellow",
-        "Blue",
-        "Magenta",
-        "Cyan",
-        "White"
-      ]
+      "description": "Terminal color, matched case-insensitively: Black, Red, Green, Yellow, Blue, Magenta, Cyan, White or Default. An empty string means no color code. For compatibility with older config files dtail still accepts the deprecated prefixed spellings of released example configs (e.g. \"FgBlack\", \"BgCyan\") and raw ANSI SGR escape sequences (ESC[...m) such as \"\\u001b[37m\" (used unchanged); this schema reports both forms. Any other value is not fatal: dtail warns on stderr and uses the default color.",
+      "pattern": "^(?:[Bb][Ll][Aa][Cc][Kk]|[Rr][Ee][Dd]|[Gg][Rr][Ee][Ee][Nn]|[Yy][Ee][Ll][Ll][Oo][Ww]|[Bb][Ll][Uu][Ee]|[Mm][Aa][Gg][Ee][Nn][Tt][Aa]|[Cc][Yy][Aa][Nn]|[Ww][Hh][Ii][Tt][Ee]|[Dd][Ee][Ff][Aa][Uu][Ll][Tt])?$"
     },
     "attribute": {
       "type": "string",
-      "enum": [
-        "None",
-        "Bold",
-        "Dim",
-        "Italic",
-        "Underline",
-        "Blink",
-        "SlowBlink",
-        "RapidBlink",
-        "Reverse",
-        "Hidden"
-      ]
+      "description": "Terminal text attribute, matched case-insensitively: None, Bold, Dim, Italic, Underline, Blink, SlowBlink, RapidBlink, Reverse or Hidden. An empty string is the same as None. For compatibility with older config files dtail still accepts the deprecated prefixed spellings of released example configs (e.g. \"AttrDim\", \"AttrNone\") and raw ANSI SGR escape sequences (ESC[...m) such as \"\\u001b[1m\" (used unchanged); this schema reports both forms. Any other value is not fatal: dtail warns on stderr and uses the default attribute.",
+      "pattern": "^(?:[Nn][Oo][Nn][Ee]|[Bb][Oo][Ll][Dd]|[Dd][Ii][Mm]|[Ii][Tt][Aa][Ll][Ii][Cc]|[Uu][Nn][Dd][Ee][Rr][Ll][Ii][Nn][Ee]|[Bb][Ll][Ii][Nn][Kk]|[Ss][Ll][Oo][Ww][Bb][Ll][Ii][Nn][Kk]|[Rr][Aa][Pp][Ii][Dd][Bb][Ll][Ii][Nn][Kk]|[Rr][Ee][Vv][Ee][Rr][Ss][Ee]|[Hh][Ii][Dd][Dd][Ee][Nn])?$"
     }
   },
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "Client": {
+      "type": "object",
+      "description": "Client settings (dtail, dcat, dgrep, dmap).",
       "additionalProperties": false,
       "properties": {
         "TermColorsEnable": {
-          "type": "boolean"
-        },
-        "KnownHostsPath": {
-          "type": "string"
+          "type": "boolean",
+          "description": "Enable terminal colors in client output (default true; --noColor disables).",
+          "default": true
         },
         "TermColors": {
           "type": "object",
+          "description": "Terminal color palette.",
           "additionalProperties": false,
           "properties": {
             "Remote": {
+              "type": "object",
+              "description": "Colors for lines received from remote servers.",
               "additionalProperties": false,
               "properties": {
                 "DelimiterAttr": {
@@ -171,6 +138,8 @@
               }
             },
             "Client": {
+              "type": "object",
+              "description": "Colors for client-generated messages.",
               "additionalProperties": false,
               "properties": {
                 "DelimiterAttr": {
@@ -212,333 +181,490 @@
               }
             },
             "Server": {
+              "type": "object",
+              "description": "Colors for server-generated messages.",
               "additionalProperties": false,
               "properties": {
                 "DelimiterAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "DelimiterBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "DelimiterFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "ServerAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "ServerBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "ServerFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "HostnameAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "HostnameBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "HostnameFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "TextAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "TextBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "TextFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 }
               }
             },
             "Common": {
+              "type": "object",
+              "description": "Colors for severity markers.",
               "additionalProperties": false,
               "properties": {
                 "SeverityErrorAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "SeverityErrorBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "SeverityErrorFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "SeverityFatalAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "SeverityFatalBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "SeverityFatalFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "SeverityWarnAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "SeverityWarnBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "SeverityWarnFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 }
               }
             },
             "MaprTable": {
+              "type": "object",
+              "description": "Colors for MapReduce result tables.",
               "additionalProperties": false,
               "properties": {
                 "DataAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "DataBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "DataFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "DelimiterAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "DelimiterBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "DelimiterFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "HeaderAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "HeaderBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "HeaderFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "HeaderDelimiterAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "HeaderDelimiterBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "HeaderDelimiterFg": {
-                  "#ref": "#/definitions/color"
-                },
-                "HeaderSortKeyAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/color"
                 },
                 "HeaderGroupKeyAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
+                },
+                "HeaderSortKeyAttr": {
+                  "$ref": "#/definitions/attribute"
                 },
                 "RawQueryAttr": {
-                  "#ref": "#/definitions/attribute"
+                  "$ref": "#/definitions/attribute"
                 },
                 "RawQueryBg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 },
                 "RawQueryFg": {
-                  "#ref": "#/definitions/color"
+                  "$ref": "#/definitions/color"
                 }
               }
             }
           }
+        },
+        "AuthKeyPath": {
+          "type": "string",
+          "description": "Private key whose public half is registered with dserver for auth-key fast reconnect (default ~/.ssh/id_rsa). Overridden by --auth-key-path, DTAIL_AUTH_KEY_PATH and DTAIL_SSH_PRIVATE_KEYFILE_PATH."
+        },
+        "AuthKeyDisable": {
+          "type": "boolean",
+          "description": "Disable auth-key fast reconnect (same as --no-auth-key).",
+          "default": false
+        },
+        "KnownHostsPath": {
+          "type": "string",
+          "description": "OpenSSH known_hosts file. Empty uses ~/.ssh/known_hosts."
+        },
+        "LogPayload": {
+          "type": "boolean",
+          "description": "Tee the full retrieved payload into the daily client log file of the default fout logger (same as --log-payload). Default false: the file keeps diagnostics only; payload always goes to stdout.",
+          "default": false
         }
       }
     },
     "Server": {
+      "type": "object",
+      "description": "dserver settings.",
       "additionalProperties": false,
       "properties": {
         "SSHBindAddress": {
-          "type": "string"
-        },
-        "KeyExchanges": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "Ciphers": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "MACs": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "HostKeyFile": {
-          "type": "string"
-        },
-        "HostKeyPath": {
-          "type": "string"
-        },
-        "AuthorizedKeysPath": {
-          "type": "string"
-        },
-        "HostKeyBits": {
-          "type": "integer",
-          "minimum": 2048
-        },
-        "MapreduceLogFormat": {
-          "type": "string"
-        },
-        "MaxConcurrentCats": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 20
-        },
-        "MaxConcurrentTails": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 200
+          "type": "string",
+          "description": "Address the SSH server binds to.",
+          "default": "0.0.0.0"
         },
         "MaxConnections": {
           "type": "integer",
+          "description": "Maximum number of concurrent user connections.",
           "minimum": 1,
-          "maximum": 200
+          "default": 10
+        },
+        "IdleSessionTimeoutS": {
+          "type": "integer",
+          "description": "Rolling inactivity timeout for authenticated SSH sessions, in seconds. Successful reads and writes mark the connection active and a per-connection ticker (interval timeout/4, clamped to 1-30 seconds) refreshes the deadline, so active sessions stay connected. An idle connection closes between timeout + 2 and timeout + 3 intervals after its last activity (about 960-990 seconds at the default). 0 or less uses the 900 second default. Values below about a minute are not useful for log streaming.",
+          "default": 900
+        },
+        "MaxConcurrentCats": {
+          "type": "integer",
+          "description": "Maximum number of concurrent cat/grep/MapReduce reads per server.",
+          "minimum": 1,
+          "default": 2
+        },
+        "MaxConcurrentTails": {
+          "type": "integer",
+          "description": "Maximum number of concurrent tails per server.",
+          "minimum": 1,
+          "default": 50
         },
         "MaxLineLength": {
           "type": "integer",
+          "description": "Maximum line length in bytes before a line is split into multiple smaller lines. 0 or less uses the 1 MiB default. The minimum of 1024 is a recommendation of this schema; dserver uses any positive value as is.",
           "minimum": 1024,
-          "maximum": 10240000
+          "default": 1048576
         },
         "Permissions": {
           "type": "object",
-          "additionalProperties": true,
-          "patternProperties": {
-            "^Default$": {
-              "$ref": "#/definitions/userPermission"
+          "description": "Read permissions per SSH user.",
+          "additionalProperties": false,
+          "properties": {
+            "Default": {
+              "$ref": "#/definitions/userPermission",
+              "description": "Permissions of users without an entry in Users (default [\"^/.*\"]).",
+              "default": [
+                "^/.*"
+              ]
             },
-            "^Users$": {
-              "$ref": "#/definitions/userPermissions"
+            "Users": {
+              "$ref": "#/definitions/userPermissions",
+              "description": "Per-user permissions; replace Default for that user."
             }
           }
         },
+        "MapreduceLogFormat": {
+          "type": "string",
+          "description": "Default MapReduce log format.",
+          "default": "default"
+        },
+        "HostKeyFile": {
+          "type": "string",
+          "description": "Deprecated: use HostKeyPath. Legacy private SSH host key path, used only when HostKeyPath is empty.",
+          "deprecated": true
+        },
+        "HostKeyPath": {
+          "type": "string",
+          "description": "Private SSH host key path. When empty, HostKeyFile is used; when both are empty, ./cache/ssh_host_key."
+        },
+        "AuthorizedKeysPath": {
+          "type": "string",
+          "description": "One authorized_keys file for all users. When empty, the per-user cache and ~/.ssh/authorized_keys are used."
+        },
+        "HostKeyBits": {
+          "type": "integer",
+          "description": "RSA host key size in bits when a host key is generated. 0 or less uses 4096. The minimum of 2048 is a recommendation of this schema; dserver does not enforce it.",
+          "minimum": 2048,
+          "default": 4096
+        },
         "Schedule": {
           "type": "array",
+          "description": "Scheduled MapReduce jobs.",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
               "Name": {
-                "type": "string"
+                "type": "string",
+                "description": "Unique job name."
               },
               "Enable": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Whether the job runs."
               },
-              "AllowFrom": {
+              "Files": {
+                "type": "string",
+                "description": "File path or glob of the logs to query. May contain $today, $tomorrow, $yesterday, $yyesterday or $yyyesterday, replaced with the matching YYYYMMDD date before each run."
+              },
+              "Query": {
+                "type": "string",
+                "description": "MapReduce query to run."
+              },
+              "Outfile": {
+                "type": "string",
+                "description": "Path of the CSV result file. May contain $today, $tomorrow, $yesterday, $yyesterday or $yyyesterday, replaced with the matching YYYYMMDD date before each run."
+              },
+              "Discovery": {
+                "type": "string",
+                "description": "Server discovery module: COMMA or FILE (case-insensitive; builds may add more), optionally with options as MODULE:options. It selects how Servers is read: Servers, joined with commas, is the module's input, for example the server list file for FILE. When empty, a Servers value naming an existing file is read as a server list file, otherwise as a comma-separated list."
+              },
+              "Servers": {
                 "type": "array",
+                "description": "Servers to query, passed to the Discovery module. When empty, the job queries this dserver's own SSHBindAddress.",
                 "items": {
                   "type": "string"
                 }
               },
-              "Servers": {
+              "AllowFrom": {
                 "type": "array",
+                "description": "Addresses of the dserver instances allowed to connect to run this job.",
                 "items": {
                   "type": "string"
                 }
               },
               "TimeRange": {
                 "type": "array",
+                "description": "Hours [start, end) of the day during which the job runs.",
                 "items": [
                   {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 24
                   },
                   {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 24
                   }
-                ]
-              },
-              "Files": {
-                "type": "string"
-              },
-              "Outfile": {
-                "type": "string"
-              },
-              "Query": {
-                "type": "string"
+                ],
+                "additionalItems": false,
+                "minItems": 2
               }
             }
           }
         },
         "Continuous": {
           "type": "array",
+          "description": "Continuously running MapReduce jobs.",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
               "Name": {
-                "type": "string"
+                "type": "string",
+                "description": "Unique job name."
               },
               "Enable": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Whether the job runs."
               },
-              "AllowFrom": {
+              "Files": {
+                "type": "string",
+                "description": "File path or glob of the logs to query. May contain $today, $tomorrow, $yesterday, $yyesterday or $yyyesterday, replaced with the matching YYYYMMDD date before each run."
+              },
+              "Query": {
+                "type": "string",
+                "description": "MapReduce query to run."
+              },
+              "Outfile": {
+                "type": "string",
+                "description": "Path of the CSV result file. May contain $today, $tomorrow, $yesterday, $yyesterday or $yyyesterday, replaced with the matching YYYYMMDD date before each run."
+              },
+              "Discovery": {
+                "type": "string",
+                "description": "Server discovery module: COMMA or FILE (case-insensitive; builds may add more), optionally with options as MODULE:options. It selects how Servers is read: Servers, joined with commas, is the module's input, for example the server list file for FILE. When empty, a Servers value naming an existing file is read as a server list file, otherwise as a comma-separated list."
+              },
+              "Servers": {
                 "type": "array",
+                "description": "Servers to query, passed to the Discovery module. When empty, the job queries this dserver's own SSHBindAddress.",
                 "items": {
                   "type": "string"
                 }
               },
-              "Servers": {
+              "AllowFrom": {
                 "type": "array",
+                "description": "Addresses of the dserver instances allowed to connect to run this job.",
                 "items": {
                   "type": "string"
                 }
               },
               "RestartOnDayChange": {
-                "type": "boolean"
-              },
-              "Files": {
-                "type": "string"
-              },
-              "Outfile": {
-                "type": "string"
-              },
-              "Query": {
-                "type": "string"
+                "type": "boolean",
+                "description": "Restart the job when the day changes."
               }
             }
           }
+        },
+        "KeyExchanges": {
+          "type": "array",
+          "description": "Allowed SSH key exchange algorithms. Empty uses the built-in list.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Ciphers": {
+          "type": "array",
+          "description": "Allowed SSH cipher algorithms. Empty uses the built-in list.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "MACs": {
+          "type": "array",
+          "description": "Allowed SSH MAC algorithms. Empty uses the built-in list.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "AuthKeyEnabled": {
+          "type": "boolean",
+          "description": "Enable in-memory auth-key registration (AUTHKEY) and fast reconnect.",
+          "default": true
+        },
+        "AuthKeyTTLSeconds": {
+          "type": "integer",
+          "description": "Auth-key cache entry TTL in seconds. 0 or less uses the default.",
+          "default": 86400
+        },
+        "AuthKeyMaxPerUser": {
+          "type": "integer",
+          "description": "Maximum number of cached auth keys per user. 0 or less uses the default.",
+          "default": 5
+        },
+        "ReadGlobRetryIntervalMs": {
+          "type": "integer",
+          "description": "Retry interval for glob retries, in milliseconds. 0 or less uses the default.",
+          "default": 5000
+        },
+        "ReadRetryIntervalMs": {
+          "type": "integer",
+          "description": "Retry interval for re-reading in tail/cat loops, in milliseconds. 0 or less uses the default.",
+          "default": 2000
+        },
+        "OutputBufferMaxBytes": {
+          "type": "integer",
+          "description": "Maximum payload backing memory retained by the output buffer per SSH session; producers apply backpressure at the cap. Must be at least MaxLineLength + 131072 (two 64 KiB writer batches), otherwise dserver refuses the session. 0 or less uses the 2 MiB default.",
+          "default": 2097152
+        },
+        "OutputFlushTimeoutMs": {
+          "type": "integer",
+          "description": "Maximum time to wait for the session reader to drain output, in milliseconds. 0 or less uses the default.",
+          "default": 2000
+        },
+        "OutputReadRetryIntervalMs": {
+          "type": "integer",
+          "description": "Compatibility fallback interval, in milliseconds, for detecting a stale generation when an older output writer provides no cancellation signal. Values below the implementation safety minimum are clamped.",
+          "default": 1
+        },
+        "OutputEOFAckTimeoutMs": {
+          "type": "integer",
+          "description": "Maximum time to wait for the output EOF acknowledgement after signaling EOF, in milliseconds. 0 or less uses the default.",
+          "default": 2000
+        },
+        "MaxCommandFrameSize": {
+          "type": "integer",
+          "description": "Maximum size in bytes of one command frame (bytes between ';' delimiters); a larger frame closes the session. dserver treats 0 or less as no limit for normal sessions (only health-check sessions then fall back to the 1 MiB default); this schema requires at least 1 because disabling the guard lets a client grow a frame without bound.",
+          "minimum": 1,
+          "default": 1048576
+        },
+        "MaxGlobTargets": {
+          "type": "integer",
+          "description": "Maximum number of files one read command's glob may dispatch; excess paths are dropped with a warning. 0 or less uses the default.",
+          "default": 1000
         }
       }
     },
     "Common": {
+      "type": "object",
+      "description": "Settings shared by client and server.",
       "additionalProperties": false,
       "properties": {
         "HostnameOverride": {
-          "type": "string"
-        },
-        "LogDir": {
-          "type": "string"
-        },
-        "Logger": {
-          "#ref": "#/definitions/logger"
-        },
-        "LogLevel": {
-          "#ref": "#/definitions/loglevel"
-        },
-        "LogRotation": {
-          "#ref": "#/definitions/logrotation"
-        },
-        "CacheDir": {
-          "type": "string"
+          "type": "string",
+          "description": "Replaces the system hostname in logs and output when set."
         },
         "SSHPort": {
           "type": "integer",
-          "minimum": 2,
-          "maximum": 16000
+          "description": "SSH port of dserver.",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 2222
+        },
+        "SSHConnectTimeoutMs": {
+          "type": "integer",
+          "description": "Client SSH connection timeout in milliseconds. 0 or less uses the default.",
+          "default": 2000
         },
         "ExperimentalFeaturesEnable": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Enable experimental features (mainly for development).",
+          "default": false
+        },
+        "LogDir": {
+          "type": "string",
+          "description": "Log directory. For the client commands and dserver, an explicit --logDir flag replaces this value; when neither is set, the client commands use ~/log and dserver uses \"log\" (relative to the working directory). dtailhealth has no --logDir flag and ignores this value: it always uses \"log\". Every \"~/\" in the path is replaced with the home directory."
+        },
+        "Logger": {
+          "$ref": "#/definitions/logger",
+          "description": "Logger implementation. For the client commands and dserver, an explicit --logger flag replaces this value; when neither is set, the client commands use fout and dserver uses file. dtailhealth ignores this value: it uses none unless its --logger flag is given."
+        },
+        "LogLevel": {
+          "$ref": "#/definitions/loglevel",
+          "description": "Maximum log level. An empty string is the same as the level default, which logs more than info (the value this field defaults to). Note: a --logLevel flag other than info replaces this value; dtailhealth's flag defaults to none, so it replaces it unless dtailhealth runs serverless, which always uses warn; a serverless client without --logLevel (or with info) uses warn.",
+          "default": "info"
+        },
+        "LogRotation": {
+          "$ref": "#/definitions/logrotation",
+          "description": "Log rotation strategy.",
+          "default": "daily"
+        },
+        "CacheDir": {
+          "type": "string",
+          "description": "Cache directory.",
+          "default": "cache"
         }
       }
     }
-  },
-  "required": [
-    "Client",
-    "Server",
-    "Common"
-  ]
+  }
 }

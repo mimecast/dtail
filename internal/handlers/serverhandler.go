@@ -111,18 +111,26 @@ func NewServerHandler(ctx context.Context, user *user.User, dependencies Depende
 }
 
 // validateOutputBufferConfig prevents a valid maximum-length line from being
-// rejected after protocol framing. A flush can contain the tail of the normal
-// 64 KiB writer batch plus that line, so reserve another full batch as bounded
-// framing/path overhead. Zero values use the safe defaults.
+// rejected after protocol framing. Zero values use the safe defaults.
 func validateOutputBufferConfig(serverCfg *config.ServerConfig) error {
 	maxLineLength := positiveIntOrDefault(serverCfg.MaxLineLength, 1024*1024)
 	bufferMaxBytes := positiveIntOrDefault(serverCfg.OutputBufferMaxBytes, defaultOutputBufferMaxBytes)
-	minimum := maxLineLength + 2*networkWriterBufferSize
+	minimum := minimumOutputBufferMaxBytes(maxLineLength)
 	if bufferMaxBytes < minimum {
 		return fmt.Errorf("create server handler: OutputBufferMaxBytes %d must be at least %d for MaxLineLength %d",
 			bufferMaxBytes, minimum, maxLineLength)
 	}
 	return nil
+}
+
+// minimumOutputBufferMaxBytes is the smallest OutputBufferMaxBytes accepted
+// for maxLineLength. A flush can contain the tail of the normal 64 KiB writer
+// batch plus a maximum-length line, so another full batch is reserved as
+// bounded framing/path overhead. The output queue copies rather than adopts a
+// batch whose spare capacity would crowd out the next one (see
+// tryEnqueueLocked), so two full batches still queue at this minimum.
+func minimumOutputBufferMaxBytes(maxLineLength int) int {
+	return maxLineLength + 2*networkWriterBufferSize
 }
 
 func (h *ServerHandler) handleUserCommand(ctx context.Context, ltx lcontext.LContext,

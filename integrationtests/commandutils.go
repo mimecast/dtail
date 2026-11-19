@@ -35,7 +35,7 @@ func runCommandWithEnv(ctx context.Context, t *testing.T, stdoutFile, cmdStr str
 	if err != nil {
 		return 0, err
 	}
-	defer fd.Close()
+	defer closeIgnoringError(fd)
 
 	t.Log("Running command", cmdStr, strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, cmdStr, args...)
@@ -168,8 +168,8 @@ func startCommandWithEnv(ctx context.Context, t *testing.T, inPipeFile,
 		}
 		go func() {
 			_, _ = io.Copy(stdinPipe, bufio.NewReader(fd))
-			stdinPipe.Close()
-			fd.Close()
+			_ = stdinPipe.Close()
+			_ = fd.Close()
 		}()
 	}
 

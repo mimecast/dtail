@@ -107,8 +107,10 @@ func (c *continuous) runJob(ctx context.Context, job *config.Continuous) {
 		ServersStr:        servers,
 		What:              files,
 		Mode:              omode.TailClient,
-		NoAuthKey:         true,
-		UserName:          config.ContinuousUser,
+		SSHArgs: config.SSHArgs{
+			NoAuthKey: true,
+			UserName:  config.ContinuousUser,
+		},
 	}
 
 	args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(job.Name))

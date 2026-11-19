@@ -5,8 +5,8 @@ const (
 	ProtocolCompat string = "4.1"
 	// MessageDelimiter delimits separate messages.
 	MessageDelimiter byte = '¬'
-	// FieldDelimiter delimits messagefields.
-	FieldDelimiter string = "|"
+	// fieldDelimiter delimits message fields.
+	fieldDelimiter string = "|"
 	// AggregateMessageID is the leading field of a mapreduce aggregate-data
 	// message on the wire (AGGREGATE|hostname|serialized-data). It is the
 	// single source of truth used by the server to tag such messages and by

@@ -25,7 +25,7 @@ import (
 // test.
 func TestDTailTimeoutExits(t *testing.T) {
 	testLogger := NewTestLogger("TestDTailTimeoutExits")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	cleanupTmpFiles(t)
 
 	if !config.Env("DTAIL_INTEGRATION_TEST_RUN_MODE") {

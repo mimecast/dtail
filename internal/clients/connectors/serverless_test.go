@@ -67,6 +67,59 @@ func TestServerlessStartReturnsAfterCancellationAndDrainsServerOutput(t *testing
 	}
 }
 
+func TestServerlessStartAccountsForConnectionLifetime(t *testing.T) {
+	clientHandler := newBlockingDispatchServerlessClient()
+	serverHandler := newServerlessLifecycleServer(nil)
+	connector := NewServerless(
+		"test-user",
+		clientHandler,
+		[]string{"health"},
+		sessionspec.Spec{},
+		false,
+		serverlessLifecycleFactory{handler: serverHandler},
+		logging.NopLogger{},
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	t.Cleanup(clientHandler.permitDispatch)
+	throttleCh := make(chan struct{}, 1)
+	statsCh := make(chan struct{}, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		connector.Start(ctx, cancel, throttleCh, statsCh)
+	}()
+
+	waitForSignal(t, clientHandler.dispatchStarted, "initial command dispatch")
+	if got := len(statsCh); got != 1 {
+		t.Fatalf("connected count during dispatch = %d, want 1", got)
+	}
+	if got := len(throttleCh); got != 1 {
+		t.Fatalf("throttle count during dispatch = %d, want 1", got)
+	}
+
+	clientHandler.permitDispatch()
+	select {
+	case throttleCh <- struct{}{}:
+		// The send completes only after Start releases its establishment slot.
+	case <-time.After(time.Second):
+		t.Fatal("serverless connector did not release its throttle slot after command dispatch")
+	}
+	<-throttleCh
+	if got := len(statsCh); got != 1 {
+		t.Fatalf("connected count after establishment = %d, want 1", got)
+	}
+
+	cancel()
+	waitForSignal(t, done, "serverless connector teardown")
+	if got := len(statsCh); got != 0 {
+		t.Fatalf("connected count after teardown = %d, want 0", got)
+	}
+	if got := len(throttleCh); got != 0 {
+		t.Fatalf("throttle count after teardown = %d, want 0", got)
+	}
+}
+
 func TestServerlessCancellationDrainsRealHandlerFinalAggregate(t *testing.T) {
 	const statsLine = "INFO|1002-071143|1|stats.go:56|8|15|7|0.21|471h0m21s|" +
 		"MAPREDUCE:STATS|currentConnections=0|lifetimeConnections=1"
@@ -538,6 +591,32 @@ func (h *serverlessLifecycleServer) attachmentState() (bool, bool) {
 type dispatchingServerlessClient struct {
 	*serverlessLifecycleClient
 	commands chan []byte
+}
+
+type blockingDispatchServerlessClient struct {
+	*dispatchingServerlessClient
+	dispatchStarted chan struct{}
+	dispatchOnce    sync.Once
+	allowDispatch   chan struct{}
+	allowOnce       sync.Once
+}
+
+func newBlockingDispatchServerlessClient() *blockingDispatchServerlessClient {
+	return &blockingDispatchServerlessClient{
+		dispatchingServerlessClient: newDispatchingServerlessClient(),
+		dispatchStarted:             make(chan struct{}),
+		allowDispatch:               make(chan struct{}),
+	}
+}
+
+func (h *blockingDispatchServerlessClient) SendMessage(message string) error {
+	h.dispatchOnce.Do(func() { close(h.dispatchStarted) })
+	<-h.allowDispatch
+	return h.dispatchingServerlessClient.SendMessage(message)
+}
+
+func (h *blockingDispatchServerlessClient) permitDispatch() {
+	h.allowOnce.Do(func() { close(h.allowDispatch) })
 }
 
 func newDispatchingServerlessClient() *dispatchingServerlessClient {

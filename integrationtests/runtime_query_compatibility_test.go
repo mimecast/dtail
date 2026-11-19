@@ -24,7 +24,7 @@ func TestDServerProtocolVersionMismatchReportsCompatibilityError(t *testing.T) {
 	skipIfNotIntegrationTest(t)
 
 	testLogger := NewTestLogger("TestDServerProtocolVersionMismatchReportsCompatibilityError")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	cleanupTmpFiles(t)
 
 	ctx, cancel := createTestContextWithTimeout(t)
@@ -144,8 +144,8 @@ func runProtocolMismatchSession(ctx context.Context, t *testing.T, address strin
 	if err != nil {
 		t.Fatalf("open ssh session: %v", err)
 	}
-	defer client.Close()
-	defer session.Close()
+	defer closeIgnoringError(client)
+	defer closeIgnoringError(session)
 
 	rawCommand := "protocol " + protocolVersion + " base64 " + base64.StdEncoding.EncodeToString([]byte("tail: . /tmp/ignored .")) + ";"
 	if _, err := io.WriteString(stdin, rawCommand); err != nil {
@@ -182,31 +182,31 @@ func openSSHSession(ctx context.Context, t *testing.T, address string) (*gossh.C
 
 	session, err := conn.NewSession()
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, nil, nil, nil, err
 	}
 
 	stdin, err := session.StdinPipe()
 	if err != nil {
-		session.Close()
-		conn.Close()
+		_ = session.Close()
+		_ = conn.Close()
 		return nil, nil, nil, nil, err
 	}
 	stdout, err := session.StdoutPipe()
 	if err != nil {
-		session.Close()
-		conn.Close()
+		_ = session.Close()
+		_ = conn.Close()
 		return nil, nil, nil, nil, err
 	}
 	stderr, err := session.StderrPipe()
 	if err != nil {
-		session.Close()
-		conn.Close()
+		_ = session.Close()
+		_ = conn.Close()
 		return nil, nil, nil, nil, err
 	}
 	if err := session.Shell(); err != nil {
-		session.Close()
-		conn.Close()
+		_ = session.Close()
+		_ = conn.Close()
 		return nil, nil, nil, nil, err
 	}
 

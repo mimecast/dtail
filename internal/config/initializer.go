@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/source"
 )
 
@@ -27,6 +28,9 @@ const (
 type transformCb func(*initializer, *Args, []string) error
 
 var userHomeDirectory = os.UserHomeDir
+
+// configWarningOutput receives non-fatal config file warnings. Tests replace it.
+var configWarningOutput io.Writer = os.Stderr
 
 func (in *initializer) parseConfig(args *Args) error {
 	if strings.ToLower(args.ConfigFile) == "none" {
@@ -74,8 +78,16 @@ func (in *initializer) parseSpecificConfig(configFile string) error {
 		return fmt.Errorf("unable to read config file %s: %w", configFile, err)
 	}
 
+	color.TakeConfigWarnings() // Drop anything left over from an earlier decode.
 	if err := json.Unmarshal([]byte(cfgBytes), in); err != nil {
+		color.TakeConfigWarnings()
 		return fmt.Errorf("unable to parse config file %s: %w", configFile, err)
+	}
+	// An unrecognised colour value falls back to its default instead of failing,
+	// so an old config file keeps loading (dserver included). The logger is not
+	// set up yet, so the warnings go to stderr, which keeps stdout payload clean.
+	for _, warning := range color.TakeConfigWarnings() {
+		_, _ = fmt.Fprintf(configWarningOutput, "WARN: config file %s: %s\n", configFile, warning)
 	}
 
 	return nil
@@ -85,6 +97,7 @@ func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 	additionalArgs []string) error {
 
 	in.processEnvVars(args)
+	in.applyLoggingDefaults(sourceProcess)
 
 	switch sourceProcess {
 	case source.Server:
@@ -96,6 +109,43 @@ func (in *initializer) transformConfig(sourceProcess source.Source, args *Args,
 	default:
 		return fmt.Errorf("unable to transform config, unknown source '%s'",
 			sourceProcess)
+	}
+}
+
+// applyLoggingDefaults fills the logger and log directory the config file left
+// unset with the per-command defaults. The --logger and --logDir flags default
+// to empty, so setupConfig applies them afterwards only when given, which
+// yields the precedence: explicit flag > config file > per-command default.
+//
+// dtailhealth is the exception: it has no --cfg flag and reads the user's
+// client config, so a Common.Logger or Common.LogDir meant for the interactive
+// clients would change its monitoring-check output and create log directories.
+// It therefore ignores both config values, like it ignores Common.LogLevel,
+// and only an explicit --logger flag changes its logger.
+func (in *initializer) applyLoggingDefaults(sourceProcess source.Source) {
+	logger, logDir := loggingDefaults(sourceProcess)
+	if sourceProcess == source.HealthCheck {
+		in.Common.Logger = logger
+		in.Common.LogDir = logDir
+		return
+	}
+	if in.Common.Logger == "" {
+		in.Common.Logger = logger
+	}
+	if in.Common.LogDir == "" {
+		in.Common.LogDir = logDir
+	}
+}
+
+// loggingDefaults returns the default logger and log directory of a command.
+func loggingDefaults(sourceProcess source.Source) (logger, logDir string) {
+	switch sourceProcess {
+	case source.Server:
+		return DefaultServerLogger, DefaultServerLogDir
+	case source.HealthCheck:
+		return DefaultHealthCheckLogger, DefaultServerLogDir
+	default:
+		return DefaultClientLogger, DefaultClientLogDir
 	}
 }
 
@@ -208,6 +258,8 @@ func (in *initializer) setupConfig(sourceCb transformCb, args *Args,
 		in.Client.AuthKeyDisable = true
 		args.NoAuthKey = true
 	}
+	// The logging flags default to empty: a non-empty value was given
+	// explicitly and wins over the config file and the per-command default.
 	if args.LogDir != "" {
 		in.Common.LogDir = args.LogDir
 	}

@@ -22,7 +22,6 @@ import (
 	"github.com/mimecast/dtail/internal/server"
 	"github.com/mimecast/dtail/internal/source"
 	"github.com/mimecast/dtail/internal/user"
-	"github.com/mimecast/dtail/internal/version"
 )
 
 type pprofShutdowner interface {
@@ -51,49 +50,66 @@ type dserverLifecycleDependencies struct {
 	notifyContext        notifyContextFunc
 }
 
+// dserverFlags holds the parsed command-line state of dserver.
+type dserverFlags struct {
+	args           config.Args
+	color          bool
+	displayVersion bool
+	pprof          string
+	shutdownAfter  int
+}
+
+// bindDServerFlags registers the dserver flags on fs. The logging flags default
+// to empty so that an unset flag leaves Common.Logger and Common.LogDir from
+// the config file (or the dserver defaults) in effect.
+func bindDServerFlags(fs *flag.FlagSet) *dserverFlags {
+	f := &dserverFlags{}
+	args := &f.args
+	fs.BoolVar(&f.color, "color", false, "Enable ANSII terminal colors")
+	fs.BoolVar(&f.displayVersion, "version", false, "Display version")
+	fs.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
+	fs.IntVar(&f.shutdownAfter, "shutdownAfter", 0, "Shutdown after so many seconds")
+	fs.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
+	fs.StringVar(&args.HostnameOverride, "hostname-override", "", "Override the hostname used in logs and output")
+	fs.StringVar(&args.LogDir, "logDir", "",
+		"Log dir (default: Common.LogDir from the config file, else "+config.DefaultServerLogDir+")")
+	fs.StringVar(&args.LogLevel, "logLevel", config.DefaultLogLevel, "Log level")
+	fs.StringVar(&args.Logger, "logger", "",
+		"Logger name (default: Common.Logger from the config file, else "+config.DefaultServerLogger+")")
+	fs.StringVar(&args.SSHBindAddress, "bindAddress", "", "The SSH bind address")
+	fs.StringVar(&args.AuthorizedKeysPath, "authorized-keys-path", "", "Authorized keys file path")
+	fs.StringVar(&args.HostKeyPath, "host-key-path", "", "Private SSH host key path")
+	fs.StringVar(&f.pprof, "pprof", "", "Start PProf server this address")
+	return f
+}
+
 // The evil begins here.
 func main() {
 	os.Exit(run())
 }
 
 func run() int {
-	var args config.Args
-	var color bool
-	var displayVersion bool
-	var pprof string
-	var shutdownAfter int
-
 	if err := user.NoRootCheck(); err != nil {
 		fmt.Fprintf(os.Stderr, "unable to start dserver: %v\n", err)
 		return 1
 	}
 
-	flag.BoolVar(&color, "color", false, "Enable ANSII terminal colors")
-	flag.BoolVar(&displayVersion, "version", false, "Display version")
-	flag.IntVar(&args.SSHPort, "port", config.DefaultSSHPort, "SSH server port")
-	flag.IntVar(&shutdownAfter, "shutdownAfter", 0, "Shutdown after so many seconds")
-	flag.StringVar(&args.ConfigFile, "cfg", "", "Config file path")
-	flag.StringVar(&args.HostnameOverride, "hostname-override", "", "Override the hostname used in logs and output")
-	flag.StringVar(&args.LogDir, "logDir", "", "Log dir")
-	flag.StringVar(&args.LogLevel, "logLevel", config.DefaultLogLevel, "Log level")
-	flag.StringVar(&args.Logger, "logger", config.DefaultServerLogger, "Logger name")
-	flag.StringVar(&args.SSHBindAddress, "bindAddress", "", "The SSH bind address")
-	flag.StringVar(&args.AuthorizedKeysPath, "authorized-keys-path", "", "Authorized keys file path")
-	flag.StringVar(&args.HostKeyPath, "host-key-path", "", "Private SSH host key path")
-	flag.StringVar(&pprof, "pprof", "", "Start PProf server this address")
-
+	flags := bindDServerFlags(flag.CommandLine)
 	flag.Parse()
-	args.NoColor = !color
-	runtimeCfg, err := config.SetupRuntime(source.Server, &args, flag.Args())
+	args := &flags.args
+	args.NoColor = !flags.color
+	displayVersion, pprof, shutdownAfter := flags.displayVersion, flags.pprof, flags.shutdownAfter
+	runtimeCfg, err := config.SetupRuntime(source.Server, args, flag.Args())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to configure dserver: %v\n", err)
 		return 1
 	}
 
 	if displayVersion {
-		version.PrintAndExit(runtimeCfg.Client != nil && runtimeCfg.Client.TermColorsEnable)
+		cli.PrintVersion(runtimeCfg.Client != nil && runtimeCfg.Client.TermColorsEnable)
+		return 0
 	}
-	version.Print(false)
+	cli.PrintVersion(false)
 	colorizer := brush.New(runtimeCfg.Client.TermColors)
 
 	rootCtx, rootCancel := context.WithCancel(context.Background())

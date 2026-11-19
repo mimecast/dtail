@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mimecast/dtail/internal/io/line"
 	"github.com/mimecast/dtail/internal/io/pool"
 	"github.com/mimecast/dtail/internal/logging"
 	"github.com/mimecast/dtail/internal/protocol"
@@ -20,7 +21,11 @@ type serverMessageSink func(string) error
 
 // LineWriter defines the interface for direct writing in output mode
 type LineWriter interface {
-	// WriteLineData writes formatted line data directly to output
+	// WriteLineData writes formatted line data directly to output. lineContent
+	// is borrowed for the duration of the call only: implementations must copy
+	// what they keep (the line formatters append it to the writer's own buffer)
+	// and must not retain the slice, because callers recycle or reuse it right
+	// after the call returns.
 	WriteLineData(lineContent []byte, lineNum uint64, sourceID string) error
 	// WriteServerMessage writes a server message
 	WriteServerMessage(message string) error
@@ -209,8 +214,10 @@ func (w *DirectWriter) Stats() (linesWritten, bytesWritten uint64) {
 
 // NetworkWriter writes directly to the network connection bypassing channels
 type NetworkWriter struct {
-	logger        logging.Logger
-	outputLines   chan<- []byte
+	logger      logging.Logger
+	outputLines chan<- []byte
+	// enqueueOutput, when set, receives each batch instead of outputLines and
+	// takes ownership of the batch slice (see outputManager.enqueue).
 	enqueueOutput func(context.Context, uint64, []byte, func() uint64) error
 	lineFormatter lineFormatter
 	messageSink   serverMessageSink
@@ -218,11 +225,19 @@ type NetworkWriter struct {
 	ctx           context.Context
 
 	// Internal buffer for batching writes
-	writeBuf    bytes.Buffer
-	bufSize     int
-	mutex       sync.Mutex
-	sendStateCh chan struct{}
-	sending     bool
+	writeBuf bytes.Buffer
+	// reserved is set while the writer works with whole-batch allocations:
+	// writeBuf holds one, or gets one on the next write after a hand-over
+	// (see reserveBatchLocked). smallFlushes counts consecutive small
+	// batches taken while reserved; after networkWriterIdleFlushes of them the
+	// reservation is dropped (see takeBatchLocked), so an idle writer only
+	// holds what its batches need.
+	reserved     bool
+	smallFlushes int
+	bufSize      int
+	mutex        sync.Mutex
+	sendStateCh  chan struct{}
+	sending      bool
 
 	// Stats
 	linesWritten uint64
@@ -318,6 +333,7 @@ func (w *NetworkWriter) WriteLineData(lineContent []byte, lineNum uint64, source
 	// line's formatted bytes, not the whole buffered backlog again.
 	bufLenBefore := w.writeBuf.Len()
 
+	w.reserveBatchLocked()
 	w.lineFormatter(&w.writeBuf, lineContent, lineNum, sourceID)
 
 	// Update stats: add only the delta appended for this line.
@@ -333,12 +349,119 @@ func (w *NetworkWriter) WriteLineData(lineContent []byte, lineNum uint64, source
 		return nil
 	}
 
-	data := append([]byte(nil), w.writeBuf.Bytes()...)
-	w.writeBuf.Reset()
+	data := w.takeBatchLocked()
 	w.markSendingLocked()
 	w.mutex.Unlock()
 
 	return w.sendBufferedData(data)
+}
+
+// networkWriterIdleFlushes is how many consecutive small batches a reserved
+// writer takes before it drops its whole-batch reservation. Follow-mode catch-up
+// flushes after every read chunk, and a chunk whose output crosses the batch
+// threshold yields one hand-over plus one small remainder; the hand-over resets
+// the count, so catch-up keeps its reservation. Three rather than two also
+// tolerates one short read between full ones without dropping and re-growing
+// the buffer, while a writer that turned idle drops its 72 KiB after its final
+// remainder and two more small flushes.
+const networkWriterIdleFlushes = 3
+
+// reserveBatchLocked makes sure a batch that is going to be large is written
+// into an allocation of exactly networkWriterBatchCapacity, so it is neither
+// regrown and copied while it fills nor over-allocated when it is taken
+// (bytes.Buffer doubling would give the batch crossing 64 KiB a 128 KiB
+// backing, too much spare capacity to hand over, so it would be copied). A
+// line too long for the reservation still regrows it; see takeBatchLocked. A
+// reserved writer whose last batch was handed over (writeBuf has no backing)
+// allocates the whole batch up front. Outside reservation writeBuf grows naturally with what
+// is written, so a writer that only ever sees a few lines (for example an idle
+// follow reader) keeps a small buffer; once its batch reaches
+// networkWriterReserveMinBytes the pending bytes move into a whole-batch
+// allocation and the writer becomes reserved. The caller must hold w.mutex.
+func (w *NetworkWriter) reserveBatchLocked() {
+	capacity := networkWriterBatchCapacity(w.bufSize)
+	if w.writeBuf.Cap() >= capacity {
+		return
+	}
+	if !w.reserved && w.writeBuf.Len() < networkWriterReserveMinBytes(w.bufSize) {
+		return
+	}
+	buf := make([]byte, w.writeBuf.Len(), capacity)
+	copy(buf, w.writeBuf.Bytes())
+	w.writeBuf = *bytes.NewBuffer(buf)
+	if !w.reserved {
+		w.reserved = true
+		w.smallFlushes = 0
+	}
+}
+
+// takeBatchLocked removes the buffered batch from writeBuf and returns it for
+// sending. The caller must hold w.mutex, and ownership of the returned slice
+// passes to the caller, which hands it on to the output queue.
+//
+// A batch the output manager may adopt without copying (see outputAdoptable:
+// in practice a full batch in its exact whole-batch allocation) is handed over
+// together with its backing allocation: writeBuf is left without one, so the
+// next batch cannot overwrite the handed over bytes, and the writer is
+// reserved, so reserveBatchLocked allocates a whole batch on the next write.
+// Any other batch, such as a partial follow-mode Flush or a batch whose buffer
+// was regrown by a long line, is copied at its exact length and writeBuf is
+// reset for reuse. A buffer regrown past a whole batch is kept only while the
+// batches taken from it are large (a stream of long lines fills it again
+// without regrowing); a small batch drops it, so the writer does not hold the
+// oversized buffer into an idle phase. A reserved writer keeps its
+// reservation across small batches unless networkWriterIdleFlushes of them
+// follow each other without a batch of at least networkWriterReserveMinBytes
+// (such as a hand-over) in between; then it drops the reservation, so a
+// writer that turned idle after bulk output does not hold a 72 KiB buffer for
+// the rest of the session.
+func (w *NetworkWriter) takeBatchLocked() []byte {
+	data := w.writeBuf.Bytes()
+	if outputAdoptable(data) {
+		w.writeBuf = bytes.Buffer{}
+		w.reserved = true
+		w.smallFlushes = 0
+		return data
+	}
+	large := len(data) >= networkWriterReserveMinBytes(w.bufSize)
+	data = append([]byte(nil), data...)
+	switch {
+	case !w.reserved:
+	case large:
+		w.smallFlushes = 0
+	default:
+		w.smallFlushes++
+		if w.smallFlushes >= networkWriterIdleFlushes {
+			w.writeBuf = bytes.Buffer{}
+			w.reserved = false
+			w.smallFlushes = 0
+			return data
+		}
+	}
+	if !large && w.writeBuf.Cap() > networkWriterBatchCapacity(w.bufSize) {
+		w.writeBuf = bytes.Buffer{}
+		return data
+	}
+	w.writeBuf.Reset()
+	return data
+}
+
+// networkWriterReserveMinBytes is the batch length from which a writer moves
+// its batch into a whole-batch reservation: three eighths of the flush
+// threshold (24 KiB in production). The naturally grown buffer then still has
+// its 32 KiB capacity, so the move copies at most 32 KiB once and the buffer is
+// never doubled to 64 KiB first (lines up to 8 KiB), and the batch is still
+// small enough to be copied, not adopted, if it is flushed early.
+func networkWriterReserveMinBytes(bufSize int) int {
+	return bufSize/2 - bufSize/8
+}
+
+// networkWriterBatchCapacity is the allocation of a fresh batch buffer: the
+// flush threshold plus an eighth of headroom, so the line that crosses the
+// threshold usually still fits without regrowing the buffer. For the 64 KiB
+// production threshold that is 72 KiB, a whole number of 8 KiB runtime pages.
+func networkWriterBatchCapacity(bufSize int) int {
+	return bufSize + bufSize/8
 }
 
 // sendBufferedData sends buffered data to the output channel while tracking the
@@ -501,8 +624,7 @@ func (w *NetworkWriter) Flush() error {
 
 		writerTrace(w.log(), "NetworkWriter.Flush", "flushing buffered data", "bufSize", w.writeBuf.Len())
 
-		data := append([]byte(nil), w.writeBuf.Bytes()...)
-		w.writeBuf.Reset()
+		data := w.takeBatchLocked()
 		w.markSendingLocked()
 		w.mutex.Unlock()
 
@@ -563,6 +685,11 @@ type DirectLineProcessor struct {
 	logger    logging.Logger
 }
 
+var (
+	_ line.Processor    = (*DirectLineProcessor)(nil)
+	_ line.RawProcessor = (*DirectLineProcessor)(nil)
+)
+
 // NewDirectLineProcessor creates a processor that writes directly
 func NewDirectLineProcessor(writer LineWriter, globID string, logger logging.Logger) *DirectLineProcessor {
 	return &DirectLineProcessor{
@@ -572,25 +699,20 @@ func NewDirectLineProcessor(writer LineWriter, globID string, logger logging.Log
 	}
 }
 
-// ProcessLine writes a line directly to the output
+// ProcessLine writes a line directly to the output and recycles lineContent,
+// whose ownership it takes over, on every return path.
 func (p *DirectLineProcessor) ProcessLine(lineContent *bytes.Buffer, lineNum uint64, sourceID string) error {
-	p.lineCount++
-
-	// Per-line hot path: gate the trace so the uint64/string args are not boxed
-	// into a []any on every line when trace logging is off (the default).
-	// This call site was ~98% of all allocated objects and ~28% of CPU
-	// (convT64+convTstring) in the output serverless dcat profile.
-	if p.logger.TraceEnabled() {
-		writerTrace(p.logger, "DirectLineProcessor.ProcessLine", "lineCount", p.lineCount, "lineNum", lineNum, "sourceID", sourceID)
-	}
-
-	// Write directly to output
-	err := p.writer.WriteLineData(lineContent.Bytes(), lineNum, sourceID)
-
-	// Recycle the buffer
+	err := p.writeLine(lineContent.Bytes(), lineNum, sourceID)
 	pool.RecycleBytesBuffer(lineContent)
-
 	return err
+}
+
+// ProcessRawLine writes a borrowed line directly to the output. It is the
+// line.RawProcessor fast path: the LineWriter formats (copies) raw into its own
+// buffer before returning, so nothing retains raw after the call and there is
+// no pooled buffer to recycle.
+func (p *DirectLineProcessor) ProcessRawLine(raw []byte, lineNum uint64, sourceID string) error {
+	return p.writeLine(raw, lineNum, sourceID)
 }
 
 // Flush ensures all data is written
@@ -603,4 +725,17 @@ func (p *DirectLineProcessor) Flush() error {
 func (p *DirectLineProcessor) Close() error {
 	writerTrace(p.logger, "DirectLineProcessor.Close", "lineCount", p.lineCount)
 	return p.writer.Flush()
+}
+
+func (p *DirectLineProcessor) writeLine(content []byte, lineNum uint64, sourceID string) error {
+	p.lineCount++
+
+	// Per-line hot path: gate the trace so the uint64/string args are not boxed
+	// into a []any on every line when trace logging is off (the default).
+	// This call site was ~98% of all allocated objects and ~28% of CPU
+	// (convT64+convTstring) in the output serverless dcat profile.
+	if p.logger.TraceEnabled() {
+		writerTrace(p.logger, "DirectLineProcessor.ProcessLine", "lineCount", p.lineCount, "lineNum", lineNum, "sourceID", sourceID)
+	}
+	return p.writer.WriteLineData(content, lineNum, sourceID)
 }

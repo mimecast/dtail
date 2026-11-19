@@ -20,7 +20,7 @@ func TestDGrepLiteralPatterns(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrepLiteralPatterns")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Create test data file with various literal patterns
 	testData := `2025-07-02 10:00:00 ERROR Database connection failed
@@ -39,7 +39,7 @@ func TestDGrepLiteralPatterns(t *testing.T) {
 	if err := os.WriteFile(testFile, []byte(testData), 0644); err != nil {
 		t.Fatal("Failed to create test file:", err)
 	}
-	defer os.Remove(testFile)
+	defer removeIgnoringError(testFile)
 
 	tests := []struct {
 		name          string
@@ -99,7 +99,7 @@ func TestDGrepLiteralPatterns(t *testing.T) {
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
 					outFile := fmt.Sprintf("dgrep_literal_%s.stdout.tmp", test.name)
-					defer os.Remove(outFile)
+					defer removeIgnoringError(outFile)
 
 					if mode.serverMode {
 						testLiteralPatternWithServer(t, testLogger, testFile, outFile, test.pattern, test.expectedCount)
@@ -121,7 +121,7 @@ func TestDGrepRegexPatterns(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrepRegexPatterns")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Create test data file
 	testData := `2025-07-02 10:00:00 ERROR Database connection failed on server db01
@@ -143,7 +143,7 @@ func TestDGrepRegexPatterns(t *testing.T) {
 	if err := os.WriteFile(testFile, []byte(testData), 0644); err != nil {
 		t.Fatal("Failed to create test file:", err)
 	}
-	defer os.Remove(testFile)
+	defer removeIgnoringError(testFile)
 
 	tests := []struct {
 		name          string
@@ -215,7 +215,7 @@ func TestDGrepRegexPatterns(t *testing.T) {
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
 					outFile := fmt.Sprintf("dgrep_regex_%s.stdout.tmp", test.name)
-					defer os.Remove(outFile)
+					defer removeIgnoringError(outFile)
 
 					if mode.serverMode {
 						testRegexPatternWithServer(t, testLogger, testFile, outFile, test.pattern, test.expectedCount)
@@ -237,7 +237,7 @@ func TestDGrepMixedPatterns(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDGrepMixedPatterns")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Create test data
 	testData := `ERROR: System failure
@@ -251,7 +251,7 @@ ERROR: Network down
 	if err := os.WriteFile(testFile, []byte(testData), 0644); err != nil {
 		t.Fatal("Failed to create test file:", err)
 	}
-	defer os.Remove(testFile)
+	defer removeIgnoringError(testFile)
 
 	// Test a sequence of literal and regex patterns
 	patterns := []struct {
@@ -270,7 +270,7 @@ ERROR: Network down
 	t.Run("ServerlessMode", func(t *testing.T) {
 		for i, p := range patterns {
 			outFile := fmt.Sprintf("mixed_%d.stdout.tmp", i)
-			defer os.Remove(outFile)
+			defer removeIgnoringError(outFile)
 
 			testLiteralPatternServerless(t, testLogger, testFile, outFile, p.pattern, p.expectedCount)
 		}

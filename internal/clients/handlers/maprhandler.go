@@ -52,10 +52,9 @@ func (h *MaprHandler) Write(p []byte) (n int, err error) {
 				h.handleAggregateMessage(message, aggregateMessage, decodeErr)
 			} else {
 				if h.removedNl {
-					h.handleMessage(message + "\n")
-				} else {
-					h.handleMessage(message)
+					h.receiveBuf.WriteByte('\n')
 				}
+				h.handleMessage(h.receiveBuf.Bytes())
 			}
 			h.receiveBuf.Reset()
 			h.removedNl = false

@@ -2,12 +2,12 @@ package loggers
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // recordingSink is an injectable Logger that records which messages reached it
@@ -20,24 +20,24 @@ type recordingSink struct {
 	raws  []string
 }
 
-func (r *recordingSink) Log(now time.Time, message string) {
+func (r *recordingSink) Log(message string) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	r.logs = append(r.logs, message)
 }
 
-func (r *recordingSink) LogWithColors(now time.Time, message, colored string) {
-	r.Log(now, message)
+func (r *recordingSink) LogWithColors(message, colored string) {
+	r.Log(message)
 }
 
-func (r *recordingSink) Raw(now time.Time, message string) {
+func (r *recordingSink) Raw(message string) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	r.raws = append(r.raws, message)
 }
 
-func (r *recordingSink) RawWithColors(now time.Time, message, colored string) {
-	r.Raw(now, message)
+func (r *recordingSink) RawWithColors(message, colored string) {
+	r.Raw(message)
 }
 
 func (r *recordingSink) Flush()               {}
@@ -80,10 +80,9 @@ func TestFoutDefaultKeepsPayloadOutOfFile(t *testing.T) {
 	stdout := &recordingSink{}
 	f := newFoutWithSinks(file, stdout, false)
 
-	now := time.Now()
-	f.Log(now, "diagnostic-line")  // connection INFO/WARN/ERROR audit line
-	f.Raw(now, "payload-line-1\n") // bulk dcat/dgrep/dtail output
-	f.Raw(now, "payload-line-2\n")
+	f.Log("diagnostic-line")  // connection INFO/WARN/ERROR audit line
+	f.Raw("payload-line-1\n") // bulk dcat/dgrep/dtail output
+	f.Raw("payload-line-2\n")
 
 	// File: exactly the diagnostic, no payload.
 	if got := file.logCount(); got != 1 {
@@ -109,10 +108,9 @@ func TestFoutOptInTeesPayloadToFile(t *testing.T) {
 	stdout := &recordingSink{}
 	f := newFoutWithSinks(file, stdout, true)
 
-	now := time.Now()
-	f.Log(now, "diagnostic-line")
-	f.Raw(now, "payload-line-1\n")
-	f.Raw(now, "payload-line-2\n")
+	f.Log("diagnostic-line")
+	f.Raw("payload-line-1\n")
+	f.Raw("payload-line-2\n")
 
 	if got := file.logCount(); got != 1 {
 		t.Fatalf("file diagnostics: got %d, want 1", got)
@@ -143,10 +141,9 @@ func TestFoutServerErrorDiagnosticReachesFileByDefault(t *testing.T) {
 	wg.Add(1)
 	f.Start(ctx, &wg)
 
-	now := time.Now()
 	serverError := "SERVER|srv1|ERROR|journal file targets require server capability journal-v1"
-	f.Log(now, serverError) // diagnostic / audit line (ReportServerError path)
-	f.Raw(now, "payload\n") // bulk payload, must stay out of the file
+	f.Log(serverError) // diagnostic / audit line (ReportServerError path)
+	f.Raw("payload\n") // bulk payload, must stay out of the file
 
 	f.Flush()
 	cancel()
@@ -173,14 +170,13 @@ func TestFoutServerErrorDiagnosticReachesFileByDefault(t *testing.T) {
 // (LogWithColors always to file, RawWithColors gated by the opt-in), because the
 // client uses the *WithColors variants when terminal colors are enabled.
 func TestFoutWithColorsRouting(t *testing.T) {
-	now := time.Now()
 
 	t.Run("default", func(t *testing.T) {
 		file := &recordingSink{}
 		stdout := &recordingSink{}
 		f := newFoutWithSinks(file, stdout, false)
-		f.LogWithColors(now, "diag", "\x1b[1mdiag\x1b[0m")
-		f.RawWithColors(now, "payload\n", "\x1b[1mpayload\x1b[0m\n")
+		f.LogWithColors("diag", "\x1b[1mdiag\x1b[0m")
+		f.RawWithColors("payload\n", "\x1b[1mpayload\x1b[0m\n")
 		if got := file.logCount(); got != 1 {
 			t.Fatalf("file diagnostics: got %d, want 1", got)
 		}
@@ -196,9 +192,85 @@ func TestFoutWithColorsRouting(t *testing.T) {
 		file := &recordingSink{}
 		stdout := &recordingSink{}
 		f := newFoutWithSinks(file, stdout, true)
-		f.RawWithColors(now, "payload\n", "\x1b[1mpayload\x1b[0m\n")
+		f.RawWithColors("payload\n", "\x1b[1mpayload\x1b[0m\n")
 		if got := file.rawCount(); got != 1 {
 			t.Fatalf("file payload with opt-in: got %d, want 1", got)
 		}
 	})
+}
+
+// TestFoutRawFileOnlyHonorsPayloadOptIn covers the serverless tee hook: it
+// never writes to stdout (the caller already did), and it reaches the file only
+// when payload logging was opted in.
+func TestFoutRawFileOnlyHonorsPayloadOptIn(t *testing.T) {
+	tests := []struct {
+		name         string
+		logPayload   bool
+		wantFileRaws int
+	}{
+		{name: "default keeps payload out of file", logPayload: false, wantFileRaws: 0},
+		{name: "opt-in tees payload to file", logPayload: true, wantFileRaws: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := &recordingSink{}
+			stdout := &recordingSink{}
+			f := newFoutWithSinks(file, stdout, tt.logPayload)
+
+			f.RawFileOnly("payload\n")
+
+			if got := file.rawCount(); got != tt.wantFileRaws {
+				t.Fatalf("file payload: got %d, want %d", got, tt.wantFileRaws)
+			}
+			if got := stdout.rawCount() + stdout.logCount(); got != 0 {
+				t.Fatalf("RawFileOnly wrote %d messages to stdout, want 0", got)
+			}
+			if got := file.logCount(); got != 0 {
+				t.Fatalf("RawFileOnly wrote %d diagnostics to file, want 0", got)
+			}
+		})
+	}
+}
+
+// bytesRecordingSink is a recordingSink that also has the byte-slice payload
+// capability, recording those writes separately from string Raw calls.
+type bytesRecordingSink struct {
+	recordingSink
+	rawBytes []string
+}
+
+func (r *bytesRecordingSink) RawBytes(message []byte) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.rawBytes = append(r.rawBytes, string(message))
+}
+
+var _ RawBytesWriter = (*bytesRecordingSink)(nil)
+
+// TestFoutRawBytesHonorsPayloadGate checks that RawBytes follows the same
+// --log-payload gate as Raw, uses the byte path of a sink that has one, and
+// falls back to Raw for a sink that does not.
+func TestFoutRawBytesHonorsPayloadGate(t *testing.T) {
+	for _, logPayload := range []bool{false, true} {
+		t.Run(fmt.Sprintf("logPayload=%v", logPayload), func(t *testing.T) {
+			file := &recordingSink{}
+			stdout := &bytesRecordingSink{}
+			f := newFoutWithSinks(file, stdout, logPayload)
+
+			f.RawBytes([]byte("payload\n"))
+
+			if len(stdout.rawBytes) != 1 || stdout.rawBytes[0] != "payload\n" || stdout.rawCount() != 0 {
+				t.Fatalf("stdout got rawBytes=%q raws=%q, want one byte-path write", stdout.rawBytes, stdout.raws)
+			}
+			if !logPayload {
+				if file.rawCount() != 0 {
+					t.Fatalf("file received payload without --log-payload: %q", file.raws)
+				}
+				return
+			}
+			if file.rawCount() != 1 || file.raws[0] != "payload\n" {
+				t.Fatalf("file raws = %q, want the payload through the Raw fallback", file.raws)
+			}
+		})
+	}
 }

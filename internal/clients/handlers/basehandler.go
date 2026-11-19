@@ -16,6 +16,13 @@ import (
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
+// maxRetainedLineBufBytes is the largest lineBuf capacity kept for reuse after
+// a message. Ordinary log lines stay far below it and reuse the buffer without
+// allocating; a rare huge message without a trailing newline (for example a
+// piece of a line longer than MaxLineLength, split by the server) must not pin
+// its backing array for the lifetime of every server connection.
+const maxRetainedLineBufBytes = 64 * 1024
+
 type baseHandler struct {
 	done         *internal.Done
 	server       string
@@ -30,7 +37,12 @@ type baseHandler struct {
 	// would corrupt the server-side command stream. Only touched by Read
 	// (single output-copy goroutine).
 	pendingCommand []byte
-	status         int
+	// lineBuf is scratch space for appending the newline to a payload message
+	// that lacks one. It is released after a message that grew it beyond
+	// maxRetainedLineBufBytes. Only touched by Write (single input-copy
+	// goroutine).
+	lineBuf []byte
+	status  int
 
 	capabilitiesMu sync.RWMutex
 	capabilities   map[string]struct{}
@@ -122,22 +134,33 @@ func (h *baseHandler) SendMessage(command string) error {
 	return nil
 }
 
-// Read data from the dtail server via Writer interface.
+// Write receives data from the dtail server via the io.Writer interface.
+//
+// The stream is a sequence of messages terminated by protocol.MessageDelimiter;
+// newlines are ordinary payload bytes. Each chunk is scanned with
+// bytes.IndexByte instead of byte by byte. A message that lies completely
+// inside p is handled as a sub-slice of p without copying; only the unfinished
+// tail of a chunk is kept in receiveBuf until a later chunk completes it.
+// handleMessage and everything below it must not retain the slice (io.Writer
+// forbids retaining p).
 func (h *baseHandler) Write(p []byte) (n int, err error) {
-	for _, b := range p {
-		switch b {
-		case '\n':
-			// Just add the newline to the buffer, don't treat as message delimiter
-			h.receiveBuf.WriteByte(b)
-		case protocol.MessageDelimiter:
-			message := h.receiveBuf.String()
-			h.handleMessage(message)
-			h.receiveBuf.Reset()
-		default:
-			h.receiveBuf.WriteByte(b)
+	n = len(p)
+	for len(p) > 0 {
+		end := bytes.IndexByte(p, protocol.MessageDelimiter)
+		if end < 0 {
+			h.receiveBuf.Write(p)
+			break
 		}
+		if h.receiveBuf.Len() == 0 {
+			h.handleMessage(p[:end])
+		} else {
+			h.receiveBuf.Write(p[:end])
+			h.handleMessage(h.receiveBuf.Bytes())
+			h.receiveBuf.Reset()
+		}
+		p = p[end+1:]
 	}
-	return len(p), nil
+	return n, nil
 }
 
 // Send data to the dtail server via Reader interface.
@@ -195,20 +218,33 @@ func (h *baseHandler) consumeCommand(p []byte, command string) int {
 	return n
 }
 
-func (h *baseHandler) handleMessage(message string) {
+// handleMessage routes one message whose stream delimiter has been removed.
+// Hidden control messages and AUTHKEY acknowledgements are consumed here; all
+// other messages are user payload and are written with exactly one trailing
+// newline. message is only valid for the duration of the call.
+func (h *baseHandler) handleMessage(message []byte) {
 	if len(message) > 0 && message[0] == '.' {
-		h.handleHiddenMessage(message)
+		h.handleHiddenMessage(string(message))
 		return
 	}
-	if h.handleAuthKeyMessage(message) {
+	if mayBeAuthKeyMessage(message) && h.handleAuthKeyMessage(string(message)) {
 		return
 	}
 
-	// Add newline only if the message doesn't already end with one
 	if len(message) > 0 && message[len(message)-1] == '\n' {
-		clientlog.Raw(h.log(), message)
-	} else {
-		clientlog.Raw(h.log(), message+"\n")
+		clientlog.RawBytes(h.log(), message)
+		return
+	}
+	// The newline must reach the sink in the same call as the message, or lines
+	// from concurrent server connections could interleave between the two. p
+	// cannot be extended in place (io.Writer must not modify it), so the line is
+	// assembled in a scratch buffer reused across messages.
+	h.lineBuf = append(append(h.lineBuf[:0], message...), '\n')
+	clientlog.RawBytes(h.log(), h.lineBuf)
+	if cap(h.lineBuf) > maxRetainedLineBufBytes {
+		// Same policy as pendingCommand in Read: drop an oversized backing
+		// array and let the next message allocate a normal-sized one.
+		h.lineBuf = nil
 	}
 }
 
@@ -230,6 +266,28 @@ func (h *baseHandler) handleAuthKeyMessage(message string) bool {
 
 	h.log().Warn(h.server, "AUTHKEY registration failed", authKeyDetail)
 	return true
+}
+
+// authKeyPrefixes are the leading bytes a whitespace-trimmed message must start
+// with for parseAuthKeyMessage to recognise it: a bare acknowledgement, or one
+// wrapped in a tagged frame whose content is decoded first.
+var authKeyPrefixes = [][]byte{
+	[]byte("AUTHKEY"),
+	[]byte(protocol.ServerMessageID + protocol.FieldSeparator()),
+	[]byte(protocol.AggregateMessageID + protocol.FieldSeparator()),
+}
+
+// mayBeAuthKeyMessage is an allocation-free pre-check run on every payload
+// message. It returns false only for messages parseAuthKeyMessage would reject,
+// so ordinary log lines skip the string conversion, trimming and decoding.
+func mayBeAuthKeyMessage(message []byte) bool {
+	trimmed := bytes.TrimSpace(message)
+	for _, prefix := range authKeyPrefixes {
+		if bytes.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseAuthKeyMessage(message string) (isAuthKeyMessage bool, ok bool, detail string) {
@@ -418,12 +476,5 @@ func parseSessionOKAck(payload string, action string) (SessionAck, bool) {
 // trailing newline: it is emitted via the diagnostic (Log) sink, which appends
 // the newline itself (adding one here would produce a blank line).
 func formatServerErrorMessage(server string, message string) string {
-	var encoded bytes.Buffer
-	protocol.EncodeMessage(&encoded, protocol.Message{
-		Kind:     protocol.MessageServer,
-		Hostname: server,
-		Content:  "ERROR" + protocol.FieldDelimiter + message,
-	})
-	frame := encoded.Bytes()
-	return string(frame[:len(frame)-1])
+	return protocol.EncodeServerError(server, message)
 }

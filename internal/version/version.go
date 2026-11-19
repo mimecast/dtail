@@ -2,9 +2,7 @@ package version
 
 import (
 	"fmt"
-	"os"
 
-	"github.com/mimecast/dtail/internal/color"
 	"github.com/mimecast/dtail/internal/protocol"
 )
 
@@ -21,33 +19,4 @@ const (
 func String() string {
 	return fmt.Sprintf("%s %v Protocol %s %s", Name, Version,
 		protocol.ProtocolCompat, Additional)
-}
-
-// PaintedString is a prettier string representation of the DTail version.
-func PaintedString(colorsEnabled bool) string {
-	if !colorsEnabled {
-		return String()
-	}
-
-	name := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Name),
-		color.FgYellow, color.BgBlue, color.AttrBold)
-	version := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Version),
-		color.FgBlue, color.BgYellow, color.AttrBold)
-	protocol := color.PaintStr(fmt.Sprintf(" Protocol %s ", protocol.ProtocolCompat),
-		color.FgBlack, color.BgGreen)
-	additional := color.PaintStrWithAttr(fmt.Sprintf(" %s ", Additional),
-		color.FgWhite, color.BgMagenta, color.AttrUnderline)
-
-	return fmt.Sprintf("%s%v%s%s", name, version, protocol, additional)
-}
-
-// Print the version.
-func Print(colorsEnabled bool) {
-	fmt.Println(PaintedString(colorsEnabled))
-}
-
-// PrintAndExit prints the program version and exists.
-func PrintAndExit(colorsEnabled bool) {
-	Print(colorsEnabled)
-	os.Exit(0)
 }

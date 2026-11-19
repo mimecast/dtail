@@ -147,9 +147,9 @@ func (d *DLog) FatalPanic(args ...any) {
 	d.log(Fatal, args)
 	d.Flush()
 
-	var sb strings.Builder
-	d.writeArgStrings(&sb, args)
-	panic(sb.String())
+	var message strings.Builder
+	protocol.AppendDiagnosticDetails(&message, args)
+	panic(message.String())
 }
 
 // Fatal logs a fatal error.
@@ -229,11 +229,23 @@ func (d *DLog) Devel(args ...any) string {
 // Raw message logging.
 func (d *DLog) Raw(message string) string {
 	if !d.shouldColorize() {
-		d.logger.Raw(time.Now(), message)
+		d.logger.Raw(message)
 		return message
 	}
-	d.logger.RawWithColors(time.Now(), message, d.colorizer.Colorfy(message))
+	d.logger.RawWithColors(message, d.colorizer.Colorfy(message))
 	return message
+}
+
+// RawBytes writes retrieved payload from a byte slice. Without colors it reaches
+// a sink implementing loggers.RawBytesWriter with no string conversion; other
+// sinks and the colorizer receive a string copy. The output is identical to
+// Raw(string(message)). message is not retained.
+func (d *DLog) RawBytes(message []byte) {
+	if d.shouldColorize() {
+		d.Raw(string(message))
+		return
+	}
+	loggers.WriteRawBytes(d.logger, message)
 }
 
 // payloadFileTeer is the optional capability of a logger that can tee retrieved
@@ -241,7 +253,7 @@ func (d *DLog) Raw(message string) string {
 // fout logger implements it; stdout/none loggers have no file sink and are
 // skipped via the type assertion in RawPayloadFileTee.
 type payloadFileTeer interface {
-	RawFileOnly(now time.Time, message string)
+	RawFileOnly(message string)
 }
 
 // RawPayloadFileTee writes retrieved payload to the logger's FILE sink only
@@ -253,7 +265,7 @@ type payloadFileTeer interface {
 // same payload bytes to stdout itself, and this method only adds the file tee.
 func (d *DLog) RawPayloadFileTee(message string) {
 	if teer, ok := d.logger.(payloadFileTeer); ok {
-		teer.RawFileOnly(time.Now(), message)
+		teer.RawFileOnly(message)
 	}
 }
 
@@ -269,10 +281,10 @@ func (d *DLog) RawPayloadFileTee(message string) {
 // NOT append a trailing newline, since the Log sink appends one.
 func (d *DLog) RawLog(message string) string {
 	if !d.shouldColorize() {
-		d.logger.Log(time.Now(), message)
+		d.logger.Log(message)
 		return message
 	}
-	d.logger.LogWithColors(time.Now(), message, d.colorizer.Colorfy(message))
+	d.logger.LogWithColors(message, d.colorizer.Colorfy(message))
 	return message
 }
 
@@ -342,51 +354,40 @@ func (d *DLog) log(level level, args []any) string {
 	if d.maxLevel < level {
 		return ""
 	}
-	sb := pool.BuilderBuffer.Get().(*strings.Builder)
-	defer pool.RecycleBuilderBuffer(sb)
-	now := time.Now()
+	encoded := pool.BuilderBuffer.Get().(*strings.Builder)
+	defer pool.RecycleBuilderBuffer(encoded)
 
 	switch d.sourceProcess {
 	case source.Client:
-		sb.WriteString(d.sourcePackage.String())
-		sb.WriteString(protocol.FieldDelimiter)
-		sb.WriteString(d.hostname)
-		sb.WriteString(protocol.FieldDelimiter)
-		sb.WriteString(level.String())
+		protocol.AppendDiagnostic(encoded, protocol.Diagnostic{
+			Source:   d.sourcePackage.String(),
+			Hostname: d.hostname,
+			Level:    level.String(),
+			Details:  args,
+		})
 	default:
-		sb.WriteString(level.String())
-		sb.WriteString(protocol.FieldDelimiter)
-		sb.WriteString(now.Format("0102-150405"))
+		// The timestamp is read here, but a daily file sink picks its file
+		// from a day name cached on its idle-flush tick, not from this time.
+		// Around midnight a line stamped on one day can therefore land in the
+		// other day's file. Accepted trade-off: the Logger contract carries no
+		// per-line time so payload lines never read the clock.
+		protocol.AppendTimedDiagnostic(encoded, protocol.TimedDiagnostic{
+			Level:     level.String(),
+			Timestamp: time.Now().Format("0102-150405"),
+			Details:   args,
+		})
 	}
-	sb.WriteString(protocol.FieldDelimiter)
-	d.writeArgStrings(sb, args)
+	message := encoded.String()
 
-	message := sb.String()
 	if !d.shouldColorize() {
-		d.logger.Log(now, message)
+		d.logger.Log(message)
 		return message
 	}
 
-	d.logger.LogWithColors(now, message, d.colorizer.Colorfy(message))
+	d.logger.LogWithColors(message, d.colorizer.Colorfy(message))
 	return message
 }
 
 func (d *DLog) shouldColorize() bool {
 	return d.colorsEnabled && d.colorizer != nil && d.logger.SupportsColors()
-}
-
-func (d *DLog) writeArgStrings(sb *strings.Builder, args []any) {
-	for i, arg := range args {
-		if i > 0 {
-			sb.WriteString(protocol.FieldDelimiter)
-		}
-		switch v := arg.(type) {
-		case string:
-			sb.WriteString(v)
-		case error:
-			sb.WriteString(v.Error())
-		default:
-			fmt.Fprintf(sb, "%v", v)
-		}
-	}
 }

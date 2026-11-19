@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -124,18 +123,7 @@ func (s *stats) statsData(connected, newConnections int,
 }
 
 func (s *stats) statsLine(connected, newConnections int, throttle int) string {
-	sb := strings.Builder{}
-	i := 0
-	for k, v := range s.statsData(connected, newConnections, throttle) {
-		if i > 0 {
-			sb.WriteString(protocol.FieldDelimiter)
-		}
-		sb.WriteString(k)
-		sb.WriteByte('=')
-		fmt.Fprintf(&sb, "%v", v)
-		i++
-	}
-	return sb.String()
+	return protocol.EncodeStatsLine(s.statsData(connected, newConnections, throttle))
 }
 
 func percentOf(total float64, value float64) float64 {

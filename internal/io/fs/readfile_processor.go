@@ -13,11 +13,15 @@ import (
 // filteringProcessor wraps a LineProcessor to add regex filtering
 type filteringProcessor struct {
 	processor line.Processor
-	re        regex.Regex
-	ltx       lcontext.LContext
-	stats     *stats
-	globID    string
-	recycle   func(*bytes.Buffer)
+	// rawProcessor is processor's optional line.RawProcessor fast path,
+	// resolved once at construction (see newFilteringProcessor). Nil means
+	// ProcessFilteredRaw falls back to copying matches into a pooled buffer.
+	rawProcessor line.RawProcessor
+	re           regex.Regex
+	ltx          lcontext.LContext
+	stats        *stats
+	globID       string
+	recycle      func(*bytes.Buffer)
 
 	// For local context handling
 	beforeBuf  []*bytes.Buffer
@@ -53,6 +57,15 @@ func (fp *filteringProcessor) resetGeneration() {
 	}
 	fp.beforeBuf = fp.beforeBuf[:0]
 	fp.afterCount = 0
+}
+
+// restartSource tells the wrapped processor, when it is a
+// line.SourceRestarter, that the content it is fed from starts over (an
+// in-place truncation). Local context is reset separately by resetGeneration.
+func (fp *filteringProcessor) restartSource() {
+	if restarter, ok := fp.processor.(line.SourceRestarter); ok {
+		restarter.SourceRestarted()
+	}
 }
 
 // ProcessFilteredLine applies regex filtering before passing to the underlying processor
@@ -99,11 +112,11 @@ func (fp *filteringProcessor) ProcessFilteredLine(rawLine *bytes.Buffer) error {
 }
 
 // ProcessFilteredRaw is the zero-copy fast path for the no-local-context case.
-// It runs the regex match directly on the scanner-owned byte slice and only
-// acquires+fills a pooled buffer when the line actually matches. At low hit
-// rates this avoids a pool.Get + copy + pool.Put for the (vast majority of)
-// non-matching lines, which profiling showed as ~10-15% of serverless
-// dgrep CPU (sync.Pool Get/Put + bytes.Buffer.Write).
+// It runs the regex match directly on the scanner-owned byte slice, so a
+// non-matching line costs no pooled buffer at all. At low hit rates this avoids
+// a pool.Get + copy + pool.Put for the (vast majority of) non-matching lines,
+// which profiling showed as ~10-15% of serverless dgrep CPU (sync.Pool Get/Put +
+// bytes.Buffer.Write).
 //
 // Semantics are identical to the !ltx.Has() branch of ProcessFilteredLine: the
 // same regex, the same stats bookkeeping, and the same lineNum are used, so
@@ -111,10 +124,12 @@ func (fp *filteringProcessor) ProcessFilteredLine(rawLine *bytes.Buffer) error {
 // the local-context path deliberately buffers non-matching lines (before/after
 // context) and cannot skip the copy.
 //
-// The caller passes raw = scanner.Bytes(), which is only valid until the next
-// Scan(). On a match we copy it into a pooled buffer before returning, so the
-// buffer handed to the underlying processor is a stable copy and never aliases
-// the scanner's transient slice.
+// The caller passes raw = scanner.Bytes() (or the follow reader's partial-line
+// buffer), which is only valid until the next Scan() or Reset. A match goes to
+// the processor's line.RawProcessor fast path when it has one: that contract
+// borrows raw for the duration of the call only, so no copy and no pooled
+// buffer is needed. Otherwise the match is copied into a pooled buffer, which
+// is a stable copy that never aliases the scanner's transient slice.
 func (fp *filteringProcessor) ProcessFilteredRaw(raw []byte) error {
 	lineNum := fp.stats.totalLineCount()
 
@@ -127,6 +142,11 @@ func (fp *filteringProcessor) ProcessFilteredRaw(raw []byte) error {
 
 	fp.stats.updateLineMatched()
 	fp.stats.updateLineTransmitted()
+
+	if fp.rawProcessor != nil {
+		// Borrowed, not transferred: nothing to recycle on any return path.
+		return fp.rawProcessor.ProcessRawLine(raw, lineNum, fp.globID)
+	}
 
 	// Only now, on a confirmed match, pay for the buffer and the copy.
 	lineBuf := pool.BytesBuffer.Get().(*bytes.Buffer)

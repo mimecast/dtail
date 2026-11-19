@@ -3,6 +3,7 @@ package integrationtests
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,22 +60,34 @@ func (tl *TestLogger) WriteLogFile() error {
 	if err != nil {
 		return fmt.Errorf("failed to create log file: %w", err)
 	}
-	defer f.Close()
+	defer closeIgnoringError(f)
 
-	fmt.Fprintf(f, "Test: %s\n", tl.testName)
-	fmt.Fprintf(f, "Timestamp: %s\n\n", time.Now().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(f, "Test: %s\n", tl.testName)
+	_, _ = fmt.Fprintf(f, "Timestamp: %s\n\n", time.Now().Format(time.RFC3339))
 
-	fmt.Fprintf(f, "=== EXTERNAL COMMANDS EXECUTED (in order) ===\n")
+	_, _ = fmt.Fprintf(f, "=== EXTERNAL COMMANDS EXECUTED (in order) ===\n")
 	for i, cmd := range tl.commandHistory {
-		fmt.Fprintf(f, "%d. %s\n", i+1, cmd)
+		_, _ = fmt.Fprintf(f, "%d. %s\n", i+1, cmd)
 	}
 
-	fmt.Fprintf(f, "\n=== FILE COMPARISONS ===\n")
+	_, _ = fmt.Fprintf(f, "\n=== FILE COMPARISONS ===\n")
 	for _, comparison := range tl.fileComparisons {
-		fmt.Fprintf(f, "%s\n", comparison)
+		_, _ = fmt.Fprintf(f, "%s\n", comparison)
 	}
 
 	return nil
+}
+
+func writeLogFileIgnoringError(testLogger *TestLogger) {
+	_ = testLogger.WriteLogFile()
+}
+
+func closeIgnoringError(closer io.Closer) {
+	_ = closer.Close()
+}
+
+func removeIgnoringError(path string) {
+	_ = os.Remove(path)
 }
 
 // testLoggerKey is the context key for storing the test logger
@@ -231,7 +244,7 @@ func cleanupFiles(t *testing.T, files ...string) {
 	t.Helper()
 	t.Cleanup(func() {
 		for _, file := range files {
-			os.Remove(file)
+			_ = os.Remove(file)
 		}
 	})
 }

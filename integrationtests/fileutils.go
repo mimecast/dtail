@@ -19,7 +19,7 @@ func mapFile(t *testing.T, file string) (map[string]int, error) {
 	if err != nil {
 		return contents, err
 	}
-	defer fd.Close()
+	defer closeIgnoringError(fd)
 
 	scanner := bufio.NewScanner(fd)
 	scanner.Split(bufio.ScanLines)

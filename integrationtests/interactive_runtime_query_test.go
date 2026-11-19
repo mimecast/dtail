@@ -33,7 +33,7 @@ func TestDTailInteractiveReloadReusesSessionAndDropsLateOldMatches(t *testing.T)
 	skipIfNotIntegrationTest(t)
 
 	testLogger := NewTestLogger("TestDTailInteractiveReloadReusesSessionAndDropsLateOldMatches")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	cleanupTmpFiles(t)
 
 	ctx, cancel := createTestContextWithTimeout(t)
@@ -120,7 +120,7 @@ func TestDTailInteractiveReloadReusesSessionOnImmediateBoundaryAndDropsLateOldMa
 	skipIfNotIntegrationTest(t)
 
 	testLogger := NewTestLogger("TestDTailInteractiveReloadReusesSessionOnImmediateBoundaryAndDropsLateOldMatches")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	cleanupTmpFiles(t)
 
 	ctx, cancel := createTestContextWithTimeout(t)
@@ -237,7 +237,7 @@ func TestDGrepInteractiveReloadReusesSessionAfterCompletedRead(t *testing.T) {
 	skipIfNotIntegrationTest(t)
 
 	testLogger := NewTestLogger("TestDGrepInteractiveReloadReusesSessionAfterCompletedRead")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 	cleanupTmpFiles(t)
 
 	ctx, cancel := createTestContextWithTimeout(t)
@@ -346,7 +346,7 @@ func appendLinesOnSchedule(ctx context.Context, path string, steps []interactive
 	if err != nil {
 		return err
 	}
-	defer fd.Close()
+	defer closeIgnoringError(fd)
 
 	start := time.Now()
 	for _, step := range steps {
@@ -505,7 +505,7 @@ func appendLines(path string, lines ...string) error {
 	if err != nil {
 		return err
 	}
-	defer fd.Close()
+	defer closeIgnoringError(fd)
 
 	for _, line := range lines {
 		if _, err := fd.WriteString(line + "\n"); err != nil {

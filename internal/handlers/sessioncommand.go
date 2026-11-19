@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mimecast/dtail/internal/config"
 	"github.com/mimecast/dtail/internal/lcontext"
@@ -23,10 +24,21 @@ const (
 	sessionAckErrorPrefix    = ".syn session err "
 )
 
+// sessionCommandState tracks the interactive session of one connection.
+//
+// mu guards active, spec and cancel, and serializes every write of
+// generation. generation is additionally atomic so the per-line output gate
+// (currentGeneration, reached through shouldWriteGeneration and
+// outputCoordinator.shouldDropGeneration) reads it without taking mu. No reader
+// needs generation to be consistent with the other fields: every reader of
+// generation reads only generation, and the writers store it while holding mu,
+// so the fields still change together for anyone who takes mu. update stores
+// the new generation before cancelling the previous command context, so a
+// goroutine that observes that cancellation also observes the new generation.
 type sessionCommandState struct {
 	mu         sync.Mutex
 	active     bool
-	generation uint64
+	generation atomic.Uint64
 	spec       session.Spec
 	cancel     context.CancelFunc
 }
@@ -137,7 +149,7 @@ func (s *sessionCommandState) start(parentCtx context.Context, handler *ServerHa
 	}
 	ctx, cancel := context.WithCancel(sessionCommandContext(handler.commandRootCtx, parentCtx))
 	s.active = true
-	s.generation = 1
+	s.generation.Store(1)
 	s.spec = spec
 	s.cancel = cancel
 	s.mu.Unlock()
@@ -167,10 +179,10 @@ func (s *sessionCommandState) update(parentCtx context.Context, handler *ServerH
 	oldCancel := s.cancel
 	ctx, cancel := context.WithCancel(sessionCommandContext(handler.commandRootCtx, parentCtx))
 	if generation == 0 {
-		generation = s.generation + 1
+		generation = s.generation.Load() + 1
 	}
 	s.active = true
-	s.generation = generation
+	s.generation.Store(generation)
 	s.spec = spec
 	s.cancel = cancel
 	s.mu.Unlock()
@@ -234,10 +246,10 @@ func (s *sessionCommandState) keepAlive() bool {
 	return s.active
 }
 
+// currentGeneration returns the active session generation, or 0 when no
+// session is active. It takes no lock: it runs once per output line.
 func (s *sessionCommandState) currentGeneration() uint64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.generation
+	return s.generation.Load()
 }
 
 func (s *sessionCommandState) reset() {
@@ -245,7 +257,7 @@ func (s *sessionCommandState) reset() {
 	defer s.mu.Unlock()
 
 	s.active = false
-	s.generation = 0
+	s.generation.Store(0)
 	s.spec = session.Spec{}
 	s.cancel = nil
 }

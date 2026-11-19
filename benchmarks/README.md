@@ -21,6 +21,24 @@ make build
 
 ## Running Benchmarks
 
+### Comparing the Local Fork with Upstream
+
+The external comparison harness builds both the current checkout and a sibling
+checkout of `github.com/mimecast/dtail`, validates their output on shared data,
+and then runs paired end-to-end scenarios:
+
+```bash
+# Compile both trees and run tiny correctness checks; collects no timings.
+make benchmark-upstream-smoke
+
+# Run only on an otherwise idle host.
+make benchmark-upstream
+```
+
+The upstream checkout defaults to `../dtail-upstream`. See
+[`upstream_comparison_plan.md`](upstream_comparison_plan.md) for the pinned
+revision, fairness controls, workloads, metrics, and result interpretation.
+
 ### Quick Benchmarks (Small Files Only)
 ```bash
 go test -bench=BenchmarkQuick ./benchmarks

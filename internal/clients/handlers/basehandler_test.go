@@ -20,13 +20,13 @@ func TestParseAuthKeyMessage(t *testing.T) {
 	}{
 		{
 			name:     "server formatted success",
-			message:  fmt.Sprintf("SERVER%s%s%sAUTHKEY OK\n", protocol.FieldDelimiter, "host1", protocol.FieldDelimiter),
+			message:  fmt.Sprintf("SERVER%s%s%sAUTHKEY OK\n", protocol.FieldSeparator(), "host1", protocol.FieldSeparator()),
 			wantAuth: true,
 			wantOK:   true,
 		},
 		{
 			name:     "server formatted error",
-			message:  fmt.Sprintf("SERVER%s%s%sAUTHKEY ERR feature disabled\n", protocol.FieldDelimiter, "host1", protocol.FieldDelimiter),
+			message:  fmt.Sprintf("SERVER%s%s%sAUTHKEY ERR feature disabled\n", protocol.FieldSeparator(), "host1", protocol.FieldSeparator()),
 			wantAuth: true,
 			wantOK:   false,
 			wantInfo: "feature disabled",
@@ -39,7 +39,7 @@ func TestParseAuthKeyMessage(t *testing.T) {
 		},
 		{
 			name:     "not an authkey message",
-			message:  fmt.Sprintf("SERVER%s%s%ssome other message", protocol.FieldDelimiter, "host1", protocol.FieldDelimiter),
+			message:  fmt.Sprintf("SERVER%s%s%ssome other message", protocol.FieldSeparator(), "host1", protocol.FieldSeparator()),
 			wantAuth: false,
 			wantOK:   false,
 		},

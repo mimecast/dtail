@@ -12,12 +12,12 @@ import (
 // "unknown $-variable" diagnostic (see PlanVariableWarnings).
 //
 // Keep them in sync with defaultParser in default.go:
-//   - addDefaultFields populates commonVariables for every parser that embeds
-//     defaultParser (generic, generickv, csv and default itself).
+//   - addDefaultFields populates commonVariables for every parser that
+//     delegates to defaultParser (generic, generickv, csv and default itself).
 //   - defaultParser.MakeFields additionally populates defaultOnlyVariables from
 //     the positional fields of DTail's own MAPREDUCE log line layout; the
-//     lighter parsers (generic/generickv/csv) override MakeFields and therefore
-//     do NOT populate these.
+//     lighter parsers (generic/generickv/csv) parse their own layout and
+//     therefore do NOT populate these.
 
 // commonVariables are the $-variables set by defaultParser.addDefaultFields and
 // are therefore available in every built-in log format.

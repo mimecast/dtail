@@ -19,7 +19,7 @@ func TestDCat1(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDCat1")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -109,7 +109,7 @@ func TestDCat1Colors(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDCat1Colors")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -231,7 +231,7 @@ func TestDCat2(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDCat2")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -333,7 +333,7 @@ func TestDCat3(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDCat3")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {
@@ -423,7 +423,7 @@ func TestDCatColors(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDCatColors")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	// Test in serverless mode
 	t.Run("Serverless", func(t *testing.T) {

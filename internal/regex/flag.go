@@ -42,3 +42,15 @@ func (f Flag) String() string {
 		return "undefined"
 	}
 }
+
+// serializable reports whether the flag survives a Serialize/Deserialize
+// round trip, i.e. whether NewFlag accepts its String form. Undefined (and any
+// out-of-range value) is deliberately not part of the wire protocol.
+func (f Flag) serializable() bool {
+	switch f {
+	case Default, Invert, Noop:
+		return true
+	default:
+		return false
+	}
+}

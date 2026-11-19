@@ -31,10 +31,11 @@ const (
 	// the goroutine is already gone (e.g. Flush racing shutdown); under normal
 	// operation the ack is near-instant.
 	fileFlushTimeout = 2 * time.Second
+	// dailyFileNameLayout is the time layout of the daily log file base name.
+	dailyFileNameLayout = "20060102"
 )
 
 type fileMessageBuf struct {
-	now     time.Time
 	message string
 	nl      bool
 }
@@ -57,6 +58,23 @@ type file struct {
 	strategy     Strategy
 	logDir       string
 	errorWriter  io.Writer
+	// clock is the wall-time source for the daily file name. Production uses
+	// time.Now; tests inject a fake clock to exercise day rotation.
+	clock func() time.Time
+	// day caches the daily file base name so write() does not read the clock
+	// per message (a clock read costs ~8 µs on hosts whose clocksource the
+	// vDSO cannot read, such as hpet, and used to dominate client CPU on bulk
+	// payload). It is owned by the logger
+	// goroutine: filled on the first daily write and refreshed on every
+	// idle-flush tick. Midnight rotation typically follows within one or two
+	// idle-flush intervals, but that is not a bound: select picks randomly
+	// among ready cases and the ticker drops ticks while the goroutine is
+	// busy. The target file is decided at write time, not at log time, so
+	// messages still queued in bufferCh go to the day cached when they are
+	// written, and a server diagnostic stamped just after midnight can land
+	// in the previous day's file (or vice versa). This is an accepted
+	// trade-off for not reading the clock per message.
+	day string
 }
 
 var _ Logger = (*file)(nil)
@@ -76,6 +94,7 @@ func newFile(strategy Strategy, logDir string) *file {
 		strategy:    strategy,
 		logDir:      logDir,
 		errorWriter: os.Stderr,
+		clock:       time.Now,
 	}
 }
 
@@ -106,6 +125,11 @@ func (f *file) Start(ctx context.Context, wg *sync.WaitGroup) {
 			case m := <-f.bufferCh:
 				f.reportError("write log message", f.write(m))
 			case <-ticker.C:
+				// Refresh the cached day before flushing. Only messages
+				// written after this refresh go to the new daily file;
+				// already buffered bytes were bound to the old file at write
+				// time, and ticks can be delayed or dropped while busy.
+				f.refreshDay()
 				f.reportError("flush idle log output", f.flush())
 			case done := <-f.flushCh:
 				// Synchronous flush: drain + write, then acknowledge so the
@@ -131,20 +155,20 @@ func (f *file) Start(ctx context.Context, wg *sync.WaitGroup) {
 	}()
 }
 
-func (f *file) Log(now time.Time, message string) {
-	f.bufferCh <- &fileMessageBuf{now, message, true}
+func (f *file) Log(message string) {
+	f.bufferCh <- &fileMessageBuf{message, true}
 }
 
-func (f *file) LogWithColors(now time.Time, message, _ string) {
-	f.Log(now, message)
+func (f *file) LogWithColors(message, _ string) {
+	f.Log(message)
 }
 
-func (f *file) Raw(now time.Time, message string) {
-	f.bufferCh <- &fileMessageBuf{now, message, false}
+func (f *file) Raw(message string) {
+	f.bufferCh <- &fileMessageBuf{message, false}
 }
 
-func (f *file) RawWithColors(now time.Time, message, _ string) {
-	f.Raw(now, message)
+func (f *file) RawWithColors(message, _ string) {
+	f.Raw(message)
 }
 
 // signal performs a non-blocking, coalescing send on a capacity-1 control
@@ -181,16 +205,30 @@ func (f *file) Flush() {
 
 func (*file) SupportsColors() bool { return false }
 
-func (f *file) write(m *fileMessageBuf) error {
-	var (
-		writer *bufio.Writer
-		err    error
-	)
-	if f.strategy.Rotation == DailyRotation {
-		writer, err = f.getWriter(m.now.Format("20060102"))
-	} else {
-		writer, err = f.getWriter(f.strategy.FileBase)
+// refreshDay re-reads the clock and caches the daily file base name. Strategies
+// other than daily rotation never read the clock.
+func (f *file) refreshDay() {
+	if f.strategy.Rotation != DailyRotation {
+		return
 	}
+	f.day = f.clock().Format(dailyFileNameLayout)
+}
+
+// fileName returns the base name of the file the next message goes to. For
+// daily rotation it serves the cached day, reading the clock only when the
+// cache is still empty (first write before any idle-flush tick).
+func (f *file) fileName() string {
+	if f.strategy.Rotation != DailyRotation {
+		return f.strategy.FileBase
+	}
+	if f.day == "" {
+		f.refreshDay()
+	}
+	return f.day
+}
+
+func (f *file) write(m *fileMessageBuf) error {
+	writer, err := f.getWriter(f.fileName())
 	if err != nil {
 		return err
 	}

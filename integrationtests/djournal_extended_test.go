@@ -39,7 +39,7 @@ func TestDJournalExtendedWithServer(t *testing.T) {
 
 	cleanupTmpFiles(t)
 	testLogger := NewTestLogger("TestDJournalExtendedWithServer")
-	defer testLogger.WriteLogFile()
+	defer writeLogFileIgnoringError(testLogger)
 
 	t.Run("MixedFileAndJournalFollow", func(t *testing.T) {
 		testDJournalExtendedMixedSources(t, testLogger)
@@ -524,7 +524,7 @@ func newDJournalExtendedEnv(t *testing.T, scenario journaltest.Scenario,
 		t.Fatalf("create journal extended key cache: %v", err)
 	}
 	t.Cleanup(func() {
-		os.RemoveAll(cacheDirAbs)
+		_ = os.RemoveAll(cacheDirAbs)
 	})
 	if err := os.WriteFile(filepath.Join(cacheDirAbs, currentUsername(t)+".authorized_keys"),
 		readIntegrationPublicKey(t), 0o600); err != nil {
@@ -761,7 +761,7 @@ func appendLinesAfterDelay(ctx context.Context, t *testing.T, path string,
 			t.Errorf("open %s for append: %v", path, err)
 			return
 		}
-		defer file.Close()
+		defer closeIgnoringError(file)
 		for _, line := range lines {
 			if _, err := fmt.Fprintln(file, line); err != nil {
 				t.Errorf("append to %s: %v", path, err)

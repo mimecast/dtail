@@ -46,6 +46,11 @@ type ServerConfig struct {
 	// The max amount of concurrent user connection allowed to connect to the server.
 	MaxConnections int
 	// Rolling inactivity timeout for authenticated SSH sessions, in seconds.
+	// The close lags this value by two to three refresh intervals (see
+	// DefaultIdleSessionTimeoutS for that window and for the one second
+	// interval floor, which makes timeouts below four seconds close two to
+	// three whole seconds late); omitting the key or setting it to 0 or less
+	// uses the DefaultIdleSessionTimeoutS 900 second default.
 	IdleSessionTimeoutS int `json:",omitempty"`
 	// The max amount of concurrent cats per server.
 	MaxConcurrentCats int
@@ -102,7 +107,8 @@ type ServerConfig struct {
 	// Maximum size in bytes of a single command frame (bytes accumulated between
 	// ';' delimiters). Frames that grow beyond this limit are rejected and the
 	// session is closed to prevent unbounded memory exhaustion by a malicious or
-	// misbehaving client. Default is 1 MiB.
+	// misbehaving client. Default is 1 MiB. 0 or less disables the limit for
+	// normal sessions; health-check sessions then keep the 1 MiB default.
 	MaxCommandFrameSize int `json:",omitempty"`
 	// Maximum number of glob expansion targets (file paths) that a single read
 	// command is allowed to dispatch. When a glob pattern expands to more paths

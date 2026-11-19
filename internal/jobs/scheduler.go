@@ -110,8 +110,10 @@ func (s *scheduler) runJob(ctx context.Context, job *config.Scheduled) {
 		ServersStr:        servers,
 		What:              files,
 		Mode:              omode.MapClient,
-		NoAuthKey:         true,
-		UserName:          config.ScheduleUser,
+		SSHArgs: config.SSHArgs{
+			NoAuthKey: true,
+			UserName:  config.ScheduleUser,
+		},
 	}
 
 	args.SSHAuthMethods = append(args.SSHAuthMethods, gossh.Password(job.Name))

@@ -60,19 +60,27 @@ func PutMediumBuffer(buf *[]byte) {
 	MediumBufferPool.Put(buf)
 }
 
-// GetSmallBuffer gets a 4KB buffer from the pool
+// GetSmallBuffer gets a 4KB buffer from the pool. Its contents are unspecified;
+// callers must overwrite the bytes they use before reading them, as bufio.Scanner
+// does with buffers supplied through Scanner.Buffer.
 func GetSmallBuffer() *[]byte {
 	return SmallBufferPool.Get().(*[]byte)
 }
 
-// PutSmallBuffer returns a small buffer to the pool
+// PutSmallBuffer returns a small buffer to the pool with its full capacity
+// available. It deliberately leaves the contents unchanged because callers must
+// overwrite pooled storage before reading it.
 func PutSmallBuffer(buf *[]byte) {
-	// Clear the buffer before returning to pool
-	if buf != nil && len(*buf) > 0 {
-		*buf = (*buf)[:cap(*buf)]
-		for i := range *buf {
-			(*buf)[i] = 0
-		}
+	if !prepareSmallBuffer(buf) {
+		return
 	}
 	SmallBufferPool.Put(buf)
+}
+
+func prepareSmallBuffer(buf *[]byte) bool {
+	if buf == nil {
+		return false
+	}
+	*buf = (*buf)[:cap(*buf)]
+	return true
 }

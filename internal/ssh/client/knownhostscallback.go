@@ -19,6 +19,8 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
+const unknownHostsPromptDelay = 2 * time.Second
+
 type response int
 
 const (
@@ -175,6 +177,9 @@ func (c *KnownHostsCallback) Wrap(ctx context.Context) ssh.HostKeyCallback {
 // be added to the known hosts or not.
 func (c *KnownHostsCallback) PromptAddHosts(ctx context.Context) {
 	var hosts []unknownHost
+	timer := time.NewTimer(unknownHostsPromptDelay)
+	defer timer.Stop()
+
 	for {
 		// Check whether there is a unknown host
 		select {
@@ -185,7 +190,7 @@ func (c *KnownHostsCallback) PromptAddHosts(ctx context.Context) {
 				c.promptAddHosts(hosts)
 				hosts = []unknownHost{}
 			}
-		case <-time.After(2 * time.Second):
+		case <-timer.C:
 			// Or ask when after 2 seconds no new unknown hosts were added.
 			if len(hosts) > 0 {
 				c.promptAddHosts(hosts)
@@ -195,7 +200,18 @@ func (c *KnownHostsCallback) PromptAddHosts(ctx context.Context) {
 			c.logger.Debug("Stopping goroutine prompting new hosts...")
 			return
 		}
+		restartTimer(timer, unknownHostsPromptDelay)
 	}
+}
+
+func restartTimer(timer *time.Timer, delay time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(delay)
 }
 
 func (c *KnownHostsCallback) promptAddHosts(hosts []unknownHost) {

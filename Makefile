@@ -9,6 +9,17 @@ endif
 ifdef DTAIL_NO_ZSTD
 GO_TAGS+=nozstd
 endif
+# Every target in this Makefile is phony: none produces a file make can
+# timestamp-check. The binary targets in particular must always invoke
+# go build (which is itself incremental and cheap when nothing changed);
+# otherwise make would see an existing binary as up to date and skip
+# rebuilding it after source changes.
+.PHONY: all build build-pgo install clean vet lint test todos test-integration
+.PHONY: dserver dcat dgrep dmap dtail dtailhealth dtail-tools
+.PHONY: benchmark benchmark-quick benchmark-full benchmark-upstream-smoke benchmark-upstream
+.PHONY: benchmark-baseline benchmark-baseline-quick benchmark-compare drop-caches
+.PHONY: profile-all profile-quick profile-dmap profile-list profile-analyze profile-web profile-clean profile-help
+.PHONY: pgo pgo-quick pgo-commands pgo-clean pgo-help pgo-build-binaries pgo-generate install-pgo
 all: build
 build: dserver dcat dgrep dmap dtail dtailhealth dtail-tools
 build-pgo: pgo-build-binaries
@@ -34,8 +45,8 @@ install:
 	${GO} install -tags '${GO_TAGS}' ./cmd/dtail/main.go
 	${GO} install -tags '${GO_TAGS}' ./cmd/dtailhealth/main.go
 clean:
-	ls ./cmd/ | while read cmd; do \
-	  test -f $$cmd && rm $$cmd; \
+	for dir in ./cmd/*/; do \
+	  rm -f -- "$$(basename "$$dir")"; \
 	done
 	@echo "Removing .tmp files..."
 	find . -name "*.tmp" -type f -delete
@@ -59,6 +70,19 @@ benchmark-quick: build dtail-tools
 	./dtail-tools benchmark -mode run -quick
 benchmark-full: build dtail-tools
 	./dtail-tools benchmark -mode run -iterations 3x
+benchmark-upstream-smoke:
+	./benchmarks/upstream_vs_local_bench.sh smoke
+benchmark-upstream:
+	./benchmarks/upstream_vs_local_bench.sh run
+
+drop-caches:
+	@echo "Dropping system caches..."
+	@if [ -x /usr/local/sbin/drop-caches ]; then \
+		sudo /usr/local/sbin/drop-caches; \
+	else \
+		sudo ./benchmarks/drop_caches.sh; \
+	fi
+
 benchmark-baseline: build dtail-tools
 	@read -p "Enter a descriptive name for this baseline (e.g. 'before-optimization', 'v1.0-release'): " tag; \
 	if [ -z "$$tag" ]; then \
@@ -134,8 +158,6 @@ profile-help:
 	@echo "  make profile-analyze PROFILE=profiles/dcat_cpu_*.prof"
 	@echo ""
 
-.PHONY: lint vet test test-integration todos profile-all profile-quick profile-dmap profile-list profile-analyze profile-web profile-clean profile-help
-
 ## Profile-Guided Optimization targets
 pgo: build dtail-tools
 	@echo "Running Profile-Guided Optimization for all commands..."
@@ -206,5 +228,3 @@ install-pgo: pgo-build-binaries
 		fi \
 	done
 	@echo "PGO-optimized binaries installed"
-
-.PHONY: pgo pgo-quick pgo-commands pgo-clean pgo-help pgo-build-binaries pgo-generate install-pgo
